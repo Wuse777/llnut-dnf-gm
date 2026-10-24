@@ -1,0 +1,20 @@
+{
+  "container": "dnf",
+  "pvf_path": "/var/lib/dnf/data/Script.pvf",
+  "disk_path": "/var/lib/dnf",
+  "gateway_url": "http://127.0.0.1:5505/health",
+  "core_services": [
+    "dnf",
+    "docker"
+  ],
+  "components": [
+    "mysql",
+    "llnut_gate",
+    "channel",
+    "game_siroco11",
+    "relay",
+    "stun"
+  ],
+  "min_memory_mib": 256,
+  "min_swap_free_mib": 1536
+}

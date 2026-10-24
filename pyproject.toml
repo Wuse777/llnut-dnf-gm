@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dnf-gm"
+version = "0.1.0"
+description = "Lightweight Chinese DNF GM console and compatibility laboratory"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.12"
+dependencies = ["PyMySQL==1.1.2", "cryptography==46.0.3", "fastapi==0.162.0", "uvicorn==0.54.0", "argon2-cffi==25.1.0", "pyotp==2.10.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"

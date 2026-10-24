@@ -1,0 +1,9 @@
+[Unit]
+Description=DNF GM aggregate resource budget
+[Slice]
+MemoryAccounting=yes
+MemoryHigh=128M
+MemoryMax=192M
+CPUAccounting=yes
+CPUQuota=25%
+TasksMax=64

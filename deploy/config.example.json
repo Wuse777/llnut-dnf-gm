@@ -1,0 +1,22 @@
+{
+  "db_host": "172.18.0.2",
+  "db_port": 4000,
+  "db_user": "dnf_gm_app",
+  "db_password": "GENERATED_BY_PROVISION",
+  "secret": "GENERATED_BY_PROVISION",
+  "origins": [
+    "http://127.0.0.1:8765"
+  ],
+  "public": false,
+  "require_totp": false,
+  "writes": [],
+  "test_uids": [
+    -1
+  ],
+  "status_file": "/run/dnf-gm/status.json",
+  "catalog_file": "/var/lib/dnf-gm/catalog.sqlite",
+  "static_dir": "/opt/dnf-gm/current/web/dist",
+  "image_digest": "",
+  "pvf_sha256": "",
+  "write_approvals": {}
+}

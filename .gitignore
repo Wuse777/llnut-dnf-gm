@@ -1,0 +1,52 @@
+# Secrets / installation state
+.env
+.env.*
+!.env.example
+config.json
+monitor.json
+private/
+outputs/
+work/
+.runtime/
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+*.sql.gz
+*.dump
+# Game assets and derived catalogues are not distributable source
+*.pvf
+*.PVF
+*.sqlite
+*.sqlite3
+*.db
+# Dependencies and generated output
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+web/node_modules/
+web/dist/
+web/coverage/
+wheels/
+release/
+*.tar.gz
+*.zip
+.DS_Store
+# Dumps and local exports (only reviewed schema fixtures/migrations are source)
+*.sql
+!fixtures/*.sql
+!migrations/*.sql
+*.csv
+*.tsv
+*.xlsx
+*.har
+*.pcap
+*.bak
+*.backup
+*.tar
+*.tgz
+id_rsa
+id_ed25519

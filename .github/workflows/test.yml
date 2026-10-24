@@ -1,0 +1,32 @@
+name: tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci && npm test && npm run build
+        working-directory: web
+  backend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tools/bootstrap_lab.py --runtime "$RUNNER_TEMP/dnfgm-lab"
+      - run: |
+          "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" tools/local_mysql.py init --runtime "$RUNNER_TEMP/dnfgm-lab"
+          "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" tools/local_mysql.py start --runtime "$RUNNER_TEMP/dnfgm-lab"
+      - run: |
+          DNF_GM_M0_SOCKET="$RUNNER_TEMP/dnfgm-lab/mysql.sock" PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+            "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" -m pytest -q
+      - if: always()
+        run: '"$RUNNER_TEMP/dnfgm-lab/venv/bin/python" tools/local_mysql.py stop --runtime "$RUNNER_TEMP/dnfgm-lab"'

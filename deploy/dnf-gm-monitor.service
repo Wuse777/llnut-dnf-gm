@@ -1,0 +1,24 @@
+[Unit]
+Description=DNF GM fixed read-only status and self-protection monitor
+After=network.target
+[Service]
+Type=simple
+User=root
+Slice=dnf-gm.slice
+ExecStart=/opt/dnf-gm/venv/bin/python /opt/dnf-gm/current/deploy/monitor.py
+Restart=on-failure
+RestartSec=15
+UMask=0022
+RuntimeDirectory=dnf-gm
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/run/dnf-gm /var/lib/dnf-gm
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,27 @@
+[
+  {
+    "path": "downloads/mysql-5.7.44.tar.gz",
+    "url": "https://cdn.mysql.com/archives/mysql-5.7/mysql-5.7.44-linux-glibc2.12-x86_64.tar.gz",
+    "sha256": "798ff0a14cdc1ab259f8a3b6a7f683403e9bbaa85957d82e5370f82b27ba6805"
+  },
+  {
+    "path": "downloads/libaio.deb",
+    "url": "https://archive.ubuntu.com/ubuntu/pool/main/liba/libaio/libaio1_0.3.112-5_amd64.deb",
+    "sha256": "0e50c3258f03d6eee671d7106120b450a6f3a546fe343d57bbfe33257d4e3b48"
+  },
+  {
+    "path": "downloads/libncurses5.deb",
+    "url": "https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.3-2ubuntu0.3_amd64.deb",
+    "sha256": "58da01991712c6856af0658dc5e9cb533c1a6854ab950055ade185e35bc9c276"
+  },
+  {
+    "path": "downloads/libtinfo5.deb",
+    "url": "https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.3_amd64.deb",
+    "sha256": "4df4288404108f1a156d014e8764a064e977e34e6d44931ab60451694c03c90d"
+  },
+  {
+    "path": "pip.pyz",
+    "url": "https://bootstrap.pypa.io/pip/pip.pyz",
+    "sha256": "e5ef64ef63ff89a746014ad81658b76c1940385fdcdbc4fcbfa6e3ef1887352d"
+  }
+]
