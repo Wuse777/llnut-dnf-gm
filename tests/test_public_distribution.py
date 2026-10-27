@@ -1,6 +1,8 @@
 """Public defaults and maintenance configuration; no production connections."""
 import importlib.util
 import json
+import os
+import sys
 from pathlib import Path
 import pytest
 from dnfgm.config import Settings, load_settings
@@ -9,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def module(name):
+    sys.path.insert(0, str(ROOT / 'deploy'))
     spec = importlib.util.spec_from_file_location(name, ROOT / 'deploy' / (name + '.py'))
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
@@ -39,6 +42,7 @@ def test_totp_cannot_be_mistaken_for_implemented_enrollment():
         Settings(secret='s' * 64, db_password='fixture', require_totp=True).check()
 
 
+@pytest.mark.skipif(os.name != 'posix', reason='POSIX config modes are enforced on deployment Linux')
 def test_config_permissions(tmp_path, monkeypatch):
     p = tmp_path / 'config.json'
     p.write_text(json.dumps(dict(secret='s' * 64, db_password='fixture')))
@@ -85,6 +89,8 @@ def test_monitor_defaults_and_strict_identifiers():
 
 def test_monitor_is_standalone_and_only_stops_gm():
     text = (ROOT / 'deploy/monitor.py').read_text()
+    runtime = (ROOT / 'deploy/monitor_runtime.py').read_text()
     assert 'verify-core-services' not in text
-    assert "['systemctl', 'stop', 'dnf-gm.service']" in text
-    assert 'shell=True' not in text
+    assert "['systemctl', 'stop', 'dnf-gm.service']" in runtime
+    assert "['systemctl', 'start', 'dnf-gm.service']" in runtime
+    assert 'shell=True' not in text + runtime

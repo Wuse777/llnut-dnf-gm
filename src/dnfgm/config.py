@@ -33,7 +33,7 @@ class Settings:
             raise ValueError('Origins must be exact scheme://host[:port]')
         if self.public and any(not o.startswith('https://') for o in self.origins):
             raise ValueError('Public mode requires HTTPS origins')
-        if not set(self.writes) <= {'currency', 'mail', 'ban', 'unban'}:
+        if not set(self.writes) <= {'currency', 'mail', 'ban', 'unban', 'equipment-unlock'}:
             raise ValueError('Unknown write capability')
         if self.writes and not self.image_digest:
             raise ValueError('Explicit server image fingerprint required for writes')

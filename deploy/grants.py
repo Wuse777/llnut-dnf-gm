@@ -28,6 +28,7 @@ def bootstrap_sql(config,ph):
     sql += character_read_sql(user)
     sql += catalog_policy_sql(user)
     sql += mail_gold_sql(user)
+    sql += equipment_unlock_sql(user)
     grant('SELECT(m_id,login_status,m_channel_no)','taiwan_login.login_account_3')
     for table,col in [('cash_cera','cera'),('cash_cera_point','cera_point')]:
         grant(f'SELECT(account,{col}),UPDATE({col},mod_date)','taiwan_billing.'+table)
@@ -58,3 +59,8 @@ def catalog_policy_sql(user="'dnf_gm_app'@'127.0.0.1'"):
 def mail_gold_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     # No inventory UPDATE, table-wide SELECT, DDL or gold UPDATE privilege.
     return f'GRANT SELECT(gold),INSERT(gold) ON taiwan_cain_2nd.postal TO {user};\n'
+
+
+def equipment_unlock_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    # No inventory UPDATE or table-wide write permissions.
+    return f'GRANT SELECT(charac_no,item_lock_info),UPDATE(item_lock_info) ON taiwan_cain_2nd.charac_item_lock_info TO {user};\n'

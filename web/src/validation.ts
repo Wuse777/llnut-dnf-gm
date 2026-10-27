@@ -17,7 +17,7 @@ export function operationErrors(data:{action:string,account:any,delta:number,rea
  if(data.action==='mail'){
   if(data.account&&!data.roleValid)errors['mail-role']='请选择当前账号下未删除的收件角色。'
   const gold=data.gold??0
-  if(!Number.isInteger(gold)||gold<0||gold>100000000)errors['mail-gold']='金币必须为0至100,000,000的整数；0表示不附带金币。'
+  if(!Number.isInteger(gold)||gold<0||gold>1000000000)errors['mail-gold']='金币必须为0至1,000,000,000的整数；0表示不附带金币。'
   if(data.items.length||!Number.isInteger(gold)||gold<=0)Object.assign(errors,itemErrors(data.items,'mail'))
   if(data.message.length>60)errors['mail-message']='邮件文字不能超过60个字符。'
  }

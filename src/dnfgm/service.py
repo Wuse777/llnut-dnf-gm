@@ -6,6 +6,8 @@ import pymysql
 from fastapi import HTTPException
 from .encoding import inspect_name, mysql_latin1_text
 from .catalog import Catalog, snapshot
+from . import equipment_unlock as unlock
+from .limits import MAIL_GOLD_MAX
 from .character_detail import INFO_COLUMNS, ATTRIBUTES, decode_container, profession
 
 
@@ -98,14 +100,41 @@ class Service:
 
     def target(self, q, data, lock=False):
         a = self.account(q, data['uid'])
-        if data['action'] == 'mail':
+        if data['action'] in ('mail', 'equipment-unlock'):
             if not data.get('charac_no'):
-                raise HTTPException(422, '必须明确指定收件角色')
+                raise HTTPException(422, '必须明确指定目标角色')
             row = one(q, 'SELECT m_id AS uid,charac_no,charac_name,CAST(CONVERT(charac_name USING latin1) AS BINARY) AS client_name_bytes,delete_flag FROM taiwan_cain.charac_info WHERE charac_no=%s' + (' FOR UPDATE' if lock else ''), (data['charac_no'],))
             if not row or row['uid'] != data['uid'] or row['delete_flag']:
                 raise HTTPException(409, '角色不属于该账号或已删除')
             a['character'] = character(row)
         return a
+
+    def unlock_blob(self, q, data, lock=False):
+        login = one(q, 'SELECT login_status FROM taiwan_login.login_account_3 WHERE m_id=%s' + (' FOR UPDATE' if lock else ''), (data['uid'],))
+        if not login or login['login_status'] != 0:
+            raise HTTPException(409, '账号在线或登录状态未知，请完全退出账号后刷新申请')
+        row = one(q, 'SELECT item_lock_info FROM taiwan_cain_2nd.charac_item_lock_info WHERE charac_no=%s' + (' FOR UPDATE' if lock else ''), (data['charac_no'],))
+        if not row:
+            raise HTTPException(409, '角色没有锁定存档')
+        return row['item_lock_info']
+
+    def unlock_requests(self, charac_no):
+        with self.db.connect() as c, c.cursor() as q:
+            row = one(q, 'SELECT m_id AS uid,delete_flag FROM taiwan_cain.charac_info WHERE charac_no=%s', (charac_no,))
+            if not row:
+                raise HTTPException(404, '角色不存在')
+            online = one(q, 'SELECT login_status FROM taiwan_login.login_account_3 WHERE m_id=%s', (row['uid'],))
+            stored = one(q, 'SELECT item_lock_info FROM taiwan_cain_2nd.charac_item_lock_info WHERE charac_no=%s', (charac_no,))
+        result = dict(charac_no=charac_no, uid=row['uid'], login_status=online['login_status'] if online else None,
+                      delete_flag=row['delete_flag'], wait_seconds=unlock.WAIT_SECONDS,
+                      write_enabled='equipment-unlock' in self.settings.writes, collected_at=time.time(),
+                      note='数据库存档快照；在线申请可能尚未保存。编号是锁定记录编号，未验证与物品槽位的映射。请完全退出账号，处理期间不要登录。')
+        try:
+            _, records = unlock.decode(stored['item_lock_info']) if stored else (None, [])
+            result.update(state='ok', items=[dict(r, expired=r['state']==2 and r['due_at']<=time.time()) for r in records])
+        except ValueError as e:
+            result.update(state='unsupported', items=[], message=str(e), write_enabled=False)
+        return result
 
     def character_detail(self, charac_no):
         with self.db.connect() as c, c.cursor() as q:
@@ -144,15 +173,31 @@ class Service:
         if not data['reason'].strip():
             raise HTTPException(422, '必须填写原因')
         gold = data.get('gold', 0)
-        if type(gold) is not int or not 0 <= gold <= 100000000 or (action != 'mail' and gold):
-            raise HTTPException(422, '金币附件仅用于邮件，金额须为0至1亿的整数')
+        if type(gold) is not int or not 0 <= gold <= MAIL_GOLD_MAX or (action != 'mail' and gold):
+            raise HTTPException(422, '金币附件仅用于邮件，金额须为0至10亿的整数')
         if action == 'currency' and (data.get('currency') not in CURRENCIES or not data.get('delta') or data.get('items') or data.get('template_id')):
             raise HTTPException(422, '请选择币种及非零变更金额，不可混合发放')
         if action != 'currency' and (data.get('currency') is not None or data.get('delta') is not None):
             raise HTTPException(422, '操作类型与参数不一致')
+        keys = data.get('lock_keys', [])
+        if action == 'equipment-unlock':
+            if data.get('items') or data.get('template_id') or data.get('template_version') or gold:
+                raise HTTPException(422, '提前解锁不可混合邮件参数')
+            if not keys or len(set(keys)) != len(keys) or any(type(k) is not int or not 1 <= k <= 100 for k in keys):
+                raise HTTPException(422, '请选择有效且不重复的解锁申请编号')
+        elif keys:
+            raise HTTPException(422, '申请编号仅用于装备解锁')
         with self.db.connect() as c, c.cursor() as q:
             a = self.target(q, data)
             preview = {'target': a, 'action': action, 'reason': data['reason'], 'client_verified': False}
+            if action == 'equipment-unlock':
+                blob = self.unlock_blob(q, data, lock=False)
+                try:
+                    _, selected = unlock.expire(blob, keys, int(time.time()))
+                except ValueError as e:
+                    raise HTTPException(409, str(e))
+                preview.update(lock_fingerprint=unlock.fingerprint(blob), requests=selected,
+                               note='仅将选中申请设为到期；下次登录加载角色后由游戏处理，不代表装备已解锁')
             if action == 'currency':
                 before = a[data['currency']]
                 if before is None or not 0 <= before + data['delta'] <= 4294967295:
@@ -260,9 +305,27 @@ class Service:
                     if q.rowcount != 1:
                         raise HTTPException(409, '条件更新未命中')
                     result.update(currency=column,before=balance[column],after=after,state='database_committed_refresh_client')
+                elif action == 'equipment-unlock':
+                    q.execute("SELECT ENGINE FROM information_schema.TABLES WHERE (TABLE_SCHEMA='taiwan_cain_2nd' AND TABLE_NAME='charac_item_lock_info') OR (TABLE_SCHEMA='taiwan_login' AND TABLE_NAME='login_account_3')")
+                    rows = q.fetchall()
+                    if len(rows) != 2 or any(r['ENGINE'] != 'InnoDB' for r in rows):
+                        raise HTTPException(409, '解锁事务表引擎不满足')
+                    blob = self.unlock_blob(q, data, lock=True)
+                    if unlock.fingerprint(blob) != preview['lock_fingerprint']:
+                        raise HTTPException(409, '锁定存档变化，请重新预览')
+                    try:
+                        updated, selected = unlock.expire(blob, data['lock_keys'], int(time.time()))
+                    except ValueError as e:
+                        raise HTTPException(409, str(e))
+                    q.execute('UPDATE taiwan_cain_2nd.charac_item_lock_info SET item_lock_info=%s WHERE charac_no=%s AND item_lock_info=%s', (updated,data['charac_no'],blob))
+                    if q.rowcount != 1:
+                        raise HTTPException(409, '锁定存档条件更新未命中')
+                    result.update(charac_no=data['charac_no'], lock_keys=data['lock_keys'],
+                                  requests_before=selected, before_fingerprint=preview['lock_fingerprint'], after_fingerprint=unlock.fingerprint(updated),
+                                  state='requests_expired_pending_game_load', note=preview['note'])
                 elif action == 'mail':
                     gold = data.get('gold', 0)
-                    if type(gold) is not int or not 0 <= gold <= 100000000 or gold != preview.get('gold', 0):
+                    if type(gold) is not int or not 0 <= gold <= MAIL_GOLD_MAX or gold != preview.get('gold', 0):
                         raise HTTPException(409, '金币附件参数变化，请重新预览')
                     rewards = self.catalog.items([{'id':i['id'],'quantity':i['quantity']} for i in preview['rewards']['items']], q=q, allow_empty=gold > 0)
                     if rewards != preview['rewards']:

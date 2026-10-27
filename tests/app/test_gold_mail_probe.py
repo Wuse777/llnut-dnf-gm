@@ -2,7 +2,7 @@
 
 Run only with the socket-only MySQL 5.7 laboratory (conftest enforces server_id).
 These prove SQL persistence/rollback and API/grant boundaries, not receipt
-by the game client. Game-client collection is outside these SQL/API tests.
+by the game client. Historical investigation is recorded separately in acceptance/.
 """
 import importlib.util
 from pathlib import Path

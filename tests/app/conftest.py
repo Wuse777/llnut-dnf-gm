@@ -33,7 +33,7 @@ def env(lab,tmp_path):
     sc.executescript('CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT);CREATE TABLE items(id INTEGER PRIMARY KEY,name TEXT,category TEXT,level INTEGER,stack_limit INTEGER,durability INTEGER,allowed INTEGER,reviewed INTEGER,source_path TEXT);')
     sc.execute('INSERT INTO metadata VALUES(?,?)',('pvf_sha256',pvf))
     sc.executemany('INSERT INTO items VALUES(?,?,?,?,?,?,?,?,?)',[(990001,'测试装备','equipment',1,1,20,1,1,'fixture/equipment'),(990002,'测试材料','material',1,99,0,1,1,'fixture/material'),(990003,'特殊宠物','special',1,1,0,0,0,'fixture/pet')]);sc.commit();sc.close()
-    s=Settings(db_password='fixture-only',secret='s'*48,origins=('http://testserver',),writes=('currency','mail','ban','unban'),test_uids=(900001,),status_file=str(status),catalog_file=str(index),image_digest='test-image',pvf_sha256=pvf,write_approvals={x:True for x in ('currency','mail','ban','unban')})
+    s=Settings(db_password='fixture-only',secret='s'*48,origins=('http://testserver',),writes=('currency','mail','ban','unban','equipment-unlock'),test_uids=(900001,),status_file=str(status),catalog_file=str(index),image_digest='test-image',pvf_sha256=pvf,write_approvals={x:True for x in ('currency','mail','ban','unban','equipment-unlock')})
     db=Database(s,factory)
     app=create_app(s,db)
     client=TestClient(app,raise_server_exceptions=False)

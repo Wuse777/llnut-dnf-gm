@@ -47,3 +47,5 @@ input[aria-invalid=true]:focus,select[aria-invalid=true]:focus{box-shadow:0 0 0 
 /* Dynamic mail policy: existing CPAMC theme tokens and reduced-motion inherited. */
 .policy-reason{max-width:330px;white-space:normal;overflow-wrap:anywhere}.catalog-policy{min-width:0}.catalog-policy .character-metrics strong{font-size:24px}.catalog-policy>label{margin-top:16px}.catalog-policy .mono{overflow-wrap:anywhere}.catalog-panel .status-badge{white-space:normal}
 .catalog-policy label[for="policy-reason"]{display:block;margin-bottom:8px}.catalog-policy label[for="policy-reason"] .required-tag{vertical-align:middle}
+
+.unlock-requests{min-width:0;overflow-wrap:anywhere}.unlock-requests input[type=checkbox]{width:18px;height:18px}.unlock-requests .table-wrap{margin:16px 0}.unlock-requests table{min-width:610px}.unlock-requests>label{margin-top:16px}.unlock-requests>button.primary{margin-top:12px}.unlock-requests .toolbar{margin-top:16px}

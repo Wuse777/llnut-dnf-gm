@@ -25,7 +25,7 @@ it('validates mail gold independently of items and preserves template item requi
  expect(operationErrors({...base,gold:1000})).toEqual({})
  expect(operationErrors({...base,gold:0})['mail-items']).toBeTruthy()
  expect(operationErrors({...base,gold:1.2})['mail-gold']).toBeTruthy()
- expect(operationErrors({...base,gold:100000001})['mail-gold']).toBeTruthy()
+ expect(operationErrors({...base,gold:1000000001})['mail-gold']).toBeTruthy()
  expect(giftErrors('template',[])['gift-items']).toBeTruthy()
  expect(serverFieldErrors([{loc:['body','gold'],type:'less_than_equal'}],'operation')['mail-gold']).toContain('金币附件')
 })

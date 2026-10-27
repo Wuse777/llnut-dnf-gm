@@ -222,7 +222,19 @@ def test_actual_runtime_grants(env):
     r=confirm(limited,r.json()['operation_id'],key='policy-minimal-grants-test')
     assert r.status_code==200,r.text
     assert not limited.get(P+'/catalog?q=990002').json()['items'][0]['sendable']
+    import struct,zlib,time
+    raw=bytearray(800);struct.pack_into('<IB',raw,0,int(time.time())-30,2)
+    blob=struct.pack('<I',800)+zlib.compress(raw)
+    with rootdb.connect() as conn,conn.cursor() as q:
+        q.execute('UPDATE taiwan_login.login_account_3 SET login_status=0 WHERE m_id=900001')
+        q.execute('INSERT INTO taiwan_cain_2nd.charac_item_lock_info VALUES(900001,%s)',(blob,));conn.commit()
+    assert limited.get(P+'/characters/900001/unlock-requests').status_code==200
+    r=limited.post(P+'/operations/preview',json={'action':'equipment-unlock','uid':900001,'charac_no':900001,'lock_keys':[1],'reason':'least privilege fixture'})
+    assert r.status_code==200,r.text
+    r=confirm(limited,r.json()['operation_id'],key='unlock-least-privilege-fixture')
+    assert r.status_code==200,r.text
     with factory() as conn,conn.cursor() as q:
+        with pytest.raises(pymysql.MySQLError):q.execute('DELETE FROM taiwan_cain_2nd.charac_item_lock_info WHERE charac_no=900001')
         with pytest.raises(pymysql.MySQLError):q.execute("UPDATE dnf_gm.catalog_policy_items SET verification_evidence='forged'")
         with pytest.raises(pymysql.MySQLError):q.execute('SELECT password FROM d_taiwan.accounts')
         with pytest.raises(pymysql.MySQLError):q.execute('DELETE FROM dnf_gm.audit')

@@ -13,9 +13,9 @@ function setup(){
  else if(path==='/overview')d={counts:{},server:{fresh:false},enabled_writes:['mail']}
  else if(path.startsWith('/accounts?'))d={items:[{uid:3,accountname:'gm'}]}
  else if(path==='/accounts/3')d={uid:3,accountname:'gm'}
- else if(path.startsWith('/characters?'))d={items:[{charac_no:4,charac_name:'示例角色',delete_flag:0}]}
+ else if(path.startsWith('/characters?'))d={items:[{charac_no:4,charac_name:'测试测试',delete_flag:0}]}
  else if(path.startsWith('/catalog?'))d={items:[{id:1000,name:'材料',category:'material',stack_limit:99,allowed:1,reviewed:1}]}
- else if(path==='/operations/preview'){mail=body;d={operation_id:'a'.repeat(32),write_enabled:true,preview:{...body,target:{uid:3,accountname:'gm',character:{charac_name:'示例角色',charac_no:4}},rewards:{items:body.items}}}}
+ else if(path==='/operations/preview'){mail=body;d={operation_id:'a'.repeat(32),write_enabled:true,preview:{...body,target:{uid:3,accountname:'gm',character:{charac_name:'测试测试',charac_no:4}},rewards:{items:body.items}}}}
  else if(path.endsWith('/confirm'))d={operation_id:'a'.repeat(32),action:'mail',gold:mail.gold,postal_ids:[5],state:'database_delivered_not_claimed'}
  else if(path.startsWith('/gift-templates?'))d={items:[{id:9,name:'模板',enabled:true,current_version:1,rewards:{items:[{id:1000,name:'材料',category:'material',quantity:1,stack_limit:99}]}}]}
  return new Response(JSON.stringify(d))
@@ -30,7 +30,7 @@ it('gold-only preview submits amount, shows confirmation, and confirmed result d
 it('changing gold invalidates prior preview',async()=>{
  const {w}=setup();await target(w);await w.find('#mail-gold').setValue(10);await click(w,'生成预览 →');await w.find('#mail-gold').setValue(11);expect(w.find('[role=dialog]').exists()).toBe(false);expect(w.text()).toContain('旧预览已失效');w.unmount()
 })
-it.each([-1,100000001,1.5])('invalid gold %s has inline error and makes no preview request',async(gold)=>{
+it.each([-1,1000000001,1.5])('invalid gold %s has inline error and makes no preview request',async(gold)=>{
  const {w,calls}=setup();await target(w);await w.find('#mail-gold').setValue(gold);await click(w,'生成预览 →');expect(w.find('#mail-gold-error').text()).toContain('整数');expect(w.find('#mail-gold').attributes('aria-invalid')).toBe('true');expect(calls.some(c=>c.path==='/operations/preview')).toBe(false);await w.find('#mail-gold').setValue(5);expect(w.find('#mail-gold-error').exists()).toBe(false);w.unmount()
 })
 it('adding gold clears missing-items feedback without requiring a fake coin item',async()=>{

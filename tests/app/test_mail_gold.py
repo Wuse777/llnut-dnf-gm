@@ -21,7 +21,7 @@ def rows(db):
         q.execute('SELECT * FROM taiwan_cain_2nd.postal ORDER BY postal_id')
         return list(q.fetchall())
 
-@pytest.mark.parametrize('gold,items',[(1,[]),(100000000,[]),(0,[{'id':990002,'quantity':2}]),(1000,[{'id':990002,'quantity':2},{'id':990001,'quantity':1}]),(1000,[{'id':990002,'quantity':1}]*20)])
+@pytest.mark.parametrize('gold,items',[(1,[]),(1000000000,[]),(0,[{'id':990002,'quantity':2}]),(1000,[{'id':990002,'quantity':2},{'id':990001,'quantity':1}]),(1000,[{'id':990002,'quantity':1}]*20)])
 def test_delivery_gold_once_and_result_audit_idempotency(env,gold,items):
     c,s,db,app=env
     r=preview(c,gold=gold,items=items);assert r.status_code==200,r.text
@@ -41,7 +41,7 @@ def test_delivery_gold_once_and_result_audit_idempotency(env,gold,items):
         assert json.loads(audit['result_json'])['gold']==gold
         q.execute('SELECT COUNT(*) n FROM taiwan_cain_2nd.letter');assert q.fetchone()['n']==1
 
-@pytest.mark.parametrize('gold',[-1,100000001,1.5,True,'1000',None])
+@pytest.mark.parametrize('gold',[-1,1000000001,1.5,True,'1000',None])
 def test_invalid_gold_rejected_at_api(env,gold):
     c,s,db,app=env
     r=preview(c,gold=gold);assert r.status_code==422

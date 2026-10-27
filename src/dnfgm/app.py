@@ -9,6 +9,7 @@ from .db import Database, Busy
 from .models import Login, Preview, Confirm, Gift, CatalogPolicyPreview
 from .security import COOKIE, Limits, authenticate, new_session, session, digest
 from .service import Service
+from .catalog import snapshot
 
 BASE = '/dnf-gm'
 API = BASE + '/api/v1'
@@ -88,7 +89,17 @@ def create_app(settings=None, database=None):
             q.execute('SELECT version FROM dnf_gm.schema_versions ORDER BY version DESC LIMIT 1')
             if not q.fetchone():
                 raise HTTPException(503,'管理库迁移未完成')
-        return {'ok':True,'version':'0.1.0'}
+        return {'ok':True,'version':'0.2.0'}
+
+    @app.get(API+'/ready')
+    def ready():
+        live = snapshot(settings)
+        if (not live.get('fresh') or not live.get('core_ok')
+                or live.get('mem_available_mib', 0) < 256
+                or live.get('swap_free_mib', 0) < 1536
+                or live.get('disk_free_gib', 0) < 2):
+            raise HTTPException(503, '采集或资源状态未就绪')
+        return health()
 
     @app.get(API+'/auth/methods')
     def methods():
@@ -163,6 +174,11 @@ def create_app(settings=None, database=None):
     def character_detail(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
         user(request)
         return service.character_detail(charac_no)
+
+    @app.get(API+'/characters/{charac_no}/unlock-requests')
+    def unlock_requests(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
+        user(request)
+        return service.unlock_requests(charac_no)
 
     @app.get(API+'/catalog')
     def catalog(request:Request,q:str=Query('',max_length=80),category:str=Query('',max_length=24),page:int=Query(1,ge=1,le=10000),allowed_only:bool=False,state:Literal['','trial','verified','blocked']=''):

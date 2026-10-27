@@ -200,3 +200,5 @@ CREATE TABLE charac_stat (
  used_fatigue smallint NOT NULL DEFAULT 0,
  last_play_time datetime NOT NULL DEFAULT '0000-00-00 00:00:00'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+CREATE TABLE taiwan_cain_2nd.charac_item_lock_info (charac_no INT UNSIGNED PRIMARY KEY, item_lock_info BLOB) ENGINE=InnoDB;
