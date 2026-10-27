@@ -21,6 +21,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Validate deployment shell syntax
+        run: |
+          for script in deploy/*.sh tools/build_release.sh; do bash -n "$script"; done
       - run: python tools/bootstrap_lab.py --runtime "$RUNNER_TEMP/dnfgm-lab"
       - run: |
           "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" tools/local_mysql.py init --runtime "$RUNNER_TEMP/dnfgm-lab"

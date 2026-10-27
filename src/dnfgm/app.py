@@ -89,7 +89,7 @@ def create_app(settings=None, database=None):
             q.execute('SELECT version FROM dnf_gm.schema_versions ORDER BY version DESC LIMIT 1')
             if not q.fetchone():
                 raise HTTPException(503,'管理库迁移未完成')
-        return {'ok':True,'version':'0.2.0'}
+        return {'ok':True,'version':'0.2.1'}
 
     @app.get(API+'/ready')
     def ready():

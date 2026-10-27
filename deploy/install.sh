@@ -14,7 +14,9 @@ if [[ ! -e /var/lib/dnf-gm/no-auto-recover ]]; then
  touch /var/lib/dnf-gm/no-auto-recover
  RECOVERY_INHIBIT_OWNED=true
 fi
-systemctl stop dnf-gm-monitor.service dnf-gm.service
+for UNIT in dnf-gm-monitor.service dnf-gm.service; do
+ if systemctl cat "$UNIT" >/dev/null 2>&1; then systemctl stop "$UNIT"; fi
+done
 PYTHON=${PYTHON_BIN:-python3.12}
 "$PYTHON" -m venv /opt/dnf-gm/venv
 /opt/dnf-gm/venv/bin/python -m pip install --no-index --find-links "$BASE/wheels" -r "$BASE/requirements.lock"
@@ -29,7 +31,9 @@ s=Settings(**json.loads(p.read_text())).check()
 print(ipaddress.IPv4Address(s.db_host))
 PY
 )
-[[ -L /opt/dnf-gm/current ]] && ln -sfn "$(readlink -f /opt/dnf-gm/current)" /opt/dnf-gm/previous
+if [[ -L /opt/dnf-gm/current && "$(readlink -f /opt/dnf-gm/current)" != "$BASE" ]]; then
+ ln -sfn "$(readlink -f /opt/dnf-gm/current)" /opt/dnf-gm/previous
+fi
 ln -sfn "$BASE" /opt/dnf-gm/.current-next
 mv -Tf /opt/dnf-gm/.current-next /opt/dnf-gm/current
 install -d -m 755 /var/lib/dnf-gm /etc/systemd/system/dnf-gm.service.d
