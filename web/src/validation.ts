@@ -7,7 +7,7 @@ export function assertValid(fields:FieldErrors){if(Object.keys(fields).length)th
 export function itemErrors(items:any[],prefix:string):FieldErrors{
  const errors:FieldErrors={}
  if(!items.length||items.length>20)errors[prefix+'-items']='请添加1至20条附件，再继续操作。'
- items.forEach((item,index)=>{if(!Number.isInteger(item.quantity)||item.quantity<1||item.quantity>1000000||(item.stack_limit&&item.quantity>item.stack_limit)||(item.category==='equipment'&&item.quantity!==1))errors[prefix+'-quantity-'+index]='请核对物品 #'+item.id+' 的数量和堆叠上限（1–'+(item.category==='equipment'?1:item.stack_limit||1000000)+'）。'})
+ items.forEach((item,index)=>{const max=item.quantity_unlimited&&item.quantity_limit_source==='maintenance-trial'?2147483647:1000000;if(!Number.isInteger(item.quantity)||item.quantity<1||item.quantity>max||(item.stack_limit&&item.quantity>item.stack_limit)||(item.category==='equipment'&&item.quantity!==1))errors[prefix+'-quantity-'+index]='请核对物品 #'+item.id+' 的数量和堆叠上限（1–'+(item.category==='equipment'?1:item.stack_limit||max)+'）。'})
  return errors
 }
 export function operationErrors(data:{action:string,account:any,delta:number,reason:string,message:string,roleValid:boolean,items:any[],gold?:number}):FieldErrors{

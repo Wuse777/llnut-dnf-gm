@@ -5,6 +5,7 @@ from pathlib import Path
 import sqlite3
 import time
 from fastapi import HTTPException
+from .limits import MAIL_ITEM_QUANTITY_MAX
 
 
 def snapshot(settings):
@@ -73,13 +74,13 @@ class Catalog:
         item = dict(row)
         limit = (limits or {}).get(item['id'])
         if limit:
-            item.update(indexed_stack_limit=item['stack_limit'], stack_limit=limit['stack_limit'],
-                        quantity_limit_source='maintenance-trial')
+            item.update(indexed_stack_limit=item['stack_limit'], stack_limit=limit['stack_limit'] or MAIL_ITEM_QUANTITY_MAX,
+                        quantity_limit_source='maintenance-trial', quantity_unlimited=limit['stack_limit'] is None)
         path = item.get('source_path', '').lower()
         unsupported_reason = ''
         if item['category'] not in ('equipment','material','consumable') or any(x in path for x in ('avatar','creature','pet/')):
             unsupported_reason = '特殊类型尚未适配，不能手动开放'
-        elif not 1 <= item['stack_limit'] <= 1000000:
+        elif not 1 <= item['stack_limit'] <= (MAIL_ITEM_QUANTITY_MAX if limit and item['quantity_unlimited'] else 1000000):
             unsupported_reason = '堆叠上限未知或超出支持范围，不能手动开放'
         elif not 0 <= item['durability'] <= 65535:
             unsupported_reason = '耐久超出当前邮件字段范围，不能手动开放'
@@ -93,7 +94,8 @@ class Catalog:
         why = (unsupported_reason if not supported
                else (override['reason'] if override else '原索引元数据审核允许试发；尚无逐项客户端验证记录' if enabled else '默认禁止；可由管理员预览后开放试发'))
         if limit:
-            why += f"；PVF未声明堆叠上限，维护试发上限{limit['stack_limit']}：{limit['reason']}；客户端未验证"
+            cap_label = '无策略上限（数据库数量字段最大2147483647）' if item['quantity_unlimited'] else str(limit['stack_limit'])
+            why += f"；PVF未声明堆叠上限，维护试发数量{cap_label}：{limit['reason']}；客户端未验证"
         return {**item, 'allowed':int(enabled), 'supported':supported, 'policy_state':state,
                 'policy_reason':why, 'verification_evidence':evidence,
                 'sendable':bool(enabled), 'metadata_reviewed':bool(item['reviewed'])}
@@ -128,11 +130,11 @@ class Catalog:
             where = ["(?='' OR instr(name,?)>0 OR CAST(id AS TEXT)=?)", "(?='' OR category=?)"]
             args = [q,q,q,category,category]
             supported = "(category IN ('equipment','material','consumable') AND stack_limit BETWEEN 1 AND 1000000 AND durability BETWEEN 0 AND 65535 AND (category<>'equipment' OR stack_limit=1) AND instr(lower(source_path),'avatar')=0 AND instr(lower(source_path),'creature')=0 AND instr(lower(source_path),'pet/')=0)"
-            # Only validated numeric maintenance values enter this CASE; no
+            # Only validated numeric maintenance ids enter this clause; no
             # per-row Python callbacks or scans on the constrained server.
             if limits:
-                cap = '(CASE id ' + ' '.join(f"WHEN {int(i)} THEN {int(p['stack_limit'])}" for i,p in limits.items()) + ' ELSE stack_limit END)'
-                supported = supported.replace('stack_limit BETWEEN', cap+' BETWEEN')
+                ids = ','.join(str(int(i)) for i in limits)
+                supported = supported.replace('stack_limit BETWEEN 1 AND 1000000', '(stack_limit BETWEEN 1 AND 1000000 OR id IN ('+ids+'))')
             def in_set(ids, negate=False):
                 if not ids:
                     return '1' if negate else '0', []

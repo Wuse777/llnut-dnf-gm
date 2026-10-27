@@ -1,5 +1,5 @@
 from typing import Literal
-from .limits import MAIL_GOLD_MAX
+from .limits import MAIL_GOLD_MAX, MAIL_ITEM_QUANTITY_MAX
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 
@@ -15,7 +15,7 @@ class Login(Model):
 
 class Attachment(Model):
     id: StrictInt = Field(ge=1, le=4294967295)
-    quantity: StrictInt = Field(ge=1, le=1000000)
+    quantity: StrictInt = Field(ge=1, le=MAIL_ITEM_QUANTITY_MAX)
 
 
 class Preview(Model):

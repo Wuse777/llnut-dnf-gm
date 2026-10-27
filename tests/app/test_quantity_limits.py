@@ -77,3 +77,19 @@ def test_quantity_trial_sql_and_streaming_filters_agree(env):
                 result=catalog.search(**filters)
                 assert result['total']==len(expected)
                 assert [i['id'] for i in result['items']]==expected
+
+
+def test_unlimited_single_trial_uses_signed_int_storage_bound_only(env):
+    client, settings, db, app=env
+    add_items(settings,1);configure(settings,None);apply(client,item_id=992000)
+    item=client.get('/dnf-gm/api/v1/catalog?q=992000').json()['items'][0]
+    assert item['quantity_unlimited'] and item['stack_limit']==2147483647
+    assert client.get('/dnf-gm/api/v1/catalog?allowed_only=1').json()['total']==3
+    assert mail(client,[{'id':992000,'quantity':2147483648}]).status_code==422
+    assert mail(client,[{'id':990002,'quantity':1000001}]).status_code==422
+    for count in (1000001,2147483647):
+        preview=mail(client,[{'id':992000,'quantity':count}]);assert preview.status_code==200,preview.text
+        result=confirm(client,preview.json()['operation_id'],uuid.uuid4().hex);assert result.status_code==200,result.text
+    with db.connect() as con,con.cursor() as cursor:
+        cursor.execute('SELECT add_info FROM taiwan_cain_2nd.postal ORDER BY postal_id')
+        assert [row['add_info'] for row in cursor.fetchall()]==[1000001,2147483647]

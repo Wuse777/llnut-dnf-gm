@@ -53,7 +53,8 @@ class Settings:
                     or not isinstance(entry, dict) or set(entry) != {'pvf_sha256', 'stack_limit', 'reason'}
                     or entry['pvf_sha256'] != self.pvf_sha256 or len(self.pvf_sha256) != 64
                     or any(c not in '0123456789abcdef' for c in self.pvf_sha256)
-                    or type(entry['stack_limit']) is not int or not 1 <= entry['stack_limit'] <= 1000000
+                    or (entry['stack_limit'] is not None and
+                        (type(entry['stack_limit']) is not int or not 1 <= entry['stack_limit'] <= 1000000))
                     or not isinstance(entry['reason'], str) or not 1 <= len(entry['reason'].strip()) <= 200):
                 raise ValueError('Invalid PVF-bound mail stack limit')
         return self

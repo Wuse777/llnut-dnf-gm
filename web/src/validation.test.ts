@@ -5,6 +5,12 @@ it('honors the effective maintenance trial cap without claiming client verificat
  expect(itemErrors([item],'mail')).toEqual({})
  expect(itemErrors([{...item,quantity:1001}],'mail')['mail-quantity-0']).toContain('1–1000')
 })
+it('only an explicit unlimited maintenance trial can exceed the ordinary ceiling',()=>{
+ const item={id:7,category:'material',stack_limit:2147483647,quantity_limit_source:'maintenance-trial',quantity_unlimited:true,quantity:2147483647}
+ expect(itemErrors([item],'mail')).toEqual({})
+ expect(itemErrors([{...item,quantity:2147483648}],'mail')['mail-quantity-0']).toBeTruthy()
+ expect(itemErrors([{...item,quantity_unlimited:false,quantity:1000001}],'mail')['mail-quantity-0']).toBeTruthy()
+})
 it('collects every missing operation field rather than stopping at the first',()=>{
  const errors=operationErrors({action:'mail',account:null,delta:1,reason:'  ',message:'GM',roleValid:false,items:[]})
  expect(Object.keys(errors)).toEqual(['mail-recipient','mail-items','operation-reason'])

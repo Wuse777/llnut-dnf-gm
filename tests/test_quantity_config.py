@@ -17,3 +17,9 @@ def test_defaults_do_not_relax_any_item_and_valid_trial_requires_explicit_id():
     assert settings.check() is settings
     settings.mail_stack_limits['07']=settings.mail_stack_limits.pop('7')
     with pytest.raises(ValueError):settings.check()
+
+
+def test_explicit_null_means_no_policy_cap_but_requires_storage_bounds():
+    settings=Settings(db_password='fixture',secret='s'*64,pvf_sha256='a'*64,
+        mail_stack_limits={'7':dict(pvf_sha256='a'*64,stack_limit=None,reason='explicit unbounded trial')})
+    assert settings.check() is settings
