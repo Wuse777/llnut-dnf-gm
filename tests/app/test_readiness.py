@@ -20,4 +20,4 @@ def test_readiness_exposes_degraded_collector_without_breaking_health(env, state
     assert client.get(P + '/health').status_code == 200
     result = client.get(P + '/ready')
     assert result.status_code == (200 if state == 'healthy' else 503)
-    if state == 'healthy': assert result.json()['version'] == '0.2.1'
+    if state == 'healthy': assert result.json()['version'] == '0.2.2'

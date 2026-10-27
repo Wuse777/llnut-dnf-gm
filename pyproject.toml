@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dnf-gm"
-version = "0.2.1"
+version = "0.2.2"
 description = "Lightweight Chinese DNF GM console and compatibility laboratory"
 readme = "README.md"
 license = {file = "LICENSE"}

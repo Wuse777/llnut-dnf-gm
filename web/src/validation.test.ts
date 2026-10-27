@@ -1,5 +1,10 @@
 import {it,expect} from 'vitest'
 import {operationErrors,giftErrors,itemErrors,serverFieldErrors,assertValid,FormValidationError} from './validation'
+it('honors the effective maintenance trial cap without claiming client verification',()=>{
+ const item={id:7,category:'material',stack_limit:1000,indexed_stack_limit:0,quantity_limit_source:'maintenance-trial',quantity:1000}
+ expect(itemErrors([item],'mail')).toEqual({})
+ expect(itemErrors([{...item,quantity:1001}],'mail')['mail-quantity-0']).toContain('1–1000')
+})
 it('collects every missing operation field rather than stopping at the first',()=>{
  const errors=operationErrors({action:'mail',account:null,delta:1,reason:'  ',message:'GM',roleValid:false,items:[]})
  expect(Object.keys(errors)).toEqual(['mail-recipient','mail-items','operation-reason'])

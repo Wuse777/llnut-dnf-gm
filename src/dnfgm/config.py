@@ -23,6 +23,7 @@ class Settings:
     image_digest: str = ''
     pvf_sha256: str = ''
     write_approvals: dict = field(default_factory=dict)
+    mail_stack_limits: dict = field(default_factory=dict)
 
     def check(self):
         if len(self.secret) < 32 or not self.db_password:
@@ -44,6 +45,17 @@ class Settings:
         for action in self.writes:
             if self.write_approvals.get(action) is not True:
                 raise ValueError('Write capability has no explicit activation record')
+        if not isinstance(self.mail_stack_limits, dict) or len(self.mail_stack_limits) > 100:
+            raise ValueError('At most 100 explicit mail stack limits allowed')
+        for item_id, entry in self.mail_stack_limits.items():
+            if (not isinstance(item_id, str) or not item_id.isascii() or not item_id.isdigit()
+                    or not 1 <= int(item_id) <= 4294967295 or str(int(item_id)) != item_id
+                    or not isinstance(entry, dict) or set(entry) != {'pvf_sha256', 'stack_limit', 'reason'}
+                    or entry['pvf_sha256'] != self.pvf_sha256 or len(self.pvf_sha256) != 64
+                    or any(c not in '0123456789abcdef' for c in self.pvf_sha256)
+                    or type(entry['stack_limit']) is not int or not 1 <= entry['stack_limit'] <= 1000000
+                    or not isinstance(entry['reason'], str) or not 1 <= len(entry['reason'].strip()) <= 200):
+                raise ValueError('Invalid PVF-bound mail stack limit')
         return self
 
 

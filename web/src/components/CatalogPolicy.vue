@@ -33,7 +33,7 @@ async function query(){
   <div class="catalog-policy">
    <p v-if="item"><b>{{item.name}}</b> <span class="mono">#{{item.id}}</span><small class="cell-note">{{item.policy_reason}}</small></p>
    <template v-else><p><b>作用于完整筛选结果，不仅是当前页。</b></p><dl class="character-facts"><div><dt>名称或编号</dt><dd>{{filters.q||'不限'}}</dd></div><div><dt>物品类型</dt><dd>{{categories[String(filters.category)]||'所有类型（仅支持普通物品）'}}</dd></div><div><dt>发放状态</dt><dd>{{filters.allowed_only?'仅可发放':'全部状态'}}</dd></div></dl></template>
-   <p class="field-hint">开放仅表示“允许试发、未验证”。原19项只做过元数据审核，也不冒充客户端已验证。特殊类型、未知堆叠上限不能开放；版本、数量与20条附件限制仍然生效。</p>
+   <p class="field-hint">开放仅表示“允许试发、未验证”。原审核项也不冒充客户端已验证。特殊类型禁止；缺失堆叠上限仅能使用维护者逐项配置的试发上限。版本、数量与20条附件限制仍然生效。</p>
    <template v-if="!preview">
     <label>变更方式<select v-model="enabled" :disabled="busy" aria-label="策略变更方式"><option :value="true">允许试发（未验证）</option><option :value="false">禁止发放</option></select></label>
     <label for="policy-reason">操作原因 <i class="required-tag">必填</i></label><input id="policy-reason" v-model="reason" maxlength="200" :disabled="busy" :aria-invalid="!!reasonError" aria-describedby="policy-reason-error" placeholder="例如：开放普通材料用于活动试发" @input="reasonError=''" @keydown.enter.prevent="makePreview">
