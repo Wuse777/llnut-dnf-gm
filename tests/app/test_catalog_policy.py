@@ -16,7 +16,7 @@ def add_items(s,n=65):
         c.execute("INSERT INTO items VALUES(992000,'上限未知','material',1,0,0,0,0,'stackable/unknown')")
 
 
-def policy(c,enabled=True,item_id=None,filters=None,reason='隔离环境策略验收'):
+def policy(c,enabled=False,item_id=None,filters=None,reason='隔离环境策略验收'):
     return c.post(P+'/catalog/policy/preview',json={'enabled':enabled,'item_id':item_id,'filters':filters or {},'reason':reason})
 
 
@@ -35,15 +35,16 @@ def test_original_items_are_trial_not_client_verified(env):
     d=c.get(P+'/catalog').json();assert d['total']==3
     by={i['id']:i for i in d['items']}
     assert by[990001]['policy_state']=='trial'
-    assert by[990001]['verification_evidence']=='' and by[990003]['policy_state']=='blocked'
-    assert by[990003]['supported'] is False
+    assert by[990001]['verification_evidence']=='' and by[990003]['policy_state']=='trial'
+    assert by[990003]['supported'] is True
     assert c.get(P+'/catalog?state=verified').json()['total']==0
-    assert c.get(P+'/catalog?allowed_only=1').json()['total']==2
+    assert c.get(P+'/catalog?allowed_only=1').json()['total']==3
 
 
 def test_enable_unreviewed_is_trial_mail_template_accept_it(env):
     c,s,db,app=env;add_items(s)
     apply(c,item_id=991000)
+    apply(c,enabled=True,item_id=991000)
     i=c.get(P+'/catalog?q=991000').json()['items'][0]
     assert i['sendable'] and not i['reviewed'] and i['policy_state']=='trial'
     r=mail(c,[{'id':991000,'quantity':5}]);assert r.status_code==200,r.text
@@ -64,23 +65,23 @@ def test_full_filter_batch_not_current_page_and_idempotent(env):
     a=confirm(c,op,key);assert a.status_code==200,a.text
     assert confirm(c,op,key).json()==a.json()
     assert confirm(c,op,uuid.uuid4().hex).status_code==409
-    d=c.get(P+'/catalog?allowed_only=1&category=material&page=2').json()
-    assert len(d['items'])==16 and d['total']==66
+    d=c.get(P+'/catalog?state=blocked&category=material&page=2').json()
+    assert len(d['items'])==15 and d['total']==65
     assert scalar(db,'SELECT COUNT(*) FROM dnf_gm.catalog_policy_items')==65
     assert scalar(db,'SELECT COUNT(*) FROM dnf_gm.audit')==1
     assert scalar(db,'SELECT COUNT(*) FROM taiwan_cain_2nd.postal')==0
 
 
-@pytest.mark.parametrize('item_id',[990003,992000,123456])
-def test_special_unknown_cap_unknown_id_cannot_enable(env,item_id):
+@pytest.mark.parametrize('item_id',[123456])
+def test_unknown_id_cannot_change_policy(env,item_id):
     c,s,db,app=env;add_items(s)
     assert policy(c,item_id=item_id).status_code==422
     assert scalar(db,'SELECT COUNT(*) FROM dnf_gm.catalog_policy_items')==0
 
 
-def test_batch_skips_special_and_noop(env):
+def test_batch_includes_every_type_and_noop(env):
     c,s,db,app=env;add_items(s,1)
-    p=policy(c).json()['preview'];assert p['matched']==5 and p['skipped']==2 and p['affected']==1 and p['unchanged']==2
+    p=policy(c).json()['preview'];assert p['matched']==5 and p['skipped']==0 and p['affected']==5 and p['unchanged']==0
     apply(c)
     assert policy(c).status_code==422
     assert not c.get(P+'/catalog?q=992000').json()['items'][0]['sendable']
@@ -109,7 +110,7 @@ def test_pvf_isolation_and_stale_snapshot(env):
     c,s,db,app=env;add_items(s,1)
     apply(c,item_id=991000)
     with sqlite3.connect(s.catalog_file) as sc:sc.execute("UPDATE metadata SET value=? WHERE key='pvf_sha256'",('b'*64,))
-    assert not c.get(P+'/catalog?q=991000').json()['items'][0]['sendable']
+    assert c.get(P+'/catalog?q=991000').json()['items'][0]['sendable']
     assert policy(c,item_id=991000).status_code==409
     with sqlite3.connect(s.catalog_file) as sc:sc.execute("UPDATE metadata SET value=? WHERE key='pvf_sha256'",('a'*64,))
     status=Path(s.status_file);d=json.loads(status.read_text());d['collected_at']=time.time()-50;status.write_text(json.dumps(d))
@@ -148,7 +149,7 @@ def test_policy_guards_reason_csrf_reauth_expiry_and_key_conflict(env):
     with db.connect() as con,con.cursor() as q:q.execute('UPDATE dnf_gm.sessions SET authenticated_at=0');con.commit()
     assert policy(c,item_id=990001).status_code==403
     c.post(P+'/auth/reauth',json={'username':'admin','password':'fixture-password-no-production'})
-    op=policy(c,item_id=990001).json()['operation_id']
+    op=policy(c,item_id=990001,enabled=True).json()['operation_id']
     with db.connect() as con,con.cursor() as q:q.execute('UPDATE dnf_gm.operations SET expires_at=0 WHERE operation_id=%s',(op,));con.commit()
     assert confirm(c,op,uuid.uuid4().hex).status_code==409
     c.cookies.clear();assert c.get(P+'/catalog').status_code==401
@@ -161,7 +162,7 @@ def test_literal_filters_and_changed_items_preserve_bounds(env):
     assert mail(c,[{'id':991000,'quantity':101}]).status_code==422
     assert mail(c,[{'id':990001,'quantity':2}]).status_code==422
     assert mail(c,[{'id':991000,'quantity':1}]*21).status_code==422
-    assert mail(c,[{'id':990003,'quantity':1}]).status_code==422
+    assert mail(c,[{'id':123456,'quantity':1}]).status_code==422
 
 
 def test_policy_lock_wait_refuses_partial_writes(env):
@@ -231,7 +232,7 @@ def test_verification_needs_separate_evidence_not_web_switch(env):
     assert row['policy_state']=='verified' and row['id']==990001
     apply(c,enabled=False,item_id=990001)
     assert c.get(P+'/catalog?q=990001').json()['items'][0]['policy_state']=='blocked'
-    apply(c,item_id=990001)
+    apply(c,item_id=990001,enabled=True)
     assert c.get(P+'/catalog?q=990001').json()['items'][0]['policy_state']=='verified'
 
 

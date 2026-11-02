@@ -92,7 +92,7 @@ ssh -N -L 8765:127.0.0.1:8765 <SSH用户>@<你的主机>
 
 以上编号和摘要均为占位，不能直接复制使用。先私密备份原配置和管理策略，填写实际值，通过 `Settings.check()` 后仅重启GM。再在物品索引精确搜索编号，核对名称、维护上限和原因，按单项预览/确认允许试发；不要批量修改所有物品。维护上限可为1至1,000,000整数；显式设为 `null` 表示取消该项的策略数量上限，此时仅受邮件数量字段有符号INT最大值2,147,483,647约束（不是客户端容量保证）。最多100项；本身不赋予发放资格，不改变其他物品策略，也不会发送邮件。
 
-原索引仍只读；接口保留 `indexed_stack_limit` 和 `quantity_limit_source=maintenance-trial`，返回的有效 `stack_limit` 用于页面、礼包、预览与实际确认。维护项始终标为未验证试发，维护者指定的数字不代表客户端实际堆叠能力。修改上限、原因或移除配置后，旧邮件预览必须重新核对；删除配置并重启GM可恢复该项缺失上限时的禁止状态。更换PVF前必须同时移除或重新审核相关配置，否则配置校验拒绝启动。没有数据库迁移或新增权限。
+原索引仍只读；接口保留 `indexed_stack_limit` 和 `quantity_limit_source=maintenance-trial`，返回的有效 `stack_limit` 用于页面、礼包、预览与实际确认。维护项始终标为未验证试发，维护者指定的数字不代表客户端实际堆叠能力。修改上限、原因或移除配置后，旧邮件预览必须重新核对；删除配置并重启GM可恢复该项每条限1个的默认上限。更换PVF前必须同时移除或重新审核相关配置，否则配置校验拒绝启动。没有数据库迁移或新增权限。
 
 ## 6. 可选 HTTPS
 
@@ -125,3 +125,19 @@ PYTHONPATH=/opt/dnf-gm/current/src /opt/dnf-gm/venv/bin/python \
 ```
 
 授权不会激活功能；仍需私有配置同时添加 `writes` 中的 `equipment-unlock` 和相应 `write_approvals=true`，再只重启GM。不适配的服务器保持关闭。10亿金币/新解锁预览可能不被旧代码理解，跨版本回滚前保持GM停止、核对未确认操作，不能直接以旧版重新开放写入。
+
+
+## 升级至0.3.0：全物品与商城积分
+
+先备份管理库、现有列权限、索引和私有配置，并创建维护禁止恢复标记，停止GM。使用新版本代码在维护窗口执行：
+
+```bash
+/opt/dnf-gm/venv/bin/python deploy/upgrade-rewards.py --container YOUR_CONTAINER --mysql-port 4000 --db-account-host YOUR_EXACT_SOURCE_IP
+/opt/dnf-gm/venv/bin/python tools/enrich_catalog_creatures.py /private/Script.pvf /var/lib/dnf-gm/catalog.sqlite /private/catalog-rewards.sqlite
+```
+
+占位参数须替换为当前部署的值。升级脚本只追加积分、时装和宠物的列级权限，并执行003管理库迁移：首次将既有禁止策略统一开放，再次运行保留此后手动停用。无游戏表DDL，不发放任何奖励。索引工具校验PVF摘要，补充宠物和宠物装备的存储类型；将输出文件以原索引所有者和只读权限安装到配置的catalog_file，再原子切换release并启动GM。全新索引已包含该元数据。
+
+`writes`及`write_approvals`中的`currency`同时控制点券、代币券和积分；`mail`控制所有类型邮件。原有测试UID、PVF及资源门禁继续生效。恢复后先核对健康版本0.3.0、完整索引与可发放总数、账号积分和邮件预览。时装、宠物、积分与大额领取尚需真实客户端验收。
+
+回退应用时同时恢复原索引和catalog_policy_items/catalog_policy_state/schema_versions的管理库备份；保留或按授权备份撤销新增列权限。回退代码不会撤回已经确认的奖励。

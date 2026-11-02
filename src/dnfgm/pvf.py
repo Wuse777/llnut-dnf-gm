@@ -3,7 +3,7 @@
 Independent implementation of the PVF word-rotation format: XOR with file CRC
 and 0x81a79011, rotate each little-endian 32-bit word right by six. Format
 reference (not vendored): Zageku/DNF_pvf_python @ 8b01148bb93c0ddf47d0b35bd222646be039084d.
-Bounds are checked; unknown token/string constructs never gain mailing rights.
+Bounds are checked; all extracted items are available for mailing.
 """
 from array import array
 from functools import lru_cache
@@ -141,7 +141,7 @@ def job_metadata(reader):
 
 
 def build_index(pvf_path, output, encoding='gbk', review_path=None):
-    """Only explicitly reviewed ordinary items gain mailing permission.
+    """Extract all indexed items; preserve explicitly reviewed ordinary items gain mailing permission.
 
     Review JSON maps id to {category,stack_limit,durability}. The extraction
     provides evidence, not an automatic declaration that a special item is safe.
@@ -162,6 +162,7 @@ def build_index(pvf_path, output, encoding='gbk', review_path=None):
         c.executemany('INSERT INTO metadata VALUES(?,?)',[('pvf_sha256',sha),('encoding',encoding),('format','dnfgm-catalog-v1')])
         c.execute('INSERT INTO metadata VALUES(?,?)',('jobs',json.dumps(job_metadata(r),ensure_ascii=False)))
         total,failed,allowed=0,0,0
+        creature_types = {}
         for prefix,lst in [('equipment','equipment/equipment.lst'),('stackable','stackable/stackable.lst')]:
             for item_id,relative in r.mapping(lst):
                 if not isinstance(relative,str):continue
@@ -180,11 +181,14 @@ def build_index(pvf_path, output, encoding='gbk', review_path=None):
                     manifest=approved.get(str(item_id))
                     permitted=bool(manifest and category in ('equipment','material','consumable') and manifest['category']==category and manifest['stack_limit']==cap and manifest.get('durability',0)==durability and cap>=1)
                     if manifest and not permitted:raise ValueError('Review mismatch')
-                    c.execute('INSERT INTO items VALUES(?,?,?,?,?,?,?,?,?)',(item_id,name,category,integer('[minimum level]'),max(0,cap),max(0,durability),int(permitted),int(permitted),path))
+                    c.execute('INSERT INTO items VALUES(?,?,?,?,?,?,?,?,?)',(item_id,name,category,integer('[minimum level]'),max(0,cap),max(0,durability),1,int(permitted),path))
+                    if prefix == 'equipment' and any(word in path for word in ('creature','pet/')):
+                        creature_types[str(item_id)] = 0 if integer('[sub type]') == 1 else 1
                     total+=1;allowed+=int(permitted)
                 except (ValueError,KeyError,UnicodeError,sqlite3.IntegrityError):
                     failed+=1
         c.execute('INSERT INTO metadata VALUES(?,?)',('extraction_failures',str(failed)))
+        c.execute('INSERT INTO metadata VALUES(?,?)',('creature_types',json.dumps(creature_types)))
         c.commit()
         if total==0:raise ValueError('Empty index')
         return {'pvf_sha256':sha,'items':total,'extraction_failures':failed,'reviewed_mailable':allowed}

@@ -25,3 +25,13 @@ it('shows trial status and blocked reason, trial items with reviewed=0 join mail
 it('batch uses last applied filters, not unsubmitted edits or current page, and refreshes catalogue after commit',async()=>{
  const {w,calls}=setup();await flushPromises();await click(w,'物品索引');await w.find('[aria-label="搜索条件"]').setValue('尚未提交的搜索');await click(w,'批量调整当前筛选（全部 125 项）');await w.find('#policy-reason').setValue('测试完整筛选');await click(w,'预览影响范围');const req=calls.find(c=>c.path.endsWith('/policy/preview'));expect(req.body.filters).toEqual({q:'',category:'',allowed_only:false});expect(req.body.filters.page).toBeUndefined();expect(w.text()).toContain('125');await click(w,'确认变更一次');expect(calls.filter(c=>c.path.includes('/catalog?')).length).toBe(2);expect(w.text()).toContain('尚未进行任何物品发放');w.unmount()
 })
+it('allows an indexed special item into the mail draft',async()=>{
+ const {w}=setup();await flushPromises()
+ const original=vi.mocked(fetch).getMockImplementation()!
+ vi.mocked(fetch).mockImplementation(async(url,opts)=>url.toString().includes('/catalog?')?new Response(JSON.stringify({total:1,items:[{id:13,name:'测试时装',category:'special',mail_kind:'avatar',single_item:true,stack_limit:1,sendable:true,supported:true,policy_state:'trial'}]})):original(url,opts))
+ await click(w,'物品索引');await click(w,'加入清单')
+ expect(w.text()).toContain('1 条附件已加入邮件草稿');await click(w,'前往邮件工作区 · 1 条附件 →')
+ expect(w.find('.queue-panel').text()).toContain('测试时装')
+ expect(w.find('[aria-label="物品数量 13"]').attributes('disabled')).toBeDefined()
+ w.unmount()
+})

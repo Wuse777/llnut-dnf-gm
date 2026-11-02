@@ -202,3 +202,29 @@ CREATE TABLE charac_stat (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 CREATE TABLE taiwan_cain_2nd.charac_item_lock_info (charac_no INT UNSIGNED PRIMARY KEY, item_lock_info BLOB) ENGINE=InnoDB;
+
+CREATE TABLE d_taiwan.member_miles (
+ m_id int NOT NULL PRIMARY KEY,
+ miles int NOT NULL DEFAULT 0,
+ daily_miles smallint NOT NULL DEFAULT 0
+) ENGINE=InnoDB;
+
+CREATE TABLE taiwan_cain_2nd.user_items (
+ ui_id int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ charac_no int NOT NULL DEFAULT 0,
+ it_id int NOT NULL DEFAULT 0,
+ jewel_socket blob NOT NULL,
+ expire_date datetime NOT NULL,
+ reg_date datetime NOT NULL,
+ obtain_from tinyint DEFAULT NULL,
+ stat tinyint unsigned NOT NULL DEFAULT 0
+) ENGINE=InnoDB;
+
+CREATE TABLE taiwan_cain_2nd.creature_items (
+ ui_id int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ charac_no int NOT NULL DEFAULT 0,
+ it_id int unsigned NOT NULL DEFAULT 0,
+ reg_date datetime NOT NULL,
+ stomach int unsigned NOT NULL DEFAULT 0,
+ creature_type tinyint NOT NULL DEFAULT 0
+) ENGINE=InnoDB;

@@ -48,7 +48,7 @@ def test_invalid_gold_rejected_at_api(env,gold):
     assert any(e['loc']==['body','gold'] for e in r.json()['detail'])
     assert rows(db)==[]
 
-@pytest.mark.parametrize('updates',[{'gold':0},{'charac_no':900002},{'gold':1000,'items':[{'id':990003,'quantity':1}]},{'action':'ban'},{'action':'currency','currency':'cera','delta':1}])
+@pytest.mark.parametrize('updates',[{'gold':0},{'charac_no':900002},{'gold':1000,'items':[{'id':12345,'quantity':1}]},{'action':'ban'},{'action':'currency','currency':'cera','delta':1}])
 def test_empty_wrong_owner_special_or_nonmail_gold_rejected(env,updates):
     c,s,db,app=env
     assert preview(c,**updates).status_code in (409,422)

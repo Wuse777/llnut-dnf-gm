@@ -11,7 +11,9 @@ from .limits import MAIL_GOLD_MAX
 from .character_detail import INFO_COLUMNS, ATTRIBUTES, decode_container, profession
 
 
-CURRENCIES = {'cera': ('cash_cera','cera'), 'cera_point': ('cash_cera_point','cera_point')}
+CURRENCIES = {'cera': ('taiwan_billing.cash_cera','cera','account',4294967295),
+              'cera_point': ('taiwan_billing.cash_cera_point','cera_point','account',4294967295),
+              'mileage': ('d_taiwan.member_miles','miles','m_id',2147483647)}
 OWNER = 'DNF_GM_WEB'
 
 
@@ -53,9 +55,11 @@ class Service:
             raise HTTPException(404, '账号不存在')
         cash = one(q, 'SELECT cera FROM taiwan_billing.cash_cera WHERE account=%s', (str(uid),))
         points = one(q, 'SELECT cera_point FROM taiwan_billing.cash_cera_point WHERE account=%s', (str(uid),))
+        mileage = one(q, 'SELECT miles FROM d_taiwan.member_miles WHERE m_id=%s', (uid,))
         online = one(q, 'SELECT login_status,m_channel_no AS channel FROM taiwan_login.login_account_3 WHERE m_id=%s', (uid,))
         return {**a, 'cera': cash['cera'] if cash else None,
-                'cera_point': points['cera_point'] if points else None, 'online': online}
+                'cera_point': points['cera_point'] if points else None,
+                'mileage': mileage['miles'] if mileage else 0, 'online': online}
 
     def overview(self):
         with self.db.connect() as c, c.cursor() as q:
@@ -72,9 +76,10 @@ class Service:
     def accounts(self, text, page, online=False):
         term = '%' + text.replace('\\', '\\\\').replace('%','\\%').replace('_','\\_') + '%'
         with self.db.connect() as c, c.cursor() as q:
-            sql = ('SELECT a.UID AS uid,a.accountname,c.cera,p.cera_point,l.login_status,l.m_channel_no AS channel '
+            sql = ('SELECT a.UID AS uid,a.accountname,c.cera,p.cera_point,COALESCE(m.miles,0) AS mileage,l.login_status,l.m_channel_no AS channel '
                    'FROM d_taiwan.accounts a LEFT JOIN taiwan_billing.cash_cera c ON c.account=CAST(a.UID AS CHAR) '
                    'LEFT JOIN taiwan_billing.cash_cera_point p ON p.account=CAST(a.UID AS CHAR) '
+                   'LEFT JOIN d_taiwan.member_miles m ON m.m_id=a.UID '
                    'LEFT JOIN taiwan_login.login_account_3 l ON l.m_id=a.UID '
                    'WHERE (%s=\'\' OR a.UID=%s OR a.accountname LIKE %s) ')
             if online:
@@ -100,7 +105,7 @@ class Service:
 
     def target(self, q, data, lock=False):
         a = self.account(q, data['uid'])
-        if data['action'] in ('mail', 'equipment-unlock'):
+        if data['action'] in ('mail', 'equipment-unlock') or data.get('charac_no'):
             if not data.get('charac_no'):
                 raise HTTPException(422, '必须明确指定目标角色')
             row = one(q, 'SELECT m_id AS uid,charac_no,charac_name,CAST(CONVERT(charac_name USING latin1) AS BINARY) AS client_name_bytes,delete_flag FROM taiwan_cain.charac_info WHERE charac_no=%s' + (' FOR UPDATE' if lock else ''), (data['charac_no'],))
@@ -200,7 +205,7 @@ class Service:
                                note='仅将选中申请设为到期；下次登录加载角色后由游戏处理，不代表装备已解锁')
             if action == 'currency':
                 before = a[data['currency']]
-                if before is None or not 0 <= before + data['delta'] <= 4294967295:
+                if before is None or not 0 <= before + data['delta'] <= CURRENCIES[data['currency']][3]:
                     raise HTTPException(422, '余额不足、缺失或超出字段范围')
                 preview.update(currency=data['currency'], before=before, after=before+data['delta'])
             if action == 'mail':
@@ -294,17 +299,25 @@ class Service:
                     raise HTTPException(409, '目标身份变化，重新预览')
                 result = {'operation_id':op,'uid':data['uid'],'action':action,'client_verified':False}
                 if action == 'currency':
-                    table,column = CURRENCIES[data['currency']]
-                    balance = one(q, f'SELECT {column} FROM taiwan_billing.{table} WHERE account=%s FOR UPDATE', (str(data['uid']),))
+                    table,column,identity,maximum = CURRENCIES[data['currency']]
+                    if data['currency'] == 'mileage':
+                        engine = one(q, "SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA='d_taiwan' AND TABLE_NAME='member_miles'")
+                        if not engine or engine['ENGINE'] != 'InnoDB':
+                            raise HTTPException(409, '积分表不支持事务，拒绝写入')
+                        # New accounts need no synthetic personal information;
+                        # only the game's minimal mileage row is initialized.
+                        q.execute('INSERT INTO d_taiwan.member_miles(m_id,miles,daily_miles) VALUES(%s,0,0) ON DUPLICATE KEY UPDATE m_id=VALUES(m_id)', (data['uid'],))
+                    balance = one(q, f'SELECT {column} FROM {table} WHERE {identity}=%s FOR UPDATE', (str(data['uid']),))
                     if not balance or balance[column] != preview['before']:
                         raise HTTPException(409, '余额变化，必须重新预览')
                     after = balance[column] + data['delta']
-                    if not 0 <= after <= 4294967295:
+                    if not 0 <= after <= maximum:
                         raise HTTPException(409, '余额不足或字段溢出')
-                    q.execute(f'UPDATE taiwan_billing.{table} SET {column}=%s,mod_date=UTC_TIMESTAMP() WHERE account=%s AND {column}=%s', (after,str(data['uid']),balance[column]))
+                    timestamp = '' if data['currency'] == 'mileage' else ',mod_date=UTC_TIMESTAMP()'
+                    q.execute(f'UPDATE {table} SET {column}=%s{timestamp} WHERE {identity}=%s AND {column}=%s', (after,str(data['uid']),balance[column]))
                     if q.rowcount != 1:
                         raise HTTPException(409, '条件更新未命中')
-                    result.update(currency=column,before=balance[column],after=after,state='database_committed_refresh_client')
+                    result.update(currency=data['currency'],before=balance[column],after=after,state='database_committed_refresh_client')
                 elif action == 'equipment-unlock':
                     q.execute("SELECT ENGINE FROM information_schema.TABLES WHERE (TABLE_SCHEMA='taiwan_cain_2nd' AND TABLE_NAME='charac_item_lock_info') OR (TABLE_SCHEMA='taiwan_login' AND TABLE_NAME='login_account_3')")
                     rows = q.fetchall()
@@ -339,10 +352,24 @@ class Service:
                     # Gold belongs to the letter, carried ONCE by its first postal row.
                     # A gold-only letter uses item_id/add_info/endurance=0, not a PVF coin item.
                     deliveries = rewards['items'] or [{'id':0,'quantity':0,'category':'gold','durability':0}]
+                    kinds = {item.get('mail_kind') for item in deliveries} & {'avatar','creature'}
+                    if kinds:
+                        tables = {'avatar':'user_items','creature':'creature_items'}
+                        for kind in kinds:
+                            engine = one(q, "SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA='taiwan_cain_2nd' AND TABLE_NAME=%s", (tables[kind],))
+                            if not engine or engine['ENGINE'] != 'InnoDB':
+                                raise HTTPException(409, '特殊物品存储表不支持事务，拒绝发放')
                     for index, item in enumerate(deliveries):
-                        equip = item['category'] == 'equipment'
-                        q.execute('INSERT INTO taiwan_cain_2nd.postal(occ_time,send_charac_name,receive_charac_no,item_id,add_info,endurance,gold,letter_id) VALUES(UTC_TIMESTAMP(),\'GM\',%s,%s,%s,%s,%s,%s)',
-                                  (data['charac_no'],item['id'],0 if equip else item['quantity'],item['durability'] if equip else 0,gold if index == 0 else 0,letter_id))
+                        kind = item.get('mail_kind', 'stackable')
+                        add_info = 0 if kind == 'equipment' else item['quantity']
+                        if kind == 'avatar':
+                            q.execute("INSERT INTO taiwan_cain_2nd.user_items(charac_no,it_id,jewel_socket,expire_date,reg_date,obtain_from,stat) VALUES(%s,%s,%s,'9999-12-31 00:00:00',UTC_TIMESTAMP(),1,2)", (data['charac_no'],item['id'],b'\0'*30))
+                            add_info = q.lastrowid
+                        elif kind == 'creature':
+                            q.execute('INSERT INTO taiwan_cain_2nd.creature_items(charac_no,it_id,reg_date,stomach,creature_type) VALUES(%s,%s,UTC_TIMESTAMP(),100,%s)', (data['charac_no'],item['id'],item['creature_type']))
+                            add_info = q.lastrowid
+                        q.execute('INSERT INTO taiwan_cain_2nd.postal(occ_time,send_charac_name,receive_charac_no,item_id,add_info,endurance,gold,letter_id,avata_flag,creature_flag) VALUES(UTC_TIMESTAMP(),\'GM\',%s,%s,%s,%s,%s,%s,%s,%s)',
+                                  (data['charac_no'],item['id'],add_info,item['durability'] if kind == 'equipment' else 0,gold if index == 0 else 0,letter_id,int(kind == 'avatar'),int(kind == 'creature')))
                         postal_ids.append(q.lastrowid)
                     result.update(letter_id=letter_id,postal_ids=postal_ids,items=rewards,gold=gold,template_id=data.get('template_id'),template_version=data.get('template_version'),state='database_delivered_not_claimed')
                 else:
@@ -436,7 +463,7 @@ class Service:
         with self.db.connect() as c, c.cursor() as q:
             summary, _ = self.catalog.selection(q,data)
             if not summary['affected']:
-                raise HTTPException(422, '没有需要变更的受支持物品；特殊类型或未知堆叠上限不能开放')
+                raise HTTPException(422, '没有需要变更的索引物品，请检查筛选条件及当前策略')
             op, t = uuid.uuid4().hex, int(time.time())
             fingerprint = hashlib.sha256(dump({'request':data,'preview':summary}).encode()).hexdigest()
             q.execute("INSERT INTO dnf_gm.operations(operation_id,session_hash,fingerprint,action,request_json,preview_json,status,created_at,expires_at) VALUES(%s,%s,%s,'catalog-policy',%s,%s,'preview',%s,%s)", (op,session_hash,fingerprint,dump(data),dump(summary),t,t+300))

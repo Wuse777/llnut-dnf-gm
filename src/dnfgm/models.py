@@ -22,7 +22,7 @@ class Preview(Model):
     action: Literal['currency', 'mail', 'ban', 'unban', 'equipment-unlock']
     uid: StrictInt = Field(ge=1, le=2147483647)
     charac_no: StrictInt | None = Field(default=None, ge=1, le=2147483647)
-    currency: Literal['cera', 'cera_point'] | None = None
+    currency: Literal['cera', 'cera_point', 'mileage'] | None = None
     delta: StrictInt | None = Field(default=None, ge=-1000000000, le=1000000000)
     reason: str = Field(min_length=1, max_length=200)
     items: list[Attachment] = Field(default_factory=list, max_length=20)

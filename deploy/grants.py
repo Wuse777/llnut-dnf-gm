@@ -5,6 +5,7 @@ import re
 def bootstrap_sql(config,ph):
     sql=(Path(__file__).resolve().parents[1]/'migrations/001.sql').read_text()
     sql += '\n'+(Path(__file__).resolve().parents[1]/'migrations/002-catalog-policy.sql').read_text()
+    sql += '\n'+(Path(__file__).resolve().parents[1]/'migrations/003-all-items.sql').read_text(encoding='utf-8')
     name=config.get('db_user','dnf_gm_app')
     host=config.get('db_account_host','127.0.0.1')
     if not re.fullmatch(r'[A-Za-z0-9_]{1,32}', name) or name.lower() in ('root','game'):
@@ -29,6 +30,7 @@ def bootstrap_sql(config,ph):
     sql += catalog_policy_sql(user)
     sql += mail_gold_sql(user)
     sql += equipment_unlock_sql(user)
+    sql += rewards_sql(user)
     grant('SELECT(m_id,login_status,m_channel_no)','taiwan_login.login_account_3')
     for table,col in [('cash_cera','cera'),('cash_cera_point','cera_point')]:
         grant(f'SELECT(account,{col}),UPDATE({col},mod_date)','taiwan_billing.'+table)
@@ -64,3 +66,10 @@ def mail_gold_sql(user="'dnf_gm_app'@'127.0.0.1'"):
 def equipment_unlock_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     # No inventory UPDATE or table-wide write permissions.
     return f'GRANT SELECT(charac_no,item_lock_info),UPDATE(item_lock_info) ON taiwan_cain_2nd.charac_item_lock_info TO {user};\n'
+
+
+def rewards_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return (f'GRANT SELECT(m_id,miles),INSERT(m_id,miles,daily_miles),UPDATE(m_id,miles) ON d_taiwan.member_miles TO {user};\n'
+            f'GRANT INSERT(charac_no,it_id,jewel_socket,expire_date,reg_date,obtain_from,stat) ON taiwan_cain_2nd.user_items TO {user};\n'
+            f'GRANT INSERT(charac_no,it_id,reg_date,stomach,creature_type) ON taiwan_cain_2nd.creature_items TO {user};\n'
+            f'GRANT INSERT(avata_flag,creature_flag) ON taiwan_cain_2nd.postal TO {user};\n')

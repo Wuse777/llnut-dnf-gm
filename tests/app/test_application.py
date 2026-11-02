@@ -107,7 +107,7 @@ def test_mail_atomic_and_results_not_claimed(env):
         assert q.fetchall()==[{'add_info':0,'endurance':20},{'add_info':20,'endurance':0}]
 
 
-@pytest.mark.parametrize('items',[ [{'id':990003,'quantity':1}], [{'id':990001,'quantity':2}], [{'id':990002,'quantity':100}], [{'id':12345,'quantity':1}] ])
+@pytest.mark.parametrize('items',[ [{'id':12345,'quantity':1}], [{'id':990001,'quantity':2}], [{'id':990002,'quantity':100}], [{'id':12345,'quantity':1}] ])
 def test_mail_restricts_special_and_quantity(env,items):
     assert mail(env[0],items).status_code==422
 
@@ -194,6 +194,10 @@ def test_actual_runtime_grants(env):
     path=Path(__file__).resolve().parents[2]/'deploy/grants.py'
     spec=importlib.util.spec_from_file_location('gm_grants',path);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
     client,s,rootdb,app=env
+    import sqlite3
+    with sqlite3.connect(s.catalog_file) as index:
+        index.execute("UPDATE items SET source_path='equipment/avatar/fixture.equ' WHERE id=990003")
+        index.execute("INSERT INTO items VALUES(990004,'fixture creature','special',1,0,0,0,0,'equipment/creature/fixture.equ')")
     pwd='a'*44
     sql=m.bootstrap_sql({'db_user':'dnf_gm_app','db_password':pwd},'$argon2id$v=19$m=1,t=1,p=1$c2FsdA$aGFzaA')
     sql=sql.replace("'dnf_gm_app'@'127.0.0.1'","'dnf_gm_grants_test'@'localhost'")
@@ -213,7 +217,7 @@ def test_actual_runtime_grants(env):
     limited.headers['X-CSRF-Token']=r.json()['csrf']
     for route in ('overview','accounts','characters','online','characters/900001','catalog'):
         r=limited.get('/dnf-gm/api/v1/'+route);assert r.status_code==200,r.text
-    for args in ({},{'action':'mail','charac_no':900001,'currency':None,'delta':None,'gold':1000,'items':[]},{'action':'mail','charac_no':900001,'currency':None,'delta':None,'items':[{'id':990002,'quantity':2}]},{'action':'ban','currency':None,'delta':None},{'action':'unban','currency':None,'delta':None}):
+    for args in ({},{'currency':'mileage'},{'action':'mail','charac_no':900001,'currency':None,'delta':None,'gold':1000,'items':[]},{'action':'mail','charac_no':900001,'currency':None,'delta':None,'items':[{'id':990002,'quantity':2}]},{'action':'mail','charac_no':900001,'currency':None,'delta':None,'items':[{'id':990003,'quantity':1},{'id':990004,'quantity':1}]},{'action':'ban','currency':None,'delta':None},{'action':'unban','currency':None,'delta':None}):
         r=preview(limited,**args);assert r.status_code==200,r.text
         r=confirm(limited,r.json()['operation_id'],key='runtime-grants-'+__import__('uuid').uuid4().hex)
         assert r.status_code==200,r.text
@@ -266,10 +270,10 @@ def test_catalog_allowed_filter_keeps_full_catalog_readable(env):
     all_items=c.get(P+'/catalog').json()['items']
     allowed=c.get(P+'/catalog?allowed_only=1').json()['items']
     assert len(all_items)==3
-    assert {i['id'] for i in allowed}=={990001,990002}
-    assert all(i['allowed'] and i['reviewed'] for i in allowed)
+    assert {i['id'] for i in allowed}=={990001,990002,990003}
+    assert all(i['allowed'] and i['sendable'] for i in allowed)
     assert c.get(P+'/catalog?allowed_only=1&category=material').json()['items'][0]['id']==990002
-    assert c.get(P+'/catalog?allowed_only=1&q=990003').json()['items']==[]
+    assert c.get(P+'/catalog?allowed_only=1&q=990003').json()['items'][0]['id']==990003
 
 
 def test_catalog_allowed_filter_is_read_only_and_requires_auth(env):

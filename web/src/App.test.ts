@@ -30,7 +30,7 @@ function testApp(){
   else if(/^\/characters\/\d+$/.test(path))d={character:{charac_no:Number(path.split('/').pop()),uid:3,charac_name:'测试测试',lev:1},account:{accountname:'gm'},profession:{name:'格斗家',base_name:'格斗家'},wealth:{state:'missing',gold:null},attributes:[],collected_at:1,catalog_state:'ok',equipment:{state:'missing',items:[]},backpack:{state:'missing',items:[]}}
   else if(path.startsWith('/characters?uid='))d={items:[{uid:3,charac_no:4,charac_name:'测试测试',delete_flag:0,lev:1}]}
   else if(path.startsWith('/characters?q='))d={items:[{uid:1,charac_no:2,charac_name:'deleted',delete_flag:1}]}
-  else if(path==='/operations/preview')d={operation_id:'a'.repeat(32),write_enabled:true,preview:{target:{uid:3,accountname:'gm'},action:'currency',before:1050,after:1051}}
+  else if(path==='/operations/preview')d={operation_id:'a'.repeat(32),write_enabled:true,preview:{target:{uid:3,accountname:'gm'},action:'currency',currency:body.currency,before:1050,after:1051}}
   else if(path.endsWith('/confirm'))d={operation_id:'a'.repeat(32),state:'database_committed_refresh_client',before:1050,after:1051}
   else if(path==='/operations/'+ 'a'.repeat(32))d={operation_id:'a'.repeat(32),status:'committed',action:'currency',preview:{target:{uid:3}},result:{currency:'cera',before:1050,after:1051}}
   else if(path.startsWith('/catalog?'))d={items:[{id:1000,name:'野草莓',category:'consumable',stack_limit:1000,allowed:1,reviewed:1}]}
@@ -44,6 +44,16 @@ function testApp(){
 }
 async function click(w:any,text:string){const b=w.findAll('button').find((b:any)=>(b.text()===text||b.find('.nav-text').exists()&&b.find('.nav-text').text()===text));expect(b,'button '+text).toBeTruthy();await b!.trigger('click');const form=b!.element.form;if(form&&b!.element.type==='submit')form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await flushPromises()}
 async function target(w:any){await flushPromises();await click(w,'账号与角色');await click(w,'管理 →')}
+it('offers mileage alongside both currencies and labels its preview',async()=>{
+ const {w,calls}=testApp();await target(w)
+ expect(w.find('.balance-strip').text()).toContain('积分')
+ await w.find('[data-testid="account-operations"] select').setValue('mileage')
+ await w.find('#operation-reason').setValue('发放商城积分')
+ await click(w,'生成预览 →')
+ expect(calls.find(c=>c.path==='/operations/preview')?.body.currency).toBe('mileage')
+ expect(w.find('.confirmation-details').text()).toContain('积分')
+ w.unmount()
+})
 it('invalidates preview on amount change and retains original result lookup',async()=>{
  const {w}=testApp();await target(w);await w.find('input[placeholder="必填，写入不可删除审计"]').setValue('测试');await click(w,'生成预览 →');expect(w.text()).toContain('确认操作预览');await w.find('input[step="1"]').setValue(2);expect(w.text()).not.toContain('确认操作预览');expect(w.text()).toContain('旧预览已失效');w.unmount()
 })
@@ -136,8 +146,8 @@ it('defaults mail to reviewed sendable items but lets catalog browse every item'
 it('mail can resolve a character directly while rejecting deleted recipient results',async()=>{
  const {w,calls}=testApp();await flushPromises();await click(w,'邮件发放');await w.find('[aria-label="收件人搜索类型"]').setValue('role');await w.find('[aria-label="查找收件账号"]').setValue('deleted');await click(w,'查找角色');expect(calls.at(-1)?.path).toBe('/characters?q=deleted&page=1');const result=w.find('.recipient-options button');expect(result.text()).toContain('已删除');expect(result.attributes('disabled')).toBeDefined();expect(w.find('.recipient-context').exists()).toBe(false);w.unmount()
 })
-it('does not treat allowed flag alone as reviewed permission to send',async()=>{
- const {w}=testApp();await flushPromises();const mocked=vi.mocked(fetch),original=mocked.getMockImplementation()!;mocked.mockImplementation(async(url,opts)=>url.toString().includes('/catalog?')?new Response(JSON.stringify({items:[{id:12,name:'未审核',allowed:1,reviewed:0,category:'consumable'}]})):original(url,opts));await click(w,'邮件发放');const itemButton=w.findAll('button').find(b=>b.text()==='不可发放');expect(itemButton?.attributes('disabled')).toBeDefined();expect(w.find('.queue-panel').text()).toContain('还没有添加物品');w.unmount()
+it('permits unreviewed indexed items when they are enabled',async()=>{
+ const {w}=testApp();await flushPromises();const mocked=vi.mocked(fetch),original=mocked.getMockImplementation()!;mocked.mockImplementation(async(url,opts)=>url.toString().includes('/catalog?')?new Response(JSON.stringify({items:[{id:12,name:'未审核',allowed:1,reviewed:0,category:'consumable'}]})):original(url,opts));await click(w,'邮件发放');const itemButton=w.findAll('button').find(b=>b.text()==='加入清单')!;expect(itemButton.attributes('disabled')).toBeUndefined();await itemButton.trigger('click');expect(w.find('.queue-panel').text()).toContain('未审核');w.unmount()
 })
 
 it('shows missing reason at the field and action, focuses it, and never calls preview',async()=>{

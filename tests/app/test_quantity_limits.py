@@ -18,15 +18,14 @@ def test_single_missing_cap_trial_keeps_other_policies_and_bounds(env):
     add_items(settings, 1)
     configure(settings)
     before=client.get('/dnf-gm/api/v1/catalog?allowed_only=1').json()['total']
-    assert before==2
-    apply(client,item_id=992000,reason='explicit single fixture item')
+    assert before==5
     item=client.get('/dnf-gm/api/v1/catalog?q=992000').json()['items'][0]
     assert item['sendable'] and item['stack_limit']==1000 and item['indexed_stack_limit']==0
     assert item['policy_state']=='trial' and not item['verification_evidence']
     assert item['quantity_limit_source']=='maintenance-trial'
-    assert client.get('/dnf-gm/api/v1/catalog?allowed_only=1').json()['total']==before+1
-    assert not client.get('/dnf-gm/api/v1/catalog?q=991000').json()['items'][0]['sendable']
-    assert not client.get('/dnf-gm/api/v1/catalog?q=990003').json()['items'][0]['sendable']
+    assert client.get('/dnf-gm/api/v1/catalog?allowed_only=1').json()['total']==before
+    assert client.get('/dnf-gm/api/v1/catalog?q=991000').json()['items'][0]['sendable']
+    assert client.get('/dnf-gm/api/v1/catalog?q=990003').json()['items'][0]['sendable']
     assert mail(client,[{'id':992000,'quantity':1001}]).status_code==422
     preview=mail(client,[{'id':992000,'quantity':1000}]);assert preview.status_code==200,preview.text
     result=confirm(client,preview.json()['operation_id'],uuid.uuid4().hex);assert result.status_code==200,result.text
@@ -45,15 +44,16 @@ def test_quantity_trial_never_bypasses_specials_or_pvf(env):
     with sqlite3.connect(settings.catalog_file) as index:
         index.execute('UPDATE items SET stack_limit=0 WHERE id=990003')
     from test_catalog_policy import policy
-    assert policy(client,item_id=990003).status_code==422
+    assert client.get('/dnf-gm/api/v1/catalog?q=990003').json()['items'][0]['stack_limit']==1
+    assert mail(client,[{'id':990003,'quantity':2}]).status_code==422
     settings.mail_stack_limits['992000']['pvf_sha256']='b'*64
-    assert policy(client,item_id=992000).status_code==422
+    assert client.get('/dnf-gm/api/v1/catalog?q=992000').json()['items'][0]['stack_limit']==1
+    assert mail(client,[{'id':992000,'quantity':2}]).status_code==422
 
 
 def test_cap_change_invalidates_pending_mail_and_verified_label(env):
     client, settings, db, app=env
     add_items(settings,1);configure(settings)
-    apply(client,item_id=992000)
     preview=mail(client,[{'id':992000,'quantity':500}]).json()['operation_id']
     settings.mail_stack_limits['992000']['stack_limit']=100
     assert confirm(client,preview,uuid.uuid4().hex).status_code in (409,422)
@@ -66,7 +66,7 @@ def test_cap_change_invalidates_pending_mail_and_verified_label(env):
 
 def test_quantity_trial_sql_and_streaming_filters_agree(env):
     client, settings, db, app=env
-    add_items(settings,1);configure(settings);apply(client,item_id=992000)
+    add_items(settings,1);configure(settings)
     catalog=app.state.service.catalog
     with db.connect() as con,con.cursor() as cursor,closing(catalog.connect()) as index:
         _,overrides=catalog.policy(cursor,settings.pvf_sha256)
@@ -81,10 +81,10 @@ def test_quantity_trial_sql_and_streaming_filters_agree(env):
 
 def test_unlimited_single_trial_uses_signed_int_storage_bound_only(env):
     client, settings, db, app=env
-    add_items(settings,1);configure(settings,None);apply(client,item_id=992000)
+    add_items(settings,1);configure(settings,None)
     item=client.get('/dnf-gm/api/v1/catalog?q=992000').json()['items'][0]
     assert item['quantity_unlimited'] and item['stack_limit']==2147483647
-    assert client.get('/dnf-gm/api/v1/catalog?allowed_only=1').json()['total']==3
+    assert client.get('/dnf-gm/api/v1/catalog?allowed_only=1').json()['total']==5
     assert mail(client,[{'id':992000,'quantity':2147483648}]).status_code==422
     assert mail(client,[{'id':990002,'quantity':1000001}]).status_code==422
     for count in (1000001,2147483647):

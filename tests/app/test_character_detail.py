@@ -129,14 +129,14 @@ def test_live_pvf_mismatch_is_displayed_as_unknown_labels(env):
     assert not d['equipment']['items'][0]['catalog_known']
 
 
-def test_readable_items_do_not_gain_mail_rights(env):
+def test_special_indexed_items_are_mailable(env):
     c,s,db=seed(env)
     with db.connect() as conn,conn.cursor() as q:
         q.execute('UPDATE taiwan_cain_2nd.inventory SET inventory=%s WHERE charac_no=900001',(blob(slot(990003,5,1)),));conn.commit()
     d=c.get(P+'/characters/900001').json()
     assert d['backpack']['items'][0]['name']=='特殊宠物'
     payload={'action':'mail','uid':900001,'charac_no':900001,'reason':'negative permission test','items':[{'id':990003,'quantity':1}]}
-    assert c.post(P+'/operations/preview',json=payload).status_code==422
+    assert c.post(P+'/operations/preview',json=payload).status_code==200
 
 
 def test_offline_profession_metadata_uses_pvf_not_guessed_map():
