@@ -291,3 +291,7 @@ sudo /opt/dnf-gm/venv/bin/python deploy/upgrade-economy.py \
 ## 可选独立健康告警
 
 维护者按[主动告警手册](ALERTS.md)安装独立`dnfgm-alert`观察器。渠道配置为`/etc/dnf-gm-alerts.json`，不开放原数据库凭据目录；普通安装默认不启用定时器。已有告警部署升级时重新运行`deploy/enable-alerts.sh`更新单元；回滚不含告警代码的旧版前先停用自身timer并保留状态。本地验证不代表生产通知/资源已验收。
+
+## 管理库备份与恢复证据
+
+按[备份手册](BACKUP-HEALTH.md)在人工安排的GM维护窗口内制作私有一致性快照，再在socket-only本地实验室实际恢复核对。`/var/lib/dnf-gm/backup-health.json`只包含脱敏证据；网页无备份下载或生产整库恢复。可选告警开关默认为false，不能替代备份生成或游戏库备份。应用新增`backup_health_file`可选配置，没有新增迁移、运行库权限或常驻数据库连接。

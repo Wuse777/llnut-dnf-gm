@@ -24,8 +24,9 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 def validate_config(cfg):
-    if set(cfg) - {'health_host', 'thresholds', 'webhook_url', 'webhook_token'}:
+    if set(cfg) - {'health_host', 'thresholds', 'webhook_url', 'webhook_token', 'backup_health_enabled'}:
         raise ValueError('Unknown notification configuration')
+    if type(cfg.get('backup_health_enabled',False)) is not bool:raise ValueError('Explicit backup health flag required')
     host = cfg.get('health_host')
     if not isinstance(host, str) or not re.fullmatch(r'[a-zA-Z0-9.-]+(?::[0-9]{1,5})?', host):
         raise ValueError('Explicit health Host header required')
@@ -102,7 +103,11 @@ def run_once(cfg, *, root=ROOT, status_path=STATUS, clock=time.time, probe=healt
             status = None
         gm_ok = probe(cfg)
         now = clock()
-        observe(state, observations(status, gm_ok, now, cfg['thresholds']), now)
+        backup=None
+        if cfg.get('backup_health_enabled',False):
+            from dnfgm.backup_health import read_health
+            backup=read_health('/var/lib/dnf-gm/backup-health.json',now)
+        observe(state, observations(status, gm_ok, now, cfg['thresholds'], backup), now)
         def persist(value):
             atomic(root / 'private.json', value)
             atomic(root / 'public.json', public_view(value, now), mode=0o644)

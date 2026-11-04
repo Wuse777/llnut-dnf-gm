@@ -28,5 +28,6 @@
   "upgrade_catalog_file": "",
   "upgrade_assets_dir": "",
   "upgrade_image_digest": "",
-  "alert_file": "/var/lib/dnf-gm/alerts/public.json"
+  "alert_file": "/var/lib/dnf-gm/alerts/public.json",
+  "backup_health_file": "/var/lib/dnf-gm/backup-health.json"
 }

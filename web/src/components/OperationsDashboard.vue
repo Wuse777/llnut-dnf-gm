@@ -3,6 +3,7 @@ import {ref,onMounted,onBeforeUnmount} from 'vue'
 import {api,uncertainMessage} from '../api'
 import ReleaseCleanup from './ReleaseCleanup.vue'
 import AlertHealth from './AlertHealth.vue'
+import BackupHealth from './BackupHealth.vue'
 const emit=defineEmits<{reauth:[]}>()
 const data=ref<any>(null),windowSize=ref('24h'),before=ref(0),pages=ref<number[]>([]),busy=ref(false),error=ref('')
 let timer:ReturnType<typeof setInterval>|undefined,alive=true,generation=0
@@ -44,6 +45,7 @@ onBeforeUnmount(()=>{alive=false;generation++;if(timer)clearInterval(timer)})
  <template v-if="data"><p :class="data.fresh?'field-hint':'warning'">{{data.message}} · 最后采集 {{timestamp(data.updated_at)}}</p><div class="metrics ops-current"><article v-for="(label,key) in labels" :key="key"><span>{{label.replace('峰值','使用率').replace('最低值','')}}</span><strong>{{number(data.current?.fresh?data.current[key]:null)}}</strong><small>{{units[key]}} · {{data.current?.fresh?'实时采集':'当前快照过期/未知'}}</small></article></div><p class="field-hint">监控健康门槛：{{data.current?.core_ok===true?'本次通过':data.current?.core_ok===false?'本次未通过':'未知'}}；快照 {{timestamp(data.current?.collected_at)}}。故障后GM可能停止，停止期间网页也可能无法打开；恢复后可回看持久记录。</p></template>
  </section>
  <AlertHealth/>
+ <BackupHealth/>
  <template v-if="data">
  <section class="panel"><div class="section-title"><h2>资源趋势</h2><span class="pill">{{data.coverage_samples??0}} / {{data.expected_samples??(windowSize==='24h'?1440:10080)}}分钟有记录</span></div><p class="field-hint">{{windowSize==='24h'?'5':'30'}}分钟聚合：CPU取峰值，内存/Swap/磁盘取最低可用量。缺口断开，不用零值或旧数据补齐；各图纵轴从0开始、独立缩放（CPU固定0–100%）。</p><p class="field-hint">有监控未就绪观测 {{healthMinutes('failed_samples')}} 分钟 · 采集状态未知 {{healthMinutes('unknown_samples')}} 分钟；不含完全未采样的时间。</p><div class="ops-trends"><article v-for="(label,key) in labels" :key="key"><h3>{{label}}</h3><p>{{range(key)}}</p><svg v-if="paths(key).length" viewBox="0 0 600 104" role="img" :aria-label="label+'趋势，'+range(key)"><line x1="0" y1="92" x2="600" y2="92"/><path v-for="(d,i) in paths(key)" :key="i" :d="d"/></svg><p v-else class="empty">还没有这一指标的历史数据</p><div class="ops-axis"><span>{{axisStart()}}</span><span>现在</span></div></article></div></section>
  <section class="panel"><h2>保护停机与恢复</h2><template v-if="data.protection"><p class="warning">最近记录：{{reasons[data.protection.reason]||data.protection.reason||'原因未知'}} · {{timestamp(data.protection.stopped_at)}}</p><p>自动恢复等待：{{data.protection.auto_recovery_pending===true?'是':'否/未记录'}} · 人工恢复标记：{{data.protection.manual_restart_required===true?'需要人工检查':'无此标记'}}</p><p>恢复时间：{{timestamp(data.protection.recovered_at)}} · 结果：{{data.protection.recovery_result==='started'?'曾发出成功启动请求（不是当前健康保证）':data.protection.recovery_result==='failed'?'启动失败':'未记录'}}</p></template><p v-else class="empty">没有可读取的保护记录，不代表从未发生故障。</p>

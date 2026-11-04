@@ -13,7 +13,7 @@ def test_authenticated_report_readonly_stale_and_safe(env,tmp_path):
     observe(state,observations({'collected_at':now,'core_ok':True},True,now,{'memory':256,'swap':1536,'disk':2}),now)
     atomic(path,public_view(state,now),0o644)
     r=c.get(P);assert r.status_code==200 and r.json()['state']=='ok'
-    assert len(r.json()['rules'])==6
+    assert len(r.json()['rules'])==8
     old=public_view(state,now);old['updated_at']=now-300;atomic(path,old)
     assert c.get(P).json()['state']=='stale'
     assert c.post(P,json={}).status_code==405

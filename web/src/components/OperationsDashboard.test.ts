@@ -3,6 +3,7 @@ import {mount,flushPromises} from '@vue/test-utils'
 import {beforeEach,afterEach,describe,it,expect,vi} from 'vitest'
 import OperationsDashboard from './OperationsDashboard.vue'
 import {api} from '../api'
+vi.mock('./BackupHealth.vue',()=>({default:{template:'<div />'}}))
 vi.mock('./AlertHealth.vue',()=>({default:{template:'<div />'}}))
 vi.mock('./ReleaseCleanup.vue',()=>({default:{template:'<div />'}}))
 vi.mock('../api',()=>({api:vi.fn(),uncertainMessage:(e:any)=>e.message}))

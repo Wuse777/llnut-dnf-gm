@@ -21,6 +21,7 @@ class Settings:
     cleanup_enabled: bool = False
     cleanup_manifest: str = '/run/dnf-gm/cleanup.json'
     cleanup_dir: str = '/var/lib/dnf-gm/cleanup'
+    backup_health_file: str = '/var/lib/dnf-gm/backup-health.json'
     alert_file: str = '/var/lib/dnf-gm/alerts/public.json'
     telemetry_file: str = '/var/lib/dnf-gm/telemetry.sqlite'
     catalog_file: str = '/var/lib/dnf-gm/catalog.sqlite'
@@ -96,6 +97,8 @@ class Settings:
                 raise ValueError('Upgrade inputs must be absolute maintenance paths')
         if not isinstance(self.upgrade_image_digest, str) or (self.upgrade_image_digest and (not self.upgrade_image_digest.startswith('sha256:') or len(self.upgrade_image_digest)!=71 or any(c not in '0123456789abcdef' for c in self.upgrade_image_digest[7:]))):
             raise ValueError('Candidate image must be an OCI sha256 digest, not a mutable tag')
+        if not isinstance(self.backup_health_file, str) or not Path(self.backup_health_file).is_absolute():
+            raise ValueError('Absolute backup health path required')
         if not isinstance(self.alert_file, str) or not Path(self.alert_file).is_absolute():
             raise ValueError('Absolute alert report path required')
         if not isinstance(self.telemetry_file, str) or not Path(self.telemetry_file).is_absolute():

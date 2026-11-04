@@ -12,7 +12,8 @@ import tempfile
 import uuid
 
 LABELS = {'collector': '状态采集失效', 'gm': 'GM接口不可用', 'core': '游戏或核心服务异常',
-          'memory': '可用内存不足', 'swap': 'Swap剩余不足', 'disk': '磁盘剩余不足'}
+          'memory': '可用内存不足', 'swap': 'Swap剩余不足', 'disk': '磁盘剩余不足',
+          'backup': '管理库备份证据异常', 'restore': '当前备份缺少有效恢复核验'}
 MAX_BYTES = 256 * 1024
 
 
@@ -62,11 +63,17 @@ def atomic(path, value, mode=0o600):
             os.unlink(name)
 
 
-def observations(status, gm_ok, now, thresholds):
+def observations(status, gm_ok, now, thresholds, backup=None):
     fresh = isinstance(status, dict) and recent(status.get('collected_at'), now)
     result = {key: {'bad': None, 'sample': None} for key in LABELS}
     result['collector'] = {'bad': not fresh or status.get('state') == 'unknown' or type(status.get('core_ok')) is not bool, 'sample': now}
     result['gm'] = {'bad': not gm_ok, 'sample': now}
+    if backup is None:
+        for key in ('backup','restore'):result[key]['disabled']=True
+    if backup is not None:
+        result['backup'] = {'bad': backup.get('state')!='ok' or (backup.get('backup') or {}).get('state')!='recent', 'sample': now}
+        if backup.get('state')=='ok':
+            result['restore'] = {'bad': (backup.get('restore') or {}).get('state')!='recent', 'sample': now}
     if not fresh:
         return result
     sample = status['collected_at']
@@ -116,7 +123,7 @@ def validate_state(state):
     for r in state['rules'].values():
         if (not isinstance(r, dict) or type(r.get('active')) is not bool or type(r.get('count')) is not int
                 or not 0 <= r['count'] <= 2 or (r.get('candidate') is not None and type(r['candidate']) is not bool)
-                or r.get('observed', 'unknown') not in ('unknown','bad','healthy')):
+                or r.get('observed', 'unknown') not in ('unknown','bad','healthy','disabled')):
             raise ValueError('Invalid alert rule')
         for field in ('since', 'sample', 'started_at', 'changed_at'):
             if r.get(field) is not None and not numeric(r[field]):
@@ -139,7 +146,7 @@ def observe(state, values, now):
         if numeric(previous) and now - previous > 90:
             r.update(candidate=None, count=0, since=None)
         bad, sample = values[key]['bad'], values[key]['sample']
-        r['observed'] = 'unknown' if bad is None else ('bad' if bad else 'healthy')
+        r['observed'] = 'disabled' if values[key].get('disabled') is True else 'unknown' if bad is None else ('bad' if bad else 'healthy')
         if bad is None:
             r.update(candidate=None, count=0, since=None)
             continue
@@ -167,7 +174,7 @@ def observe(state, values, now):
 def pending(state):
     # Coalesce unaccepted transitions to the current state, retaining full
     # transition history separately. Never deliver an obsolete outage later.
-    return [dict(r['pending'], label=LABELS[key]) for key, r in state['rules'].items() if r.get('pending')]
+    return [dict(r['pending'], label=LABELS[key]) for key, r in state['rules'].items() if r.get('pending') and r.get('observed')!='disabled']
 
 
 def delivery(state, now, enabled, send, persist):
@@ -240,7 +247,7 @@ def read_report(path, now):
             key = r['key']
             if (key not in LABELS or key in seen or type(r['active']) is not bool
                     or type(r['pending_confirmation']) is not bool
-                    or r['observed'] not in ('unknown', 'bad', 'healthy')):
+                    or r['observed'] not in ('unknown', 'bad', 'healthy', 'disabled')):
                 raise ValueError('Invalid public rule')
             for name in ('started_at', 'changed_at'):
                 if r[name] is not None and not numeric(r[name]):

@@ -412,6 +412,13 @@ def create_app(settings=None, database=None):
         limits.check('cleanup-dispatch:'+key,10)
         return cleanup.dispatch(op)
 
+    @app.get(API+'/backup-health')
+    def backup_health(request:Request):
+        key=user(request)
+        limits.check('backup-health:'+key,30)
+        from .backup_health import read_health
+        return read_health(settings.backup_health_file,time.time())
+
     @app.get(API+'/alerts')
     def alerts(request:Request):
         key=user(request)
