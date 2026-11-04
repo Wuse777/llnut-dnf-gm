@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from .encoding import inspect_name, mysql_latin1_text
 from .catalog import Catalog, snapshot
 from . import equipment_unlock as unlock
+from . import unlock_center
 from .limits import MAIL_GOLD_MAX
 from .mail_center import MailCenter
 from .character_detail import INFO_COLUMNS, ATTRIBUTES, decode_container, profession
@@ -132,13 +133,25 @@ class Service:
                 raise HTTPException(404, '角色不存在')
             online = one(q, 'SELECT login_status FROM taiwan_login.login_account_3 WHERE m_id=%s', (row['uid'],))
             stored = one(q, 'SELECT item_lock_info FROM taiwan_cain_2nd.charac_item_lock_info WHERE charac_no=%s', (charac_no,))
+            saved=unlock_center.storage(q,charac_no)
+            q.execute("SELECT operation_id,result_json,created_at FROM dnf_gm.audit WHERE target_uid=%s AND action='equipment-unlock' ORDER BY id DESC LIMIT 20",(row['uid'],))
+            history=q.fetchall()
         result = dict(charac_no=charac_no, uid=row['uid'], login_status=online['login_status'] if online else None,
                       delete_flag=row['delete_flag'], wait_seconds=unlock.WAIT_SECONDS,
                       write_enabled='equipment-unlock' in self.settings.writes, collected_at=time.time(),
-                      note='数据库存档快照；在线申请可能尚未保存。编号是锁定记录编号，未验证与物品槽位的映射。请完全退出账号，处理期间不要登录。')
+                      note='数据库存档快照；在线申请可能尚未保存。锁定编号通过存档锁字段关联穿戴、背包和角色仓库，不是槽位编号；未覆盖时装、宠物独立表。请完全退出账号，处理期间不要登录。', mapping_coverage={k:v['state'] for k,v in saved['containers'].items()},history_limit=20)
         try:
             _, records = unlock.decode(stored['item_lock_info']) if stored else (None, [])
-            result.update(state='ok', items=[dict(r, expired=r['state']==2 and r['due_at']<=time.time()) for r in records])
+            records=unlock_center.decorate(self,records,saved)
+            for r in records:
+                r.update(expired=r['state']==2 and r['due_at']<=time.time(),managed_operation=None)
+                for entry in history:
+                    try:previous=json.loads(entry['result_json'])
+                    except (ValueError,TypeError):continue
+                    if previous.get('charac_no')!=charac_no:continue
+                    if any(x['lock_key']==r['lock_key'] and x['requested_at']==r['requested_at'] and r['state']==2 for x in previous.get('requests_after',[])):
+                        r['managed_operation']=previous.get('operation_id',entry['operation_id']);break
+            result.update(state='ok', items=records)
         except ValueError as e:
             result.update(state='unsupported', items=[], message=str(e), write_enabled=False)
         return result
@@ -220,13 +233,7 @@ class Service:
             a = self.target(q, data)
             preview = {'target': a, 'action': action, 'reason': data['reason'], 'client_verified': False}
             if action == 'equipment-unlock':
-                blob = self.unlock_blob(q, data, lock=False)
-                try:
-                    _, selected = unlock.expire(blob, keys, int(time.time()))
-                except ValueError as e:
-                    raise HTTPException(409, str(e))
-                preview.update(lock_fingerprint=unlock.fingerprint(blob), requests=selected,
-                               note='仅将选中申请设为到期；下次登录加载角色后由游戏处理，不代表装备已解锁')
+                preview.update(unlock_center.prepare(self,q,data))
             if action == 'currency':
                 before = a[data['currency']]
                 if before is None or not 0 <= before + data['delta'] <= CURRENCIES[data['currency']][3]:
@@ -304,32 +311,22 @@ class Service:
                     commit_attempted = True
                     c.commit()
                     return result
+                if action == 'unlock-batch':
+                    result=unlock_center.UnlockCenter(self).confirm(q,row,data,preview,key)
+                    commit_attempted=True
+                    c.commit()
+                    return result
                 self.check_write(q,data,preview)
                 q.execute('UPDATE dnf_gm.operations SET idempotency_key=%s WHERE operation_id=%s', (key,op))
+                if action=='equipment-unlock':unlock_center.lock_accounts(q,[data])
                 account = self.target(q, data, lock=True)
-                if account['accountname'] != preview['target']['accountname']:
+                if account['accountname'] != preview['target']['accountname'] or (action=='equipment-unlock' and account['character']['charac_name']!=preview['target']['character']['charac_name']):
                     raise HTTPException(409, '目标身份变化，重新预览')
                 result = {'operation_id':op,'uid':data['uid'],'action':action,'client_verified':False}
                 if action == 'currency':
                     result.update(self.apply_currency(q,data,preview['before']))
                 elif action == 'equipment-unlock':
-                    q.execute("SELECT ENGINE FROM information_schema.TABLES WHERE (TABLE_SCHEMA='taiwan_cain_2nd' AND TABLE_NAME='charac_item_lock_info') OR (TABLE_SCHEMA='taiwan_login' AND TABLE_NAME='login_account_3')")
-                    rows = q.fetchall()
-                    if len(rows) != 2 or any(r['ENGINE'] != 'InnoDB' for r in rows):
-                        raise HTTPException(409, '解锁事务表引擎不满足')
-                    blob = self.unlock_blob(q, data, lock=True)
-                    if unlock.fingerprint(blob) != preview['lock_fingerprint']:
-                        raise HTTPException(409, '锁定存档变化，请重新预览')
-                    try:
-                        updated, selected = unlock.expire(blob, data['lock_keys'], int(time.time()))
-                    except ValueError as e:
-                        raise HTTPException(409, str(e))
-                    q.execute('UPDATE taiwan_cain_2nd.charac_item_lock_info SET item_lock_info=%s WHERE charac_no=%s AND item_lock_info=%s', (updated,data['charac_no'],blob))
-                    if q.rowcount != 1:
-                        raise HTTPException(409, '锁定存档条件更新未命中')
-                    result.update(charac_no=data['charac_no'], lock_keys=data['lock_keys'],
-                                  requests_before=selected, before_fingerprint=preview['lock_fingerprint'], after_fingerprint=unlock.fingerprint(updated),
-                                  state='requests_expired_pending_game_load', note=preview['note'])
+                    result.update(unlock_center.apply(self,q,data,preview))
                 elif action == 'mail':
                     result.update(self.apply_mail(q,op,data,preview,account))
                 elif action == 'reward':

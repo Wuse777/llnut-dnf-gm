@@ -73,3 +73,11 @@ input[aria-invalid=true]:focus,select[aria-invalid=true]:focus{box-shadow:0 0 0 
 @media(max-width:680px){.inventory-layout:has(.inventory-item-detail){grid-template-columns:minmax(0,1fr)}.inventory-item-detail{grid-row:1;scroll-margin-block:16px}.inventory-slot-grid{grid-template-columns:repeat(auto-fill,minmax(80px,1fr))}.game-portrait{width:48px;height:48px;flex-basis:48px}}
 
 @media(max-width:680px){.inventory-item-detail .character-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.unlock-center{display:grid;gap:20px}.unlock-role-list article,.unlock-basket-row{display:flex;gap:16px;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--border-color)}
+.unlock-role-list article>div,.unlock-basket-row>div{min-width:0;overflow-wrap:anywhere}.unlock-role-list p,.unlock-basket-row p{margin:5px 0}.unlock-item{min-width:150px;overflow-wrap:anywhere}.unlock-item .game-image{float:left}.unlock-item:after{content:'';display:block;clear:both}.unlock-preview-target{padding:16px;border:1px solid var(--border-color);border-radius:12px;margin:12px 0}.unlock-preview-target>div{padding:10px 0}.unlock-preview-items{display:grid;gap:12px}
+@media(max-width:680px){.unlock-role-list article,.unlock-basket-row{align-items:flex-start;flex-direction:column}.unlock-role-list article button,.unlock-basket-row button{align-self:flex-end}.unlock-center .toolbar{flex-wrap:wrap}}
+
+/* Keep mandatory badges inline rather than stretching in column labels. */
+.unlock-requests label[for="unlock-reason"],.unlock-center label[for="unlock-batch-reason"]{display:block;margin:12px 0 6px}
+.unlock-center #unlock-batch-reason{margin-bottom:10px}

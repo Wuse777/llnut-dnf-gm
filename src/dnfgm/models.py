@@ -113,3 +113,14 @@ class StartRewardJob(Confirm):
 
 class RewardJobControl(Model):
     action: Literal['pause','resume','retry-failed','cancel','reconcile']
+
+
+class UnlockTarget(Model):
+    uid: StrictInt = Field(ge=1,le=2147483647)
+    charac_no: StrictInt = Field(ge=1,le=2147483647)
+    lock_keys: list[StrictInt] = Field(min_length=1,max_length=100)
+
+
+class UnlockBatchPreview(Model):
+    targets: list[UnlockTarget] = Field(min_length=1,max_length=20)
+    reason: str = Field(min_length=1,max_length=200)

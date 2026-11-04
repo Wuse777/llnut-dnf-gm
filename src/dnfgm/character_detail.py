@@ -58,6 +58,9 @@ def decode_container(blob, equipment=False):
                 'amplify_value':struct.unpack_from('<H',raw,18)[0] if equip else None,
                 'orb_id':struct.unpack_from('<I',raw,13)[0] if equip else None,
                 'sealed_raw':raw[0],
+                # QF1031 stAmplifyOption_t offset 17 + GetLock byte offset 3.
+                # A lock key is not a slot number and is never inferred from ID.
+                'lock_key':raw[20],
             })
         return {'state':'ok','message':'已读取数据库存档','slot_count':expected//SLOT_SIZE,'items':items}
     except (ValueError, struct.error, zlib.error):

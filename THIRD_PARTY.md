@@ -28,3 +28,10 @@
 - `dof-dev/godof`，commit `7a272861f6c733386239702a0b023a7b7f2cbd3f`：`npk/npk.go`、`npk/file.go`、`npk/consts.go`、`npk/img/v2.go`、`v4.go`、`npk/image/`及`formatter/`的格式定义，用于核对NPK目录、IMG元数据、像素顺序及调色板布局。
 - `HsOjo/PyDnfEx`，commit `e417cefe43f54a40e20ef0df235aa1c8ecd8595a`：`pydnfex/img/image/link.py`，用于交叉核对格式17链接帧字段。
 - `npk_assets.py`、`asset_builder.py`独立实现；未复制这些项目代码、图片、客户端或素材，不将其安装为运行依赖。格式实现已进行合成数据测试，但尚缺匹配客户端NPK实物验证。支持与未支持范围见`docs/ASSETS.md`。
+
+
+## 解锁申请与存档关联（独立适配）
+
+- 61字节槽位及增幅字段起点17沿用上述固定版本格式参考；该参考将20附近字段列为未知，因此不以第三方名称作为锁键证据。
+- 针对当前部署的清风1031二进制作只读反汇编：`stAmplifyOption_t::GetLock()`读取结构内偏移3，`_verifyInventory`中物品与增幅指针相差17，故槽位字节20对应锁键。2026-11-04复核验证函数221条机器指令、GetLock六条机器指令与先前证据一致。此关联仅适用于已指纹适配的镜像，不推广至任意服务端。
+- `unlock_center.py`独立实现，不包含第三方业务代码、游戏二进制、反汇编原文或玩家存档。当前生产只读检查未发现活跃申请；正向关联和游戏解除效果尚未验收，合成关联测试不是客户端证据。

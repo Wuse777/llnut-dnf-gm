@@ -7,11 +7,12 @@ from fastapi import Path as PathParameter, FastAPI, Request, Response, HTTPExcep
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from .config import load_settings
 from .db import Database, Busy
-from .models import Login, Preview, Confirm, Gift, CatalogPolicyPreview, ItemFavorite, ItemSelection, RewardJob, StartRewardJob, RewardJobControl
+from .models import Login, Preview, Confirm, Gift, CatalogPolicyPreview, ItemFavorite, ItemSelection, RewardJob, StartRewardJob, RewardJobControl, UnlockBatchPreview
 from .item_preferences import ItemPreferences
 from .reward_jobs import RewardJobs, JobWorker
 from .security import COOKIE, Limits, authenticate, new_session, session, digest
 from .service import Service
+from .unlock_center import UnlockCenter
 from .catalog import snapshot
 from .audit_export import export_audit
 
@@ -193,6 +194,17 @@ def create_app(settings=None, database=None):
     def unlock_requests(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
         user(request)
         return service.unlock_requests(charac_no)
+
+    @app.get(API+'/unlock-requests')
+    def unlock_list(request:Request,q:str=Query('',max_length=80),uid:int=Query(0,ge=0,le=2147483647),after:int=Query(0,ge=0,le=2147483647),state:Literal['all','pending','expired','unsupported']='pending'):
+        user(request)
+        return UnlockCenter(service).list(q,uid,after,state)
+
+    @app.post(API+'/unlock-batches/preview')
+    def unlock_batch(data:UnlockBatchPreview,request:Request):
+        key=user(request,write=True,recent=True)
+        limits.check('unlock-batch-preview:'+key,12)
+        return UnlockCenter(service).preview(key,data.model_dump())
 
     @app.get(API+'/catalog')
     def catalog(request:Request,q:str=Query('',max_length=80),category:str=Query('',max_length=24),page:int=Query(1,ge=1,le=10000),allowed_only:bool=False,state:Literal['','trial','verified','blocked']=''):
