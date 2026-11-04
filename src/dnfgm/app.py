@@ -13,6 +13,7 @@ from .reward_jobs import RewardJobs, JobWorker
 from .security import COOKIE, Limits, authenticate, new_session, session, digest
 from .service import Service
 from .unlock_center import UnlockCenter
+from .operations_dashboard import dashboard
 from .catalog import snapshot
 from .audit_export import export_audit
 
@@ -194,6 +195,12 @@ def create_app(settings=None, database=None):
     def unlock_requests(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
         user(request)
         return service.unlock_requests(charac_no)
+
+    @app.get(API+'/operations-dashboard')
+    def operations_dashboard(request:Request,window:Literal['24h','7d']='24h',before:int=Query(0,ge=0,le=9223372036854775807)):
+        key=user(request)
+        limits.check('operations-dashboard:'+key,30)
+        return dashboard(settings,db,window,before)
 
     @app.get(API+'/unlock-requests')
     def unlock_list(request:Request,q:str=Query('',max_length=80),uid:int=Query(0,ge=0,le=2147483647),after:int=Query(0,ge=0,le=2147483647),state:Literal['all','pending','expired','unsupported']='pending'):

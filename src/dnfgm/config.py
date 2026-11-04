@@ -18,6 +18,7 @@ class Settings:
     writes: tuple = ()
     test_uids: tuple = (-1,)
     status_file: str = '/run/dnf-gm/status.json'
+    telemetry_file: str = '/var/lib/dnf-gm/telemetry.sqlite'
     catalog_file: str = '/var/lib/dnf-gm/catalog.sqlite'
     static_dir: str = ''
     assets_dir: str = ''
@@ -56,6 +57,8 @@ class Settings:
             raise ValueError('Batch worker requires explicit batch-reward activation')
         if not isinstance(self.assets_dir,str) or (self.assets_dir and not Path(self.assets_dir).is_absolute()):
             raise ValueError('Assets directory must be empty or an absolute private path')
+        if not isinstance(self.telemetry_file, str) or not Path(self.telemetry_file).is_absolute():
+            raise ValueError('Telemetry file must be an absolute maintenance path')
         # Deprecated compatibility key: old per-item caps no longer affect
         # startup, previews or issuance. No PVF-bound quantity overrides needed.
         return self

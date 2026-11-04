@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UnlockCenter from './components/UnlockCenter.vue'
+import OperationsDashboard from './components/OperationsDashboard.vue'
 import GameImage from './components/GameImage.vue'
 import {ref,computed,watch,nextTick,onMounted,onUnmounted} from 'vue'
 import {readPendingOperation,usePendingOperation} from './pendingOperation'
@@ -49,7 +50,8 @@ icons['mail-center']='M3 5h18v14H3z M3 5l9 7 9-7'
 icons['reward-jobs']='M3 3h18v18H3z M7 8h10 M7 12h10 M7 16h6'
 icons.mail='M3 5h18v14H3z M3 5l9 7 9-7'
 icons['unlock-center']='M5 10h14v11H5z M8 10V6a4 4 0 0 1 8 0 M12 14v3'
-const tabs=[['overview','服务器概览'],['accounts','账号与角色'],['online','在线账号'],['mail','邮件发放'],['mail-center','邮件中心'],['reward-jobs','批量奖励'],['unlock-center','装备解锁'],['catalog','物品索引'],['gifts','礼包模板'],['audit','操作审计']]
+icons['operations-dashboard']='M3 12h4l3-8 4 16 3-8h4'
+const tabs=[['overview','服务器概览'],['operations-dashboard','运维诊断'],['accounts','账号与角色'],['online','在线账号'],['mail','邮件发放'],['mail-center','邮件中心'],['reward-jobs','批量奖励'],['unlock-center','装备解锁'],['catalog','物品索引'],['gifts','礼包模板'],['audit','操作审计']]
 const actionNames:Record<string,string>={'unlock-batch':'批量提前解锁',reward:'组合奖励',currency:'余额变更',mail:'奖励邮件',ban:'封禁后续登录',unban:'解除封禁','equipment-unlock':'装备提前解锁','catalog-policy':'物品发放策略','gift-template':'礼包模板','role-soft-delete':'维护：角色软删除','test-fixture-cleanup':'维护：测试夹具归档'}
 const currencyNames:Record<string,string>={cera:'点券',cera_point:'代币券',mileage:'积分'}
 const categoryNames:Record<string,string>={equipment:'装备',material:'材料',consumable:'消耗品',special:'特殊'}
@@ -190,7 +192,7 @@ const recipientSearchType=ref('account')
 const recipientSearch=ref(''),recipientResults=ref<any[]>([]),recipientQueried=ref(false),pickerQuery=ref(''),pickerRows=ref<any[]>([]),pickerPage=ref(1),pickerCategory=ref('')
 const mailAllowedOnly=ref(true),catalogAllowedOnly=ref(false),pickerAllowedOnly=ref(true)
 const theme=ref('light'),accountMode=ref('account')
-const descriptions:Record<string,string>={'unlock-center':'查找保存的申请、关联物品与倒计时，明确选择后整批设为到期。','reward-jobs':'固定名单、账号奖励去重与持久任务；异常时核对原任务，不重复发奖。','mail-center':'查找每一笔投递和全部附件；从历史记录生成新草稿。',overview:'服务健康与玩家数据，一眼掌握。',accounts:'先选账号，再管理余额、角色与登录权限。',online:'按游戏登录状态查看在线账号。',mail:'选定收件角色，组合奖励，核对后投递。',catalog:'搜索当前 PVF，管理物品的发放策略。',gifts:'把常用奖励保存成礼包，版本与历史发放可追溯。',audit:'追踪每一笔操作；查询历史结果不会重复执行。'}
+const descriptions:Record<string,string>={'operations-dashboard':'资源历史、占用分类、保护原因与发布信息；不把过期数据当成正常。','unlock-center':'查找保存的申请、关联物品与倒计时，明确选择后整批设为到期。','reward-jobs':'固定名单、账号奖励去重与持久任务；异常时核对原任务，不重复发奖。','mail-center':'查找每一笔投递和全部附件；从历史记录生成新草稿。',overview:'服务健康与玩家数据，一眼掌握。',accounts:'先选账号，再管理余额、角色与登录权限。',online:'按游戏登录状态查看在线账号。',mail:'选定收件角色，组合奖励，核对后投递。',catalog:'搜索当前 PVF，管理物品的发放策略。',gifts:'把常用奖励保存成礼包，版本与历史发放可追溯。',audit:'追踪每一笔操作；查询历史结果不会重复执行。'}
 const feedbackMessage=computed(()=>{const fields=Object.values(fieldErrors.value);return error.value?(fields.length?fields[0]+(fields.length>1?' 另有 '+(fields.length-1)+' 项需检查。':''):error.value):notice.value})
 watch([error,notice],()=>{toastDismissed.value=false})
 const shownResult=computed(()=>operationResult.value?.result??operationResult.value)
@@ -277,6 +279,7 @@ onUnmounted(()=>clearInterval(timer))
 
   <div class="page-body" :key="tab">
   <GiftVersions v-if="giftHistory" :template-id="giftHistory" @close="giftHistory=0" @copy="copyGiftVersion" />
+  <OperationsDashboard v-if="tab==='operations-dashboard'"/>
   <UnlockCenter v-if="tab==='unlock-center'" @reauth="reauthOpen=true" @inspect="inspectOperation"/>
   <RewardJobs v-if="tab==='reward-jobs'" @reauth="reauthOpen=true" @inspect="inspectOperation" />
   <MailCenter v-if="tab==='mail-center'" @draft="copyMailDraft" />

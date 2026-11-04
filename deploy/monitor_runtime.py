@@ -10,11 +10,18 @@ DEST = Path('/run/dnf-gm/status.json')
 STATE = Path('/var/lib/dnf-gm/protection.json')
 INHIBIT = Path('/var/lib/dnf-gm/no-auto-recover')
 UNIT = 'dnf-gm.service'
+TELEMETRY = None
 
 
 def event(name, **fields):
     # Never log argv, command output, exception messages or credentials.
     print(json.dumps(dict(event=name, timestamp=time.time(), **fields)), flush=True)
+    if TELEMETRY is not None:
+        try:
+            TELEMETRY.record_event(name, fields)
+        except Exception:
+            # Diagnostics must never disable core protection or recursively log.
+            print('{"event":"telemetry_write_failed"}', flush=True)
 
 
 def command(args, *, probe):
@@ -42,9 +49,12 @@ def atomic(path, data):
 
 def resources(disk_path):
     values = {s.split(':')[0]: int(s.split()[1]) for s in Path('/proc/meminfo').read_text().splitlines()
-              if s.startswith(('MemAvailable:', 'SwapFree:'))}
+              if s.startswith(('MemAvailable:', 'MemTotal:', 'SwapFree:', 'SwapTotal:'))}
     fs = os.statvfs(disk_path)
-    return dict(mem_available_mib=values['MemAvailable'] // 1024,
+    return dict(mem_total_mib=values.get('MemTotal', 0) // 1024,
+                swap_total_mib=values.get('SwapTotal', 0) // 1024,
+                disk_total_gib=round(fs.f_blocks * fs.f_frsize / 2**30, 2),
+                mem_available_mib=values['MemAvailable'] // 1024,
                 swap_free_mib=values['SwapFree'] // 1024,
                 disk_free_gib=round(fs.f_bavail * fs.f_frsize / 2**30, 2))
 
@@ -111,7 +121,7 @@ class Controller:
         self.pending = None
         self.restarts = deque()
 
-    def apply(self, reason, recovered, now):
+    def apply(self, reason, recovered, now, metrics=None):
         while self.restarts and now - self.restarts[0] >= 3600:
             self.restarts.popleft()
         if reason:
@@ -129,7 +139,7 @@ class Controller:
             self.pending = token if automatic else None
             atomic(STATE, dict(stopped_at=time.time(), reason=reason, manual_restart_required=not automatic,
                                auto_recovery_pending=automatic))
-            event('protection_stop', reason=reason, auto_recovery_pending=automatic)
+            event('protection_stop', reason=reason, auto_recovery_pending=automatic, **(metrics or {}))
         elif self.pending and recovered:
             token, self.pending = self.pending, None
             active, current_token = unit_state()
@@ -150,7 +160,9 @@ class Controller:
             event('auto_recovery', success=success)
 
 
-def run(collect, *, disk_path, min_memory=256, min_swap=1536):
+def run(collect, *, disk_path, min_memory=256, min_swap=1536, telemetry=None):
+    global TELEMETRY
+    TELEMETRY = telemetry
     DEST.parent.mkdir(mode=0o755, exist_ok=True)
     STATE.parent.mkdir(mode=0o755, exist_ok=True)
     policy, controller = Protection(), Controller()
@@ -159,6 +171,7 @@ def run(collect, *, disk_path, min_memory=256, min_swap=1536):
     collection_failed = False
     while True:
         sampled, core_ok = False, None
+        diagnostic = None
         try:
             metrics = resources(disk_path)
             if time.monotonic() >= next_collect:
@@ -173,6 +186,7 @@ def run(collect, *, disk_path, min_memory=256, min_swap=1536):
                     status.update(collected_at=time.time(), collector_pid=os.getpid(), **metrics,
                                   cpu_percent=round(100 * (1 - (idle - old_idle) / max(1, total - old_total)), 1))
                     atomic(DEST, status)
+                    diagnostic = status
                     if collection_failed:
                         event('collection_recovered', core_ok=core_ok)
                     collection_failed = False
@@ -180,8 +194,9 @@ def run(collect, *, disk_path, min_memory=256, min_swap=1536):
                     core_ok = None
                     collection_failed = True
                     # Immediately fail closed: no stale fingerprints or healthy flag.
-                    atomic(DEST, dict(collected_at=time.time(), core_ok=False, state='unknown',
-                                      error_type=type(error).__name__, **metrics))
+                    diagnostic = dict(collected_at=time.time(), core_ok=None, state='unknown',
+                                      error_type=type(error).__name__, **metrics)
+                    atomic(DEST, {**diagnostic, 'core_ok': False})
                     event('collection_failed', error_type=type(error).__name__)
                 finally:
                     # Back off on failures too; avoid continuous Docker probes.
@@ -189,10 +204,16 @@ def run(collect, *, disk_path, min_memory=256, min_swap=1536):
             safe = (metrics['mem_available_mib'] >= min_memory and metrics['swap_free_mib'] >= min_swap
                     and metrics['disk_free_gib'] >= 2)
             if not safe:
-                atomic(DEST, dict(collected_at=time.time(), core_ok=False, state='resource_protection', **metrics))
+                diagnostic = dict(collected_at=time.time(), core_ok=False, state='resource_protection', **metrics)
+                atomic(DEST, diagnostic)
             now = time.monotonic()
             reason = policy.observe(now, safe, sampled=sampled, core_ok=core_ok)
-            controller.apply(reason, policy.recovered(now), now)
+            controller.apply(reason, policy.recovered(now), now, metrics)
+            if TELEMETRY is not None and diagnostic is not None:
+                try:
+                    TELEMETRY.observe(diagnostic)
+                except Exception:
+                    event('telemetry_write_failed')
         except Exception as error:
             # A broken controller or resource reader must never authorize writes.
             atomic(DEST, dict(collected_at=time.time(), core_ok=False, state='unknown', error_type=type(error).__name__))

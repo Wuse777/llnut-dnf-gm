@@ -27,6 +27,21 @@ def validate(cfg):
     for field, floor in [('min_memory_mib', 256), ('min_swap_free_mib', 1536)]:
         if type(cfg[field]) is not int or cfg[field] < floor:
             raise ValueError('Protection threshold cannot be lowered below baseline')
+    paths = cfg.get('storage_paths', [])
+    if not isinstance(paths, list) or len(paths) > 8:
+        raise ValueError('At most eight fixed storage roots')
+    ids = set()
+    for item in paths:
+        if not isinstance(item, dict) or set(item) != {'id', 'label', 'path'}:
+            raise ValueError('Explicit storage id/label/path required')
+        if not re.fullmatch(r'[a-z][a-z0-9_]{0,31}', item['id']) or item['id'] in ids:
+            raise ValueError('Unique storage identifiers required')
+        ids.add(item['id'])
+        if not isinstance(item['label'], str) or not 1 <= len(item['label']) <= 48:
+            raise ValueError('Short storage label required')
+        path = PurePosixPath(item['path'])
+        if not path.is_absolute() or '..' in path.parts or str(path) == '/':
+            raise ValueError('Fixed non-root absolute storage path required')
     return cfg
 
 
@@ -80,7 +95,18 @@ def main():
     if st.st_uid != 0 or st.st_mode & 0o022:
         raise ValueError('Monitor config must be root-owned and not group/world writable')
     cfg = validate(json.loads(CONFIG.read_text()))
-    run(Collector(cfg), disk_path=cfg['disk_path'], min_memory=cfg['min_memory_mib'], min_swap=cfg['min_swap_free_mib'])
+    from telemetry import Recorder
+    try:
+        recorder = Recorder('/var/lib/dnf-gm/telemetry.sqlite', storage_paths=cfg.get('storage_paths', []))
+    except Exception:
+        recorder = None
+        from monitor_runtime import event
+        event('telemetry_unavailable')
+    try:
+        run(Collector(cfg), disk_path=cfg['disk_path'], min_memory=cfg['min_memory_mib'], min_swap=cfg['min_swap_free_mib'], telemetry=recorder)
+    finally:
+        if recorder:
+            recorder.close()
 
 
 if __name__ == '__main__':

@@ -16,5 +16,37 @@
     "stun"
   ],
   "min_memory_mib": 256,
-  "min_swap_free_mib": 1536
+  "min_swap_free_mib": 1536,
+  "storage_paths": [
+    {
+      "id": "game_data",
+      "label": "游戏数据（可能含数据库）",
+      "path": "/var/lib/dnf/data"
+    },
+    {
+      "id": "docker",
+      "label": "Docker存储（可能与游戏数据重叠）",
+      "path": "/var/lib/docker"
+    },
+    {
+      "id": "gm_releases",
+      "label": "GM发布目录",
+      "path": "/opt/dnf-gm/releases"
+    },
+    {
+      "id": "gm_state",
+      "label": "GM索引与诊断",
+      "path": "/var/lib/dnf-gm"
+    },
+    {
+      "id": "backups",
+      "label": "维护备份",
+      "path": "/root/aliyun-deploy/backups"
+    },
+    {
+      "id": "logs",
+      "label": "系统日志",
+      "path": "/var/log"
+    }
+  ]
 }
