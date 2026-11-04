@@ -2,13 +2,29 @@
 set -euo pipefail
 # Install ONLY the GM application. Never touches Nginx, Docker or game services.
 [[ $EUID == 0 ]] || { echo 'Root required' >&2; exit 1; }
+# Keep the same inherited flock when rollback execs an installer.
+install -d -m 755 /var/lib/dnf-gm
+if [[ "$(readlink /proc/$$/fd/9 || true)" != /var/lib/dnf-gm/maintenance.lock ]]; then
+ exec 9>/var/lib/dnf-gm/maintenance.lock
+fi
+chmod 600 /var/lib/dnf-gm/maintenance.lock
+flock -x 9
+
 BASE=$(cd "$(dirname "$0")/.." && pwd)
 [[ "$BASE" == /opt/dnf-gm/releases/* && -f "$BASE/web/dist/index.html" ]] || { echo 'Expected built versioned release' >&2; exit 1; }
 [[ -f /etc/dnf-gm/config.json && -f /etc/dnf-gm/monitor.json ]] || { echo 'Provision config and review monitor.json first' >&2; exit 1; }
 [[ -f "$BASE/SHA256SUMS" ]] || { echo 'Missing release checksums' >&2; exit 1; }
 (cd "$BASE" && sha256sum --check --strict SHA256SUMS >/dev/null)
 getent passwd dnfgm >/dev/null
+# Published code must not be mutable by the web application.
+chown -hR root:root "$BASE"
+chmod -R go-w "$BASE"
 install -d -m 755 /var/lib/dnf-gm
+CLEANUP_RESTART=false
+if systemctl is-active --quiet dnf-gm-cleanup.timer; then
+ systemctl stop dnf-gm-cleanup.timer
+ CLEANUP_RESTART=true
+fi
 RECOVERY_INHIBIT_OWNED=false
 if [[ ! -e /var/lib/dnf-gm/no-auto-recover ]]; then
  touch /var/lib/dnf-gm/no-auto-recover
@@ -70,6 +86,11 @@ PY
 for _ in $(seq 1 20); do
  if curl --noproxy '*' -fsS --max-time 5 -H "Host: $HOST" http://127.0.0.1:8765/dnf-gm/api/v1/ready >/dev/null; then
   if [[ "$RECOVERY_INHIBIT_OWNED" == true ]]; then rm -f /var/lib/dnf-gm/no-auto-recover; fi
+  if [[ "$CLEANUP_RESTART" == true && -f "$BASE/deploy/dnf-gm-cleanup.service" ]]; then
+   install -m 644 "$BASE/deploy/dnf-gm-cleanup.service" "$BASE/deploy/dnf-gm-cleanup.timer" /etc/systemd/system/
+   systemctl daemon-reload
+   systemctl start dnf-gm-cleanup.timer
+  fi
   echo 'GM loopback ready. Nginx was not changed.'
   exit 0
  fi

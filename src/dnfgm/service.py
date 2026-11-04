@@ -292,6 +292,8 @@ class Service:
                 row = one(q, 'SELECT * FROM dnf_gm.operations WHERE operation_id=%s AND session_hash=%s FOR UPDATE', (op,session_hash))
                 if not row:
                     raise HTTPException(404, '操作不存在')
+                if row['action'] == 'cleanup-release':
+                    raise HTTPException(409, '旧产物清理请使用专用确认入口')
                 old = one(q, 'SELECT operation_id,fingerprint,session_hash,result_json FROM dnf_gm.operations WHERE idempotency_key=%s', (key,))
                 if old:
                     if old['fingerprint'] != row['fingerprint'] or old['session_hash'] != session_hash or old['operation_id'] != op:

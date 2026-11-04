@@ -7,13 +7,14 @@ from fastapi import Path as PathParameter, FastAPI, Request, Response, HTTPExcep
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from .config import load_settings
 from .db import Database, Busy
-from .models import Login, Preview, Confirm, Gift, CatalogPolicyPreview, ItemFavorite, ItemSelection, RewardJob, StartRewardJob, RewardJobControl, UnlockBatchPreview
+from .models import Login, Preview, Confirm, Gift, CatalogPolicyPreview, ItemFavorite, ItemSelection, RewardJob, StartRewardJob, RewardJobControl, UnlockBatchPreview, CleanupPreview, CleanupConfirm
 from .item_preferences import ItemPreferences
 from .reward_jobs import RewardJobs, JobWorker
 from .security import COOKIE, Limits, authenticate, new_session, session, digest
 from .service import Service
 from .unlock_center import UnlockCenter
 from .operations_dashboard import dashboard
+from .release_cleanup import ReleaseCleanup
 from .catalog import snapshot
 from .audit_export import export_audit
 
@@ -73,6 +74,7 @@ def create_app(settings=None, database=None):
     db = database or Database(settings)
     service, limits = Service(db,settings), Limits()
     jobs = RewardJobs(db,settings,service)
+    cleanup = ReleaseCleanup(db,settings)
     @asynccontextmanager
     async def lifespan(app):
         worker = JobWorker(jobs,settings.batch_worker_interval) if settings.batch_worker_enabled else None
@@ -195,6 +197,40 @@ def create_app(settings=None, database=None):
     def unlock_requests(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
         user(request)
         return service.unlock_requests(charac_no)
+
+    @app.get(API+'/release-cleanups')
+    def cleanup_candidates(request:Request):
+        user(request)
+        return cleanup.candidates()
+
+    @app.post(API+'/release-cleanups/preview')
+    def cleanup_preview(data:CleanupPreview,request:Request):
+        key=user(request,True,True)
+        limits.check('cleanup-preview:'+key,10)
+        return cleanup.preview(key,data.names,data.reason)
+
+    @app.get(API+'/release-cleanups/{op}')
+    def cleanup_detail(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        user(request)
+        return cleanup.detail(op)
+
+    @app.post(API+'/release-cleanups/{op}/confirm')
+    def cleanup_confirm(data:CleanupConfirm,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True)
+        limits.check('cleanup-confirm:'+key,10)
+        return cleanup.confirm(key,op,data.idempotency_key)
+
+    @app.post(API+'/release-cleanups/{op}/cancel-preview')
+    def cleanup_cancel_preview(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True)
+        limits.check('cleanup-cancel:'+key,10)
+        return cleanup.cancel_preview(op)
+
+    @app.post(API+'/release-cleanups/{op}/dispatch')
+    def cleanup_dispatch(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True)
+        limits.check('cleanup-dispatch:'+key,10)
+        return cleanup.dispatch(op)
 
     @app.get(API+'/operations-dashboard')
     def operations_dashboard(request:Request,window:Literal['24h','7d']='24h',before:int=Query(0,ge=0,le=9223372036854775807)):
@@ -325,7 +361,12 @@ def create_app(settings=None, database=None):
         key=user(request)
         if not re.fullmatch('[a-f0-9]{32}',op):
             raise HTTPException(422,'非法操作编号')
-        return service.operation(key,op)
+        result=service.operation(key,op)
+        if result['action']=='cleanup-release':
+            result['cleanup']=cleanup.detail(op)
+            # Do not expose worker signing tickets through generic audit lookup.
+            result['request']={'action':'cleanup-release','reason':result['preview']['reason'],'items':result['preview']['items']}
+        return result
 
     @app.get(API+'/mail-center')
     def mail_center(request:Request,uid:int=Query(0,ge=0,le=2147483647),charac_no:int=Query(0,ge=0,le=2147483647),operation_id:str=Query('',pattern=r'^(?:[a-f0-9]{32})?$'),page:int=Query(1,ge=1,le=10000)):

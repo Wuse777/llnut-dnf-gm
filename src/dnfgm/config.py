@@ -18,6 +18,9 @@ class Settings:
     writes: tuple = ()
     test_uids: tuple = (-1,)
     status_file: str = '/run/dnf-gm/status.json'
+    cleanup_enabled: bool = False
+    cleanup_manifest: str = '/run/dnf-gm/cleanup.json'
+    cleanup_dir: str = '/var/lib/dnf-gm/cleanup'
     telemetry_file: str = '/var/lib/dnf-gm/telemetry.sqlite'
     catalog_file: str = '/var/lib/dnf-gm/catalog.sqlite'
     static_dir: str = ''
@@ -59,6 +62,11 @@ class Settings:
             raise ValueError('Assets directory must be empty or an absolute private path')
         if not isinstance(self.telemetry_file, str) or not Path(self.telemetry_file).is_absolute():
             raise ValueError('Telemetry file must be an absolute maintenance path')
+        if type(self.cleanup_enabled) is not bool:
+            raise ValueError('Cleanup enable flag must be boolean')
+        for path in (self.cleanup_manifest, self.cleanup_dir):
+            if not isinstance(path, str) or not Path(path).is_absolute():
+                raise ValueError('Absolute maintenance cleanup paths required')
         # Deprecated compatibility key: old per-item caps no longer affect
         # startup, previews or issuance. No PVF-bound quantity overrides needed.
         return self

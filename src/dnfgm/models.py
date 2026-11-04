@@ -124,3 +124,12 @@ class UnlockTarget(Model):
 class UnlockBatchPreview(Model):
     targets: list[UnlockTarget] = Field(min_length=1,max_length=20)
     reason: str = Field(min_length=1,max_length=200)
+
+
+class CleanupPreview(Model):
+    names: list[str] = Field(min_length=1,max_length=5)
+    reason: str = Field(min_length=1,max_length=200)
+
+
+class CleanupConfirm(Confirm):
+    confirmation: Literal['删除旧GM产物']

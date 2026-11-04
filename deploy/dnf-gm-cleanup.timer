@@ -1,0 +1,9 @@
+[Unit]
+Description=Check confirmed GM release cleanup requests
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=30s
+AccuracySec=2s
+Unit=dnf-gm-cleanup.service
+[Install]
+WantedBy=timers.target

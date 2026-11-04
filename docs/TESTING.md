@@ -46,3 +46,20 @@ npm run build
 `tests/app/test_item_preferences.py`覆盖按PVF隔离、分页、停用/缺失物品、去收藏、幂等收藏、收藏与选择并发、认证/CSRF/Origin、迁移重复执行、服务对象重建后持久存在，以及修改收藏不影响既有奖励预览或发放数量。前端覆盖收藏按钮、最近选择失败时保留草稿、仓库页和弹窗提示遮挡回归。
 
 浏览器检查使用合成API验证桌面和390px手机点击，不等价于生产已部署或客户端物品效果验收。具体本轮结果见`reports/MANAGEMENT-EXPANSION-02.md`。
+
+
+## 开发版受控发布包清理
+
+`tests/test_release_cleanup_files.py`只删除pytest临时目录内的合成发布包，检查当前/回滚/最新两个版本、签名、目录指纹、链接/挂载点拒绝、资源门槛、逐目录收据、中断不重放，以及安装器父子进程维护锁。不会调用真实安装、启用或生产清理脚本。
+
+`tests/app/test_release_cleanup.py`在隔离MySQL5.7核验认证/CSRF/Origin/重新认证、预览、同连接审计入队、最小权限、并发、锁/查询超时、审计失败、COMMIT响应丢失、只读查询、原编号投递和原子取消未入队预览。请求使用合成票据，不触发root执行器。前端`ReleaseCleanup.test.ts`核验就近错误、确认、未知结果、取消、只读恢复和隐藏/卸载时停止轮询。
+
+可选浏览器测试`tools/browser-cleanup.mjs`要求Playwright与浏览器已在开发环境安装；不会增加应用运行依赖。先本地构建，并用Vite preview或等价静态服务器仅监听127.0.0.1:8766，提供`/dnf-gm/`。然后在仓库根运行：
+
+```bash
+node tools/browser-cleanup.mjs
+```
+
+工具只接受回环HTTP地址，阻止外部请求；API全用合成拦截，不连接生产。可通过`PLAYWRIGHT_MODULE`指定开发环境模块路径，`CHROME_EXECUTABLE`指定浏览器；仅在必须的隔离开发环境才设置`DNF_GM_BROWSER_NO_SANDBOX=1`。输出桌面/手机截图到Git忽略的`outputs/`。`DNF_GM_E2E_BASE`可更改本地静态端口，不能设为公网。
+
+以上测试不替代生产systemd权限/资源验证，不证明已经释放生产磁盘空间。

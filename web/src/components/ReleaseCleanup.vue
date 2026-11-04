@@ -1,0 +1,46 @@
+<script setup lang="ts">
+import {ref,onMounted,onBeforeUnmount,computed} from 'vue'
+import {api,ApiError,uncertainMessage} from '../api'
+const emit=defineEmits<{reauth:[]}>()
+const candidates=ref<any>(null),selected=ref<string[]>([]),reason=ref(''),phrase=ref(''),error=ref(''),reasonError=ref(''),busy=ref(false),preview=ref<any>(null),operation=ref(''),key=ref(''),detail=ref<any>(null),uncertain=ref(false),lookup=ref('')
+const storage='dnf-gm.release-cleanup-pending';let timer:ReturnType<typeof setInterval>|undefined,alive=true
+const terminal=computed(()=>detail.value?.status==='cancelled'||['completed','rejected','needs_review'].includes(detail.value?.result?.state))
+const queued=computed(()=>detail.value?.status==='queued')
+const frozen=computed(()=>busy.value||!!preview.value||queued.value||uncertain.value)
+const reasons:Record<string,string>={protected_release:'当前/回滚或最新两个版本，受保护',release_not_immutable:'目录可被其他用户修改或含符号链接',nested_mount:'目录内存在挂载点',different_filesystem:'跨文件系统',not_a_release_package:'不是可识别的发布包',special_or_linked_file:'含特殊文件或硬链接',scan_budget_exhausted:'本轮扫描预算用尽',scan_timeout:'目录扫描超时',too_many_entries:'目录条目超出扫描预算',tree_too_deep:'目录层级超出扫描预算',release_changed:'目录内容或身份已变化',ticket_expired:'签名清单已过期',resource_not_ready:'资源未就绪',interrupted_execution:'执行中断，需人工核对',deletion_failed:'删除未全部完成，需人工核对',invalid_signature:'清理票据签名不匹配'}
+const itemStates:Record<string,string>={prepared:'未执行',deleting:'执行中',removed:'已删除',interrupted_unknown:'中断，结果未知',partial_or_unknown:'可能部分删除，需核对'}
+function size(n:any){return typeof n==='number'?(n/2**20).toFixed(1)+' MiB':'未知'}
+function fail(e:unknown){error.value=uncertainMessage(e);if(e instanceof ApiError&&e.status===403&&e.message.includes('重新认证'))emit('reauth')}
+function forget(){const current=JSON.parse(sessionStorage.getItem(storage)||'null');if(current?.id===operation.value)sessionStorage.removeItem(storage)}
+function save(){sessionStorage.setItem(storage,JSON.stringify({id:operation.value,uncertain:uncertain.value}))}
+async function load(){if(busy.value)return;busy.value=true;error.value='';try{candidates.value=await api('/release-cleanups')}catch(e){candidates.value=null;fail(e)}finally{busy.value=false}}
+async function makePreview(){if(frozen.value)return;reasonError.value='';error.value='';if(!reason.value.trim()){reasonError.value='请填写清理原因。';return}if(!selected.value.length){error.value='请选择明确的旧GM版本。';return}if(selected.value.length>5){error.value='一次最多选择5个旧版本。';return}busy.value=true
+ try{const p=await api('/release-cleanups/preview','POST',{names:[...selected.value],reason:reason.value.trim()});preview.value=p;operation.value=p.operation_id;key.value=crypto.randomUUID();detail.value=null;phrase.value='';save()}catch(e){fail(e)}finally{busy.value=false}}
+async function inspect(id=operation.value,knownUnsubmitted=false){if(busy.value||!id)return;if(!/^[a-f0-9]{32}$/.test(id)){error.value='请输入32位操作编号。';return}busy.value=true;error.value=''
+ try{const d=await api('/release-cleanups/'+id);if(!alive)return;const local=operation.value===id&&!!key.value&&!uncertain.value;operation.value=id;detail.value=d
+ if(d.status==='queued'){uncertain.value=false;preview.value=null;if(terminal.value)forget();else save()}
+ else if(d.status==='cancelled'){uncertain.value=false;preview.value=null;forget()}
+ else if(local){error.value='此预览尚未提交，可确认或放弃。'}
+ else if(knownUnsubmitted){uncertain.value=false;preview.value={operation_id:id,preview:d.preview,expires_at:d.expires_at};key.value='';error.value='恢复了尚未提交的预览，请放弃并重新选择。'}
+ else{uncertain.value=true;save();error.value='尚未确认入队，继续只读查询原编号，不重新创建任务。'}}catch(e){fail(e)}finally{busy.value=false}}
+async function confirm(){if(busy.value||uncertain.value||queued.value||!preview.value||!key.value)return;error.value='';if(phrase.value!=='删除旧GM产物'){error.value='请输入“删除旧GM产物”确认本次不可撤销清理。';return}busy.value=true;uncertain.value=true
+ try{save()}catch{uncertain.value=false;busy.value=false;error.value='无法保存原操作编号，本次未发送。';return}
+ try{detail.value=await api('/release-cleanups/'+operation.value+'/confirm','POST',{idempotency_key:key.value,confirmation:phrase.value});uncertain.value=false;preview.value=null;if(terminal.value)forget();else save()}
+ catch(e){if(e instanceof ApiError&&[401,403,404,422].includes(e.status)){uncertain.value=false;save()}fail(e)}finally{busy.value=false}}
+async function cancelUnsubmitted(){if(busy.value||detail.value?.status!=='preview')return;busy.value=true;error.value=''
+ try{detail.value=await api('/release-cleanups/'+operation.value+'/cancel-preview','POST');uncertain.value=false;preview.value=null;forget()}catch(e){fail(e)}finally{busy.value=false}}
+async function dispatch(){if(busy.value||!detail.value?.retry_dispatch_allowed)return;busy.value=true;error.value='';try{detail.value=await api('/release-cleanups/'+operation.value+'/dispatch','POST');save()}catch(e){fail(e)}finally{busy.value=false}}
+function reset(){if(busy.value||uncertain.value||(queued.value&&!terminal.value))return;forget();preview.value=null;detail.value=null;operation.value='';key.value='';selected.value=[];phrase.value='';void load()}
+onMounted(async()=>{await load();if(!alive)return;try{const s=JSON.parse(sessionStorage.getItem(storage)||'null');if(s&&/^[a-f0-9]{32}$/.test(s.id)){operation.value=s.id;uncertain.value=true;await inspect(s.id,s.uncertain===false)}}catch(e){fail(e)}if(!alive)return;timer=setInterval(()=>{if(!document.hidden&&!busy.value&&(uncertain.value||(queued.value&&!terminal.value)))void inspect()},5000)})
+onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
+</script>
+<template><section class="panel release-cleanup"><div class="section-title"><h2>受控旧GM产物清理</h2><button :disabled="busy" @click="load">刷新签名清单</button></div><p class="warning">只删除明确选择的旧GM发布包，不碰游戏、备份、日志及当前/回滚版本。删除不可撤销；多目录可能部分完成，不宣称文件系统原子回滚。</p>
+ <p v-if="busy" role="status">正在核对清理状态…</p><p v-if="candidates&&candidates.state!=='ok'" class="field-hint">{{candidates.message}}</p>
+ <template v-if="!preview&&!detail&&!queued&&!uncertain&&candidates?.state==='ok'"><p class="field-hint">每次最多5个版本。占用是实际分配空间估算，其他进程仍持有文件时不一定立即释放。执行端会重新核验签名、目录身份与保护。</p><div class="cleanup-candidates"><label v-for="r in candidates.items" :key="r.name"><input type="checkbox" v-model="selected" :value="r.name" :aria-label="'清理版本 '+r.name" :disabled="!r.eligible||busy"><span><b class="mono">{{r.name}}</b><small class="cell-note">{{r.eligible?size(r.allocated_bytes)+' · '+r.entries+'个条目':reasons[r.reason]||r.reason||'不可清理'}}</small></span></label></div>
+ <label for="cleanup-reason" class="cleanup-label">清理原因 <i class="required-tag">必填</i></label><input id="cleanup-reason" v-model="reason" maxlength="200" :aria-invalid="!!reasonError" aria-describedby="cleanup-reason-error" @input="reasonError=''" :disabled="busy"><p v-if="reasonError" id="cleanup-reason-error" class="submit-error" role="alert">{{reasonError}}</p><button class="primary" :disabled="busy" @click="makePreview">预览所选旧版本清理</button></template>
+ <template v-if="preview"><h3>确认清理 {{preview.preview.items.length}} 个旧版本</h3><ul><li v-for="r in preview.preview.items" :key="r.name"><b class="mono">{{r.name}}</b> · {{size(r.allocated_bytes)}}</li></ul><p>原因：{{preview.preview.reason}}</p><p class="warning">{{preview.preview.note}}</p><label for="cleanup-confirmation">输入“删除旧GM产物”</label><input id="cleanup-confirmation" v-model="phrase" autocomplete="off" :disabled="busy||uncertain"><div class="button-row"><button :disabled="busy||uncertain" @click="reset">放弃预览并重选</button><button class="danger" :disabled="busy||uncertain||!key" @click="confirm">确认清理一次</button></div></template>
+ <template v-if="queued"><p v-if="!detail.result&&!detail.receipt_error" class="warning">已审计入队，不代表目录已经删除。{{detail.dispatch_present?'请求已投递，等待执行器核验。':'尚未确认投递，可仅重试投递原任务。'}}</p><p v-else-if="detail.result" :class="detail.result.state==='completed'?'submit-success':'warning'">{{detail.result.state==='completed'?'所选旧GM目录已删除':detail.result.state==='rejected'?'执行端拒绝，未开始本次删除':detail.result.state==='needs_review'?'可能部分完成，需要人工核对，禁止重复发起同一清理':'执行中，请继续查询原编号'}} · {{reasons[detail.result.reason]||detail.result.reason||''}}</p><ul v-if="detail.result"><li v-for="r in detail.result.items" :key="r.name">{{r.name}} · {{itemStates[r.state]||r.state}}</li></ul><p v-if="detail.receipt_error" class="submit-error">{{detail.receipt_error}}</p><button v-if="detail.retry_dispatch_allowed&&!detail.receipt_error" :disabled="busy" @click="dispatch">仅重新投递原任务</button><button v-if="terminal" :disabled="busy" @click="reset">结束查看并刷新清单</button></template>
+ <p v-if="detail?.status==='cancelled'" class="submit-success">原预览已取消，不会执行删除。<button :disabled="busy" @click="reset">重新选择旧版本</button></p>
+ <button v-if="uncertain&&detail?.status==='preview'" :disabled="busy" @click="cancelUnsubmitted">锁定核对并取消未入队预览</button>
+ <p v-if="uncertain" class="warning" role="status">入队结果待确认；已保存原编号，自动只读查询，不重新提交。</p><p v-if="operation" class="mono operation-number">{{operation}}</p><button v-if="operation" :disabled="busy" @click="inspect()">查询原清理结果</button><p v-if="error" class="submit-error" role="alert">{{error}}</p><details><summary>查询历史清理编号</summary><div class="toolbar"><input v-model="lookup" aria-label="历史清理编号" placeholder="32位操作编号"><button :disabled="busy||uncertain||(queued&&!terminal)" @click="inspect(lookup.trim())">查询历史清理</button></div></details>
+</section></template>
