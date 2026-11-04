@@ -23,6 +23,11 @@ def failed_message(error):
     return str(error.detail)[:200] if isinstance(error,HTTPException) else '服务异常；请核对原操作，不要另建重复任务'
 
 
+class NoRewardTargets(HTTPException):
+    def __init__(self):
+        super().__init__(422, '没有符合条件的未删除角色')
+
+
 class AttemptError(Exception):
     def __init__(self,target,error,uncertain):
         self.target,self.error,self.uncertain=target,error,uncertain
@@ -40,9 +45,9 @@ class RewardJobs:
         if len(engines)!=3 or any(e['ENGINE']!='InnoDB' for e in engines):
             raise HTTPException(409,'批量任务事务表未就绪')
 
-    def audit(self,q,job,action,result):
-        q.execute("INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) VALUES(%s,'owner',%s,%s,%s,%s)",
-                  ('job-'+uuid.uuid4().hex,'batch-'+action,job['reason'],dump({'job_id':job['id']}),dump(result)))
+    def audit(self,q,job,action,result,actor="owner"):
+        q.execute("INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) VALUES(%s,%s,%s,%s,%s,%s)",
+                  ('job-'+uuid.uuid4().hex,actor,'batch-'+action,job['reason'],dump({'job_id':job['id']}),dump(result)))
 
     @staticmethod
     def selector(filters):
@@ -69,47 +74,51 @@ class RewardJobs:
             args.extend([like(filters['q']),like(mysql_latin1_text(filters['q'].encode('utf-8')))])
         return ' AND '.join(conditions),args,ids
 
-    def preview(self,session_hash,data):
+    def create_in_transaction(self,q,session_hash,data,job_id=None,now=None):
         if not data['reason'].strip():raise HTTPException(422,'必须填写发放原因')
         clause,args,ids=self.selector(data['targets'])
         request=copy.deepcopy(data);reward=request['reward'];reward['action']='reward'
-        job_id=uuid.uuid4().hex;now=int(time.time());digest=hashlib.sha256();ordinal=0
+        job_id=job_id or uuid.uuid4().hex;now=int(time.time()) if now is None else now;digest=hashlib.sha256();ordinal=0
+        self.engines(q)
+        resolved=self.service.reward_snapshot(q,reward)
+        # Streaming keyset selection: no all-server list in application RAM.
+        upper=one(q,'SELECT COALESCE(MAX(charac_no),0) n FROM taiwan_cain.charac_info')['n']
+        last=0
+        while True:
+            q.execute('SELECT c.charac_no,c.m_id AS uid,c.charac_name,CAST(CONVERT(c.charac_name USING latin1) AS BINARY) AS client_name_bytes,c.lev,c.job,c.delete_flag,a.accountname '
+                      'FROM taiwan_cain.charac_info c JOIN d_taiwan.accounts a ON a.UID=c.m_id LEFT JOIN taiwan_login.login_account_3 l ON l.m_id=c.m_id '
+                      'WHERE '+clause+' AND c.charac_no>%s AND c.charac_no<=%s ORDER BY c.charac_no LIMIT 250',(*args,last,upper))
+            rows=q.fetchall()
+            inserts=[]
+            for row in rows:
+                target=character(row);ordinal+=1
+                digest.update(dump(target).encode());digest.update(b'\n')
+                inserts.append((job_id,ordinal,target['uid'],target['charac_no'],dump(target),uuid.uuid4().hex))
+            if inserts:q.executemany('INSERT INTO dnf_gm.reward_targets(job_id,ordinal,target_uid,charac_no,target_json,operation_id) VALUES(%s,%s,%s,%s,%s,%s)',inserts)
+            if len(rows)<250:break
+            last=rows[-1]['charac_no']
+        if not ordinal:raise NoRewardTargets()
+        if ids and len(ids)!=ordinal:raise HTTPException(422,'名单包含不存在、已删除或无所属账号的角色；没有创建任务')
+        accounts=one(q,'SELECT COUNT(DISTINCT target_uid) n FROM dnf_gm.reward_targets WHERE job_id=%s',(job_id,))['n']
+        multiplier=accounts if data['account_reward_mode']=='once_per_account' else ordinal
+        summary={**resolved,'target_count':ordinal,'account_count':accounts,
+                 'duplicates_removed':len(data['targets']['charac_nos'])-len(ids),
+                 'account_reward_mode':data['account_reward_mode'],
+                 'currency_totals':{key:str(value*multiplier) for key,value in reward['currency_rewards'].items()},
+                 'gold_total':str(reward.get('gold',0)*ordinal),
+                 'target_digest':digest.hexdigest(),
+                 'note':'名单已固定；在线模式选择在线账号下所有符合条件的角色，不代表这些角色同时在线。账号奖励按执行时锁定余额增加；物品/金币逐角色发放。'}
+        fingerprint=hashlib.sha256(dump({'request':request,'preview':summary}).encode()).hexdigest()
+        q.execute("INSERT INTO dnf_gm.reward_jobs(id,session_hash,fingerprint,request_json,preview_json,status,reason,target_count,account_count,created_at,expires_at) VALUES(%s,%s,%s,%s,%s,'preview',%s,%s,%s,%s,%s)",
+                  (job_id,session_hash,fingerprint,dump(request),dump(summary),data['reason'],ordinal,accounts,now,now+300))
+        self.audit(q,{'id':job_id,'reason':data['reason']},'preview',{'target_count':ordinal,'account_count':accounts,'fingerprint':fingerprint},actor='scheduler' if data.get('schedule_id') else 'owner')
+        return one(q,'SELECT * FROM dnf_gm.reward_jobs WHERE id=%s',(job_id,))
+
+    def preview(self,session_hash,data):
         with self.db.connect() as c,c.cursor() as q:
-            self.engines(q)
-            resolved=self.service.reward_snapshot(q,reward)
-            # Streaming keyset selection: no all-server list in application RAM.
-            upper=one(q,'SELECT COALESCE(MAX(charac_no),0) n FROM taiwan_cain.charac_info')['n']
-            last=0
-            while True:
-                q.execute('SELECT c.charac_no,c.m_id AS uid,c.charac_name,CAST(CONVERT(c.charac_name USING latin1) AS BINARY) AS client_name_bytes,c.lev,c.job,c.delete_flag,a.accountname '
-                          'FROM taiwan_cain.charac_info c JOIN d_taiwan.accounts a ON a.UID=c.m_id LEFT JOIN taiwan_login.login_account_3 l ON l.m_id=c.m_id '
-                          'WHERE '+clause+' AND c.charac_no>%s AND c.charac_no<=%s ORDER BY c.charac_no LIMIT 250',(*args,last,upper))
-                rows=q.fetchall()
-                inserts=[]
-                for row in rows:
-                    target=character(row);ordinal+=1
-                    digest.update(dump(target).encode());digest.update(b'\n')
-                    inserts.append((job_id,ordinal,target['uid'],target['charac_no'],dump(target),uuid.uuid4().hex))
-                if inserts:q.executemany('INSERT INTO dnf_gm.reward_targets(job_id,ordinal,target_uid,charac_no,target_json,operation_id) VALUES(%s,%s,%s,%s,%s,%s)',inserts)
-                if len(rows)<250:break
-                last=rows[-1]['charac_no']
-            if not ordinal:raise HTTPException(422,'没有符合条件的未删除角色')
-            if ids and len(ids)!=ordinal:raise HTTPException(422,'名单包含不存在、已删除或无所属账号的角色；没有创建任务')
-            accounts=one(q,'SELECT COUNT(DISTINCT target_uid) n FROM dnf_gm.reward_targets WHERE job_id=%s',(job_id,))['n']
-            multiplier=accounts if data['account_reward_mode']=='once_per_account' else ordinal
-            summary={**resolved,'target_count':ordinal,'account_count':accounts,
-                     'duplicates_removed':len(data['targets']['charac_nos'])-len(ids),
-                     'account_reward_mode':data['account_reward_mode'],
-                     'currency_totals':{key:str(value*multiplier) for key,value in reward['currency_rewards'].items()},
-                     'gold_total':str(reward.get('gold',0)*ordinal),
-                     'target_digest':digest.hexdigest(),
-                     'note':'名单已固定；在线模式选择在线账号下所有符合条件的角色，不代表这些角色同时在线。账号奖励按执行时锁定余额增加；物品/金币逐角色发放。'}
-            fingerprint=hashlib.sha256(dump({'request':request,'preview':summary}).encode()).hexdigest()
-            q.execute("INSERT INTO dnf_gm.reward_jobs(id,session_hash,fingerprint,request_json,preview_json,status,reason,target_count,account_count,created_at,expires_at) VALUES(%s,%s,%s,%s,%s,'preview',%s,%s,%s,%s,%s)",
-                      (job_id,session_hash,fingerprint,dump(request),dump(summary),data['reason'],ordinal,accounts,now,now+300))
-            self.audit(q,{'id':job_id,'reason':data['reason']},'preview',{'target_count':ordinal,'account_count':accounts,'fingerprint':fingerprint})
+            job=self.create_in_transaction(q,session_hash,data)
             c.commit()
-        return self.detail(job_id)
+        return self.detail(job['id'])
 
     def detail(self,job_id):
         with self.db.connect() as c,c.cursor() as q:
@@ -280,6 +289,7 @@ class RewardJobs:
             if not locked or locked['status']!='executing':return
             request=json.loads(job['request_json']);preview=json.loads(job['preview_json']);frozen=json.loads(target['target_json'])
             data={**request['reward'],'uid':target['target_uid'],'charac_no':target['charac_no'],'reason':job['reason'],'job_id':job['id']}
+            if request.get('schedule_id'):data['schedule_id']=request['schedule_id']
             if 'batch-reward' not in self.settings.writes:raise HTTPException(403,'批量写入已停用')
             self.service.check_write(q,data,preview);self.engines(q)
             account=self.service.target(q,data,lock=True)
@@ -298,7 +308,7 @@ class RewardJobs:
                     **self.service.apply_reward(q,op,data,per_preview,account)}
             if request['account_reward_mode']=='once_per_account' and data['currency_rewards']:
                 q.execute('INSERT INTO dnf_gm.reward_account_credits(job_id,target_uid,operation_id) VALUES(%s,%s,%s)',(job['id'],data['uid'],op))
-            q.execute("INSERT INTO dnf_gm.audit(operation_id,actor,action,target_uid,reason,request_json,result_json) VALUES(%s,'owner','reward',%s,%s,%s,%s)",(op,data['uid'],data['reason'],dump(data),dump(result)))
+            q.execute("INSERT INTO dnf_gm.audit(operation_id,actor,action,target_uid,reason,request_json,result_json) VALUES(%s,%s,'reward',%s,%s,%s,%s)",(op,'scheduler' if request.get('schedule_id') else 'owner',data['uid'],data['reason'],dump(data),dump(result)))
             q.execute("UPDATE dnf_gm.operations SET status='committed',result_json=%s WHERE operation_id=%s",(dump(result),op))
             q.execute("UPDATE dnf_gm.reward_targets SET status='committed',error_type='',error_message='' WHERE job_id=%s AND ordinal=%s",(job['id'],target['ordinal']))
             attempted=True;c.commit()

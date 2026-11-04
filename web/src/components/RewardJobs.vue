@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import {ref,computed,onMounted,onBeforeUnmount} from 'vue'
+import {ref,computed,onMounted,onBeforeUnmount,watch} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
 import ItemQueue from './ItemQueue.vue'
-const emit=defineEmits<{reauth:[],inspect:[id:string]}>()
+const props=defineProps<{scheduleDraft?:boolean,initialDraft?:any}>()
+const emit=defineEmits<{reauth:[],inspect:[id:string],schedule:[draft:any]}>()
 const mode=ref('selected'),ids=ref(''),uid=ref(''),jobFilter=ref(''),minimum=ref(0),maximum=ref(255),name=ref('')
 const rewardMode=ref('once_per_account'),reason=ref(''),gold=ref(0),message=ref('GM rewards'),amounts=ref<Record<string,number>>({cera:0,cera_point:0,mileage:0})
 const currencyNames:Record<string,string>={cera:'点券',cera_point:'代币券',mileage:'商城积分'}
@@ -53,6 +54,7 @@ async function queryOriginal(){if(busy.value)return;busy.value=true;try{await in
 async function choose(id:string){if(busy.value||uncertain.value)return;busy.value=true;error.value='';notice.value='';try{await inspect(id);confirmation.value='';repeat.value=false}catch(e){lookupError.value=uncertainMessage(e)}finally{busy.value=false}}
 async function preview(){
  if(busy.value||uncertain.value)return;error.value='';notice.value='';let data;try{data=payload()}catch(e){fail(e);return}
+ if(props.scheduleDraft){emit('schedule',data);return}
  busy.value=true
  try{const r=await api('/reward-jobs/preview','POST',data);selected.value=r;pendingId.value=r.id;queryId.value=r.id;key.value=crypto.randomUUID();uncertain.value=false;persist();confirmation.value='';repeat.value=false;previous.value=[];await loadTargets();await list();notice.value='名单和奖励已固定。请核对下方预览后启动；修改上方草稿不会改变这份预览。'}catch(e){fail(e)}finally{busy.value=false}
 }
@@ -72,14 +74,22 @@ async function findItems(){searchError.value='';try{found.value=(await api('/cat
 async function findTemplates(){searchError.value='';try{templates.value=(await api('/gift-templates?q='+encodeURIComponent(templateQuery.value)+'&page=1')).items}catch(e){searchError.value=uncertainMessage(e)}}
 function add(item:any){if(items.value.length>=20){searchError.value='最多20条物品配置。';return}if(!item.sendable&&item.sendable!==undefined){searchError.value=item.policy_reason||'该物品已停用。';return}items.value.push({...item,quantity:1});searchError.value=''}
 async function move(nextPage:boolean){const after=nextPage?next.value:previous.value.pop();if(after==null)return;if(nextPage)previous.value.push(cursor.value);busy.value=true;try{await loadTargets(after)}catch(e){lookupError.value=uncertainMessage(e)}finally{busy.value=false}}
-onMounted(async()=>{try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(saved&&/^[a-f0-9]{32}$/.test(saved.id)){pendingId.value=saved.id;key.value=saved.key||'';uncertain.value=!!saved.uncertain;queryId.value=saved.id;await inspect(saved.id)}}catch(e){lookupError.value=uncertainMessage(e)}await list();timer=setInterval(()=>{if(!busy.value&&!document.hidden&&selected.value){busy.value=true;void inspect(selected.value.id,false).catch(e=>{lookupError.value=uncertainMessage(e)}).finally(()=>{busy.value=false})}},30000)})
+watch(()=>props.initialDraft,d=>{
+ if(!d)return
+ const t=d.targets,r=d.reward
+ mode.value=t.mode;ids.value=(t.charac_nos||[]).join(', ');uid.value=t.uid?String(t.uid):'';jobFilter.value=t.job==null?'':String(t.job);minimum.value=t.min_level??0;maximum.value=t.max_level??255;name.value=t.q||''
+ rewardMode.value=d.account_reward_mode;reason.value=d.reason;gold.value=r.gold||0;message.value=r.message||'GM rewards';amounts.value={cera:0,cera_point:0,mileage:0,...r.currency_rewards}
+ items.value=(r.items||[]).map((i:any)=>({...i,name:i.name||'#'+i.id}));template.value=r.template_id?{id:r.template_id,current_version:r.template_version,name:'原计划礼包 #'+r.template_id}:null
+},{immediate:true})
+onMounted(async()=>{if(props.scheduleDraft)return;try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(saved&&/^[a-f0-9]{32}$/.test(saved.id)){pendingId.value=saved.id;key.value=saved.key||'';uncertain.value=!!saved.uncertain;queryId.value=saved.id;await inspect(saved.id)}}catch(e){lookupError.value=uncertainMessage(e)}await list();timer=setInterval(()=>{if(!busy.value&&!document.hidden&&selected.value){busy.value=true;void inspect(selected.value.id,false).catch(e=>{lookupError.value=uncertainMessage(e)}).finally(()=>{busy.value=false})}},30000)})
 onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
 </script>
 <template>
  <section class="reward-jobs">
   <section class="panel">
-   <div class="section-title"><h2>批量奖励任务</h2><button @click="draftVisible=!draftVisible">{{draftVisible?'收起新任务':'创建新任务'}}</button></div>
-   <p class="field-hint">先固定名单和奖励，再确认启动。账号货币按执行时余额累加，物品与金币邮件逐角色投递；不会因关闭网页而丢失进度。</p>
+   <div class="section-title"><h2>{{scheduleDraft?'定时奖励内容与收件规则':'批量奖励任务'}}</h2><button @click="draftVisible=!draftVisible">{{draftVisible?'收起新任务':'创建新任务'}}</button></div>
+   <p v-if="scheduleDraft" class="field-hint">此处只定义奖励和规则；计划到期时才冻结收件名单。点击底部按钮预览整个定时计划，不会立即发奖。</p>
+   <p v-else class="field-hint">先固定名单和奖励，再确认启动。账号货币按执行时余额累加，物品与金币邮件逐角色投递；不会因关闭网页而丢失进度。</p>
    <form v-show="draftVisible" @submit.prevent="preview">
     <fieldset :disabled="busy||uncertain">
      <h3>1. 收件范围</h3>
@@ -103,11 +113,11 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
      <label>账号货币发放规则<select v-model="rewardMode" aria-label="账号货币规则"><option value="once_per_account">同账号只发一次（推荐）</option><option value="per_character">每个角色都发一次到所属账号</option></select></label>
      <p class="field-hint">该规则仅影响点券、代币券和积分；物品与邮件金币始终逐角色发放。</p>
      <label>发放原因<textarea v-model="reason" maxlength="200" aria-label="批量发放原因" :aria-invalid="!!fieldErrors.reason"/></label><p v-if="fieldErrors.reason" class="submit-error" role="alert">{{fieldErrors.reason}}</p>
-     <button class="primary" type="submit">生成批量预览</button>
+     <button class="primary" type="submit">{{scheduleDraft?'预览定时奖励计划':'生成批量预览'}}</button>
     </fieldset>
    </form>
   </section>
-  <section v-if="selected" class="panel" aria-label="任务预览与进度">
+  <section v-if="!scheduleDraft&&selected" class="panel" aria-label="任务预览与进度">
    <div class="section-title"><h2>{{labels[selected.status]||selected.status}}</h2><span class="pill">角色 {{selected.target_count}} ／ 账号 {{selected.account_count}}</span></div>
    <p>任务编号：<code>{{selected.id}}</code></p><p>原因：{{selected.reason}}</p>
    <p v-if="selected.pause_reason" class="notice">{{selected.pause_reason}}</p>
@@ -136,7 +146,7 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
   </section>
   <p v-else-if="error" class="submit-error" role="alert">{{error}}</p>
   <p v-if="lookupError" class="submit-error" role="alert">{{lookupError}}，当前显示可能是旧快照，请刷新核对。</p>
-  <section class="panel">
+  <section v-if="!scheduleDraft" class="panel">
    <div class="section-title"><h2>任务历史</h2><button :disabled="busy" @click="list">刷新任务列表</button></div>
    <form class="toolbar" @submit.prevent="queryOriginal"><label>按原任务编号恢复查看<input v-model="queryId" aria-label="查询任务编号" :disabled="uncertain" placeholder="32位任务编号"></label><button :disabled="busy">查询原任务</button></form>
    <div v-if="!jobs.length" class="empty">暂无任务</div>
@@ -148,4 +158,5 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
 <style scoped>
 .reward-jobs{display:grid;gap:20px}.reward-jobs fieldset{border:0;padding:0;margin:0;min-width:0;display:grid;gap:12px}.reward-jobs h3{margin:14px 0 0}.reward-jobs label{display:grid;gap:6px}.reward-jobs textarea{min-height:80px;width:100%;resize:vertical}.reward-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.reward-results{display:flex;gap:8px;flex-wrap:wrap;max-height:220px;overflow:auto}.job-row{display:flex;gap:12px;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--border-color)}.reward-jobs code,.job-row small{overflow-wrap:anywhere;word-break:break-all}.reward-jobs .check-label{display:flex;align-items:center}.reward-jobs .check-label input{width:auto}.reward-jobs .toolbar label{flex:1}.file-input input{max-width:100%}
 @media(max-width:600px){.reward-grid{grid-template-columns:1fr 1fr}.reward-jobs table,.reward-jobs tbody,.reward-jobs tr,.reward-jobs td{display:block;min-width:0;width:100%}.reward-jobs thead{display:none}.reward-jobs td{white-space:normal;border:0;padding:6px 0}.reward-jobs tr{padding:10px 0;border-bottom:1px solid var(--border-color)}.job-row{align-items:flex-start}.reward-jobs .toolbar{flex-wrap:wrap}}
+.reward-jobs .toolbar label{flex:1 1 200px}.reward-jobs .toolbar label input{flex:0 0 auto}
 </style>

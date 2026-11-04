@@ -33,6 +33,7 @@ class Settings:
     native_control_actions: tuple = ()
     batch_worker_enabled: bool = False
     batch_worker_interval: int = 1
+    schedule_worker_enabled: bool = False
 
     def check(self):
         if len(self.secret) < 32 or not self.db_password:
@@ -70,6 +71,8 @@ class Settings:
                 raise ValueError('Native control requires fingerprinted native monitor activation')
             if any(self.write_approvals.get(a) is not True for a in self.native_control_actions):
                 raise ValueError('Native control requires explicit action activation records')
+        if type(self.schedule_worker_enabled) is not bool:
+            raise ValueError('Schedule worker enabled must be a boolean')
         if type(self.batch_worker_enabled) is not bool:
             raise ValueError('Batch worker enabled must be a boolean')
         if type(self.batch_worker_interval) is not int or not 1 <= self.batch_worker_interval <= 60:

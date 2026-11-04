@@ -133,7 +133,7 @@ PYTHONPATH=/opt/dnf-gm/current/src /opt/dnf-gm/venv/bin/python \
 
 ## 开发版管理扩展（未发布，不是0.3.1的必需升级）
 
-当前源码在0.3.1之后加入004邮件流水、005物品偏好、006持久奖励任务、007原生控制历史索引及仓库只读。发布前先在隔离环境演练并按当前实例逐项核验权限，不可重新运行`provision.py`。在完整备份和升级窗口中，仅停止GM应用，保留游戏、数据库、共享Docker及核心代理服务。
+当前源码在0.3.1之后加入004邮件流水、005物品偏好、006持久奖励任务、007原生控制历史索引、008定时运营及仓库只读。发布前先在隔离环境演练并按当前实例逐项核验权限，不可重新运行`provision.py`。在完整备份和升级窗口中，仅停止GM应用，保留游戏、数据库、共享Docker及核心代理服务。
 
 在新的版本目录、root维护身份下依次执行（参数必须替换为已核实的现有容器和数据库用户精确来源）：
 
@@ -142,11 +142,13 @@ python3 deploy/upgrade-mail-center.py --container <现有容器> --mysql-port <�
 python3 deploy/upgrade-warehouse-read.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
 python3 deploy/upgrade-item-preferences.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
 python3 deploy/upgrade-reward-jobs.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
+python3 deploy/upgrade-native-controls.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
+python3 deploy/upgrade-schedules.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
 ```
 
-这些工具只执行管理库DDL或专用账号增量授权，不修改游戏表结构、不发奖励、不重启服务。`health`要求管理库至少版本6；它不替代实际运行账号的列权限核验。安装应用后用管理员认证分别检查角色详情中的两类仓库、物品收藏/最近选择、邮件中心和原业务；历史邮件导入步骤仍见第一批阶段说明。
+这些工具只执行管理库DDL或专用账号增量授权，不修改游戏表结构、不发奖励、不重启服务。当前合并版`health`要求管理库001至008全部存在；它不替代实际运行账号的列权限核验。安装应用后用管理员认证分别检查角色详情中的两类仓库、物品收藏/最近选择、邮件中心和原业务；历史邮件导入步骤仍见第一批阶段说明。
 
-回滚旧应用时保留004/005/006/007表、邮件流水、偏好、审计及操作编号，不删除玩家数据或执行降级DDL。新增账号仓库金币只是只读存档，与金币邮件上限无关。
+回滚旧应用时保留004/005/006/007/008表、邮件流水、偏好、审计及操作编号，不删除玩家数据或执行降级DDL。新增账号仓库金币只是只读存档，与金币邮件上限无关。
 
 
 ### 组合奖励与批量执行器（开发版，默认关闭）
@@ -211,6 +213,21 @@ python3 deploy/upgrade-reward-jobs.py --container <现有容器> --mysql-port <�
 python3 deploy/upgrade-native-controls.py --container YOUR_DNF_CONTAINER --mysql-port 4000 --db-account-host YOUR_EXISTING_APP_HOST
 ```
 
-只新增007管理索引表和SELECT/INSERT权限，幂等执行，不修改游戏表结构或数据，不激活任何动作。占位参数必须来自当前实例；勿照抄。安装升级后 `/health` 要求007。新版本仅重启GM，不触碰mihomo、cliproxyapi或共享Docker。回滚保留管理表与审计，恢复旧版兼容配置；不要删除不确定操作以“修复”重试。
+只新增007管理索引表和SELECT/INSERT权限，幂等执行，不修改游戏表结构或数据，不激活任何动作。占位参数必须来自当前实例；勿照抄。第十批单独版本 `/health` 要求007；包含定时运营的当前合并版要求001至008全部存在。新版本仅重启GM，不触碰mihomo、cliproxyapi或共享Docker。回滚保留管理表与审计，恢复旧版兼容配置；不要删除不确定操作以“修复”重试。
 
 `native_control_actions`默认空；公告/踢人需要逐项明确激活与`write_approvals`，封禁联动另需原有ban能力。测试限制下不允许广播。真实客户端显示、生产沙箱、资源与游戏效果仍待验证；未验收项不得宣称通过。
+
+
+## 开发版第十一批：定时运营（未部署）
+
+先完成前置001–007迁移，再用维护权限执行（占位值须取自当前实例）：
+
+```bash
+python deploy/upgrade-schedules.py --container '<实际游戏容器>' --mysql-port '<实际容器内端口>' --db-account-host '<现有专用数据库用户host>'
+```
+
+仅新增008管理表及SELECT/INSERT/UPDATE权限，不修改游戏数据、不发送公告或重启服务。新版本 `/health` 要求001至008全部存在；新安装bootstrap包含008。不得重复provision现有实例。
+
+配置 `schedule_worker_enabled: false` 为默认。只有明确启用后才可激活和执行计划；奖励及公告各自仍需原有适配、权限、资源和测试范围条件。定时扫描与奖励逐目标处理共用一个线程，不新增systemd服务或扩大内存/CPU预算。实际名单在触发时确定，超过5分钟错过期次聚合记为跳过，公告不确定时只读核对、不重发。
+
+回滚前暂停计划并核对原子任务，仅停止GM；保留008表、历史、审计和防重记录。旧版本不认识新配置键时恢复兼容配置，不删除期次或重置原生占位。具体操作及状态见[定时运营说明](SCHEDULES.md)。生产迁移、资源占用与回滚验证仍待完成。

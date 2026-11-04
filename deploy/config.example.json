@@ -20,6 +20,7 @@
   "pvf_sha256": "",
   "write_approvals": {},
   "batch_worker_enabled": false,
+  "schedule_worker_enabled": false,
   "batch_worker_interval": 1,
   "assets_dir": "",
   "native_monitor_enabled": false,

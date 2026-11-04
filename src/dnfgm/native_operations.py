@@ -67,7 +67,7 @@ class NativeOperations:
             raise HTTPException(409, '账号已被封禁；如需断线请使用单独踢人')
         return {'record': row, 'owned': own}
 
-    def preview(self, session_hash, data):
+    def create_in_transaction(self, q, session_hash, data, op=None, now=None):
         # Validate here as well: scheduled/internal callers must use the same types.
         from .models import NativePreview
         data = NativePreview(**data).model_dump()
@@ -77,21 +77,26 @@ class NativeOperations:
         else:
             kick_packet(uid)
         self.ready(action, uid)
-        with self.db.connect() as c, c.cursor() as q:
-            self.engines(q)
-            preview = {'action': action, 'target': self.target(q, uid), 'reason': data['reason'],
-                       'message': data['message'], 'image_digest': self.settings.image_digest,
-                       'note': '只记录发送状态，没有业务回执；不能据此证明游戏内生效。封禁与踢人不是一个原子操作。'}
-            if action == 'native-ban-kick':
-                self.service.check_write(q, {'action': 'ban', 'uid': uid}, {})
-                preview['punishment'] = self.punishment(q, uid)
-            op, now = uuid.uuid4().hex, int(time.time())
-            fingerprint = hashlib.sha256(dump({'request': data, 'preview': preview}).encode()).hexdigest()
-            q.execute("INSERT INTO dnf_gm.operations(operation_id,session_hash,fingerprint,action,request_json,preview_json,status,created_at,expires_at) VALUES(%s,%s,%s,%s,%s,%s,'preview',%s,%s)",
-                      (op, session_hash, fingerprint, action, dump(data), dump(preview), now, now+300))
-            q.execute('INSERT INTO dnf_gm.native_controls(operation_id,target_uid,created_at) VALUES(%s,%s,%s)', (op, uid, now))
-            c.commit()
+        self.engines(q)
+        preview = {'action': action, 'target': self.target(q, uid), 'reason': data['reason'],
+                   'message': data['message'], 'image_digest': self.settings.image_digest,
+                   'note': '只记录发送状态，没有业务回执；不能据此证明游戏内生效。封禁与踢人不是一个原子操作。'}
+        if action == 'native-ban-kick':
+            self.service.check_write(q, {'action': 'ban', 'uid': uid}, {})
+            preview['punishment'] = self.punishment(q, uid)
+        op = op or uuid.uuid4().hex
+        now = int(time.time()) if now is None else now
+        fingerprint = hashlib.sha256(dump({'request': data, 'preview': preview}).encode()).hexdigest()
+        q.execute("INSERT INTO dnf_gm.operations(operation_id,session_hash,fingerprint,action,request_json,preview_json,status,created_at,expires_at) VALUES(%s,%s,%s,%s,%s,%s,'preview',%s,%s)",
+                  (op, session_hash, fingerprint, action, dump(data), dump(preview), now, now+300))
+        q.execute('INSERT INTO dnf_gm.native_controls(operation_id,target_uid,created_at) VALUES(%s,%s,%s)', (op, uid, now))
         return {'operation_id': op, 'preview': preview, 'expires_at': now+300, 'status': 'preview'}
+
+    def preview(self, session_hash, data):
+        with self.db.connect() as c, c.cursor() as q:
+            result = self.create_in_transaction(q, session_hash, data)
+            c.commit()
+        return result
 
     @staticmethod
     def row(q, op, session_hash=None, lock=False):
@@ -122,9 +127,9 @@ class NativeOperations:
             return {'items': [{**self.view(r), 'created_at': r['created_at']} for r in rows], 'page': page}
 
     @staticmethod
-    def audit(q, audit_id, data, result):
-        q.execute("INSERT INTO dnf_gm.audit(operation_id,actor,action,target_uid,reason,request_json,result_json) VALUES(%s,'owner',%s,%s,%s,%s,%s)",
-                  (audit_id, data['action'], data['uid'], data['reason'], dump(data), dump(result)))
+    def audit(q, audit_id, data, result, actor="owner"):
+        q.execute("INSERT INTO dnf_gm.audit(operation_id,actor,action,target_uid,reason,request_json,result_json) VALUES(%s,%s,%s,%s,%s,%s,%s)",
+                  (audit_id, actor, data['action'], data['uid'], data['reason'], dump(data), dump(result)))
 
     def failure(self, op, stage, error):
         # Separate diagnostic attempt, never a replacement for the transactional
@@ -137,7 +142,7 @@ class NativeOperations:
         except Exception:
             pass
 
-    def confirm(self, session_hash, op, key):
+    def confirm(self, session_hash, op, key, actor="owner"):
         if not re.fullmatch(r'[A-Za-z0-9_-]{16,64}', key):
             raise HTTPException(422, '非法幂等键')
         committing = False
@@ -178,7 +183,7 @@ class NativeOperations:
                     q.execute('INSERT INTO dnf_gm.owned_bans(uid,marker) VALUES(%s,%s) ON DUPLICATE KEY UPDATE marker=VALUES(marker)', (data['uid'], marker))
                     result['ban_status'] = 'committed_login_test_pending'
                 q.execute("UPDATE dnf_gm.operations SET idempotency_key=%s,status='dispatching',result_json=%s WHERE operation_id=%s", (key, dump(result), op))
-                self.audit(q, op, data, {**result, 'stage': 'dispatch_claim'})
+                self.audit(q, op, data, {**result, 'stage': 'dispatch_claim'}, actor)
                 committing = True
                 c.commit()
         except Exception as error:
@@ -201,7 +206,7 @@ class NativeOperations:
                 row = self.row(q, op, session_hash, True)
                 if row['status'] != 'dispatching' or row['idempotency_key'] != key:
                     raise RuntimeError('Claim mismatch')
-                self.audit(q, 'native-result:' + op, data, {**result, 'stage': 'transport_result'})
+                self.audit(q, 'native-result:' + op, data, {**result, 'stage': 'transport_result'}, actor)
                 q.execute('UPDATE dnf_gm.operations SET status=%s,result_json=%s WHERE operation_id=%s', (result['transport_status'], dump(result), op))
                 c.commit()
         except Exception as error:
@@ -217,7 +222,7 @@ class NativeOperations:
             return {'transport_status': 'uncertain', 'effect_status': 'unknown',
                     'reason_code': 'transport_exception', 'automatic_retry_allowed': False}
 
-    def cancel(self, session_hash, op):
+    def cancel(self, session_hash, op, actor="owner"):
         # Recent authenticated admin may cancel stale-session previews. Confirmation
         # remains session-bound; this cannot cancel an already-claimed operation.
         with self.db.connect() as c, c.cursor() as q:
@@ -230,7 +235,7 @@ class NativeOperations:
             data = json.loads(row['request_json'])
             result = {'operation_id': op, 'action': data['action'], 'transport_status': 'not_sent',
                       'effect_status': 'unknown', 'reason_code': 'cancelled', 'ban_status': 'not_requested'}
-            self.audit(q, 'native-cancel:' + op, data, result)
+            self.audit(q, 'native-cancel:' + op, data, result, actor)
             q.execute("UPDATE dnf_gm.operations SET status='cancelled',result_json=%s WHERE operation_id=%s", (dump(result), op))
             c.commit()
             row.update(status='cancelled', result_json=dump(result))

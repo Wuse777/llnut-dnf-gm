@@ -154,3 +154,42 @@ class NativePreview(Model):
         elif self.uid is None or self.message:
             raise ValueError('踢人须选择账号，不能附加聊天内容')
         return self
+
+
+class SchedulePreview(Model):
+    title: str = Field(min_length=1, max_length=100)
+    kind: Literal['reward', 'notice']
+    first_due: StrictInt = Field(ge=1, le=4102444800)
+    recurrence: Literal['once', 'daily', 'weekly'] = 'once'
+    end_at: StrictInt | None = Field(default=None, ge=1, le=4102444800)
+    reward_job: RewardJob | None = None
+    notice: NativePreview | None = None
+
+    @model_validator(mode='after')
+    def valid_definition(self):
+        self.title = self.title.strip()
+        if not self.title:
+            raise ValueError('请填写计划名称')
+        if self.kind == 'reward':
+            if self.reward_job is None or self.notice is not None:
+                raise ValueError('奖励计划需要完整奖励定义，不能混入公告')
+            self.reward_job.reason = self.reward_job.reason.strip()
+            if not self.reward_job.reason:
+                raise ValueError('请填写奖励计划的操作原因')
+        elif self.notice is None or self.notice.action != 'native-notice' or self.reward_job is not None:
+            raise ValueError('公告计划只允许全服公告，不能定时踢人或封禁')
+        if self.end_at is not None and (self.end_at < self.first_due or self.recurrence == 'once'):
+            raise ValueError('结束时间须不早于首次时间；一次性计划不需要结束时间')
+        return self
+
+
+class ActivateSchedule(Confirm):
+    fingerprint: str = Field(pattern=r'^[a-f0-9]{64}$')
+    acknowledge_recurring: bool = False
+    acknowledge_repeat: bool = False
+    all_server_confirmation: str = Field(default='', max_length=20)
+
+
+class ScheduleControl(Model):
+    action: Literal['pause', 'resume', 'cancel']
+    acknowledge_attention: bool = False

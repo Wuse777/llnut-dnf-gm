@@ -34,6 +34,8 @@ def bootstrap_sql(config,ph):
     sql += (Path(__file__).resolve().parents[1]/'migrations/006-reward-jobs.sql').read_text()
     sql += (Path(__file__).resolve().parents[1]/'migrations/007-native-controls.sql').read_text()
     sql += native_controls_sql(user)
+    sql += (Path(__file__).resolve().parents[1]/'migrations/008-schedules.sql').read_text()
+    sql += schedules_sql(user)
     sql += reward_jobs_sql(user)
     sql += catalog_policy_sql(user)
     sql += mail_gold_sql(user)
@@ -109,3 +111,8 @@ def reward_jobs_sql(user="'dnf_gm_app'@'127.0.0.1'"):
 
 def native_controls_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     return f'GRANT SELECT,INSERT ON dnf_gm.native_controls TO {user};\n'
+
+
+def schedules_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return ''.join(f'GRANT SELECT,INSERT,UPDATE ON dnf_gm.{table} TO {user};\n'
+                   for table in ('schedules','schedule_runs'))

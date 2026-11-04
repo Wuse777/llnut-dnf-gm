@@ -17,7 +17,8 @@ from .operations_dashboard import dashboard
 from .release_cleanup import ReleaseCleanup
 from .native_monitor import NativeMonitor
 from .native_operations import NativeOperations
-from .models import NativePreview
+from .models import NativePreview, SchedulePreview, ActivateSchedule, ScheduleControl
+from .schedules import Schedules, OperationsWorker
 from .catalog import snapshot
 from .audit_export import export_audit
 
@@ -80,14 +81,16 @@ def create_app(settings=None, database=None):
     cleanup = ReleaseCleanup(db,settings)
     native_monitor = NativeMonitor(settings)
     native_ops = NativeOperations(service, native_monitor)
+    schedules = Schedules(db, settings, jobs, native_ops)
     @asynccontextmanager
     async def lifespan(app):
-        worker = JobWorker(jobs,settings.batch_worker_interval) if settings.batch_worker_enabled else None
+        worker = JobWorker(OperationsWorker(schedules,jobs,settings),settings.batch_worker_interval) if (settings.batch_worker_enabled or settings.schedule_worker_enabled) else None
         if worker: worker.start()
         try: yield
         finally:
             if worker: worker.stop()
     app = FastAPI(title='DNF GM', docs_url=None, redoc_url=None, openapi_url=None,lifespan=lifespan)
+    app.state.schedules = schedules
     app.state.reward_jobs = jobs
     app.state.native_monitor = native_monitor
     app.state.native_operations = native_ops
@@ -110,10 +113,10 @@ def create_app(settings=None, database=None):
     @app.get(API+'/health')
     def health():
         with db.connect() as c, c.cursor() as q:
-            q.execute('SELECT version FROM dnf_gm.schema_versions ORDER BY version DESC LIMIT 1')
-            version=q.fetchone()
-            if not version or version['version']<7:
-                raise HTTPException(503,'管理库迁移未完成，需要完成007原生控制迁移（包含此前迁移）')
+            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 8')
+            versions={row['version'] for row in q.fetchall()}
+            if versions != set(range(1,9)):
+                raise HTTPException(503,'管理库迁移未完成，需要完成008定时运营迁移（包含此前迁移）')
         return {'ok':True,'version':'0.3.1'}
 
     @app.get(API+'/ready')
@@ -361,6 +364,39 @@ def create_app(settings=None, database=None):
     def update_template(tid:int,data:Gift,request:Request):
         user(request,True,True)
         return service.save_template(tid,data.model_dump())
+
+    @app.get(API+'/schedules')
+    def schedule_list(request:Request,page:int=Query(1,ge=1,le=10000)):
+        user(request)
+        return schedules.list(page)
+
+    @app.post(API+'/schedules/preview')
+    def schedule_preview(data:SchedulePreview,request:Request):
+        key=user(request,True,True)
+        limits.check('schedule-preview:'+key,6)
+        return schedules.preview(key,data.model_dump())
+
+    @app.get(API+'/schedules/{sid}')
+    def schedule_detail(request:Request,sid:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        user(request)
+        return schedules.detail(sid)
+
+    @app.get(API+'/schedules/{sid}/runs')
+    def schedule_runs(request:Request,sid:str=PathParameter(pattern=r'^[a-f0-9]{32}$'),page:int=Query(1,ge=1,le=10000)):
+        user(request)
+        return schedules.runs(sid,page)
+
+    @app.post(API+'/schedules/{sid}/activate')
+    def schedule_activate(data:ActivateSchedule,request:Request,sid:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True)
+        limits.check('schedule-activate:'+key,10)
+        return schedules.activate(key,sid,data.model_dump())
+
+    @app.post(API+'/schedules/{sid}/control')
+    def schedule_control(data:ScheduleControl,request:Request,sid:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True)
+        limits.check('schedule-control:'+key,30)
+        return schedules.control(sid,data.action,data.acknowledge_attention)
 
     @app.get(API+'/reward-jobs')
     def reward_jobs(request:Request,page:int=Query(1,ge=1,le=10000)):
