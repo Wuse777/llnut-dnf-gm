@@ -22,5 +22,6 @@
   "batch_worker_enabled": false,
   "batch_worker_interval": 1,
   "assets_dir": "",
-  "native_monitor_enabled": false
+  "native_monitor_enabled": false,
+  "native_control_actions": []
 }

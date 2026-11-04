@@ -30,6 +30,7 @@ class Settings:
     write_approvals: dict = field(default_factory=dict)
     mail_stack_limits: dict = field(default_factory=dict)
     native_monitor_enabled: bool = False
+    native_control_actions: tuple = ()
     batch_worker_enabled: bool = False
     batch_worker_interval: int = 1
 
@@ -59,6 +60,16 @@ class Settings:
             from .native_monitor import private_ipv4
             if not private_ipv4(self.db_host) or not self.image_digest:
                 raise ValueError('Native monitor requires an explicit private IPv4 database host and image fingerprint')
+        if (not isinstance(self.native_control_actions, (tuple, list))
+                or any(not isinstance(a, str) or a not in ('native-notice', 'native-kick')
+                       for a in self.native_control_actions)
+                or len(set(self.native_control_actions)) != len(self.native_control_actions)):
+            raise ValueError('Unknown or duplicate native control action')
+        if self.native_control_actions:
+            if not self.native_monitor_enabled:
+                raise ValueError('Native control requires fingerprinted native monitor activation')
+            if any(self.write_approvals.get(a) is not True for a in self.native_control_actions):
+                raise ValueError('Native control requires explicit action activation records')
         if type(self.batch_worker_enabled) is not bool:
             raise ValueError('Batch worker enabled must be a boolean')
         if type(self.batch_worker_interval) is not int or not 1 <= self.batch_worker_interval <= 60:
