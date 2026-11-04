@@ -214,7 +214,7 @@ python3 deploy/upgrade-inventory.py --container <现有容器> --mysql-port <数
 python3 deploy/upgrade-native-controls.py --container YOUR_DNF_CONTAINER --mysql-port 4000 --db-account-host YOUR_EXISTING_APP_HOST
 ```
 
-只新增007管理索引表和SELECT/INSERT权限，幂等执行，不修改游戏表结构或数据，不激活任何动作。占位参数必须来自当前实例；勿照抄。第十批单独版本 `/health` 要求007；第十一批定时版本要求001至008，包含装备维护的当前合并版要求001至009全部存在。新版本仅重启GM，不触碰mihomo、cliproxyapi或共享Docker。回滚保留管理表与审计，恢复旧版兼容配置；不要删除不确定操作以“修复”重试。
+只新增007管理索引表和SELECT/INSERT权限，幂等执行，不修改游戏表结构或数据，不激活任何动作。占位参数必须来自当前实例；勿照抄。第十批单独版本 `/health` 要求007；第十一批定时版本要求001至008，第十三批装备维护版本要求001至009全部存在；当前第十四批合并版要求001至010。新版本仅重启GM，不触碰mihomo、cliproxyapi或共享Docker。回滚保留管理表与审计，恢复旧版兼容配置；不要删除不确定操作以“修复”重试。
 
 `native_control_actions`默认空；公告/踢人需要逐项明确激活与`write_approvals`，封禁联动另需原有ban能力。测试限制下不允许广播。真实客户端显示、生产沙箱、资源与游戏效果仍待验证；未验收项不得宣称通过。
 
@@ -227,7 +227,7 @@ python3 deploy/upgrade-native-controls.py --container YOUR_DNF_CONTAINER --mysql
 python deploy/upgrade-schedules.py --container '<实际游戏容器>' --mysql-port '<实际容器内端口>' --db-account-host '<现有专用数据库用户host>'
 ```
 
-仅新增008管理表及SELECT/INSERT/UPDATE权限，不修改游戏数据、不发送公告或重启服务。第十一批版本 `/health` 要求001至008；包含装备维护的当前合并版要求001至009，新安装bootstrap包含009。不得重复provision现有实例。
+仅新增008管理表及SELECT/INSERT/UPDATE权限，不修改游戏数据、不发送公告或重启服务。第十一批版本 `/health` 要求001至008；第十三批装备维护版本要求001至009；当前第十四批合并版要求001至010，新安装bootstrap包含010。不得重复provision现有实例。
 
 配置 `schedule_worker_enabled: false` 为默认。只有明确启用后才可激活和执行计划；奖励及公告各自仍需原有适配、权限、资源和测试范围条件。定时扫描与奖励逐目标处理共用一个线程，不新增systemd服务或扩大内存/CPU预算。实际名单在触发时确定，超过5分钟错过期次聚合记为跳过，公告不确定时只读核对、不重发。
 
@@ -236,7 +236,7 @@ python deploy/upgrade-schedules.py --container '<实际游戏容器>' --mysql-po
 
 ## 开发版装备维护（默认关闭，未完成生产适配）
 
-第十二批提供编解码/维护协议，第十三批接入009管理迁移、不可变快照、事务API及网页，见[维护说明](INVENTORY-MAINTENANCE.md)。合并版健康检查要求001–009；不要重复provision现有实例。
+第十二批提供编解码/维护协议，第十三批接入009管理迁移、不可变快照、事务API及网页，见[维护说明](INVENTORY-MAINTENANCE.md)。第十三批版本健康检查要求001–009；当前第十四批合并版要求001–010；不要重复provision现有实例。
 
 仅安装管理表、索引及权限，不授予游戏存档UPDATE：
 
@@ -253,3 +253,14 @@ python3 deploy/upgrade-inventory.py --container '<实际游戏容器>' --mysql-p
 维护期间不切换数据库目标/部署配置、不回滚应用，不运行外部游戏写入工具。先由同版工具close并确认完成，再恢复游戏、核对状态，最后才可回滚应用/监控。回滚保留009快照、执行意向、审计和幂等键；不删除表，也不自动撤销已提交的物品修改。旧版不识别新配置键时恢复兼容配置。
 
 生产进程规则、维护探测成本、真实属性语义及游戏效果仍待验证；本批未授予生产存档写权限、未安排真实停服、未修改mihomo/cliproxyapi/共享Docker。
+
+
+## 开发版第十四批：玩家问题工作台（未部署）
+
+当前合并版健康检查要求001–010，新安装bootstrap包含010。前置迁移完成后，维护者执行：
+
+```bash
+python3 deploy/upgrade-support.py --container '<实际游戏容器>' --mysql-port '<实际容器内端口>' --db-account-host '<现有专用数据库用户host>'
+```
+
+仅安装管理表与最小管理权限，不修改游戏数据、不添加游戏权限、不激活能力、不重启服务。奖励补偿仍依赖原有游戏写入条件，不能通过建立问题绕过。无需新工作进程、数据库连接池或额外资源额度。回滚保留010记录、审计、幂等收据，不回滚已发奖励；未决请求保留原编号核查。安装前按已有流程核实备份与回退版本，不重复provision生产实例。详见[工作台手册](SUPPORT-DESK.md)。

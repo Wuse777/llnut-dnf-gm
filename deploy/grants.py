@@ -38,6 +38,8 @@ def bootstrap_sql(config,ph):
     sql += schedules_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/009-inventory-operations.sql').read_text()
     sql += inventory_management_sql(user)
+    sql += (Path(__file__).resolve().parents[1]/'migrations/010-support-desk.sql').read_text()
+    sql += support_sql(user)
     sql += reward_jobs_sql(user)
     sql += catalog_policy_sql(user)
     sql += mail_gold_sql(user)
@@ -129,3 +131,8 @@ def inventory_storage_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     return (f'GRANT UPDATE(inventory,equipslot) ON taiwan_cain_2nd.inventory TO {user};\n'
             f'GRANT UPDATE(cargo) ON taiwan_cain_2nd.charac_inven_expand TO {user};\n'
             f'GRANT UPDATE(cargo) ON taiwan_cain.account_cargo TO {user};\n')
+
+
+def support_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return (''.join(f'GRANT SELECT,INSERT,UPDATE ON dnf_gm.{table} TO {user};\n' for table in ('player_profiles','support_cases','support_links','support_requests'))
+            + f'GRANT SELECT,INSERT ON dnf_gm.support_events TO {user};\n')

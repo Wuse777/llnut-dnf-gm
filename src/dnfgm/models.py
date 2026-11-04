@@ -25,6 +25,7 @@ class CurrencyRewards(Model):
 
 
 class Preview(Model):
+    support_case_id: str | None = Field(default=None,pattern=r'^[a-f0-9]{32}$')
     action: Literal['currency', 'mail', 'ban', 'unban', 'equipment-unlock', 'reward']
     uid: StrictInt = Field(ge=1, le=2147483647)
     charac_no: StrictInt | None = Field(default=None, ge=1, le=2147483647)

@@ -19,6 +19,7 @@ from .native_monitor import NativeMonitor
 from .native_operations import NativeOperations
 from .inventory_operations import InventoryOperations
 from .models import InventoryPreview
+from .support_models import ProfileSave, CaseCreate, CaseUpdate, CaseEntry, CaseLink, CaseStatus, Category
 from .models import NativePreview, SchedulePreview, ActivateSchedule, ScheduleControl
 from .schedules import Schedules, OperationsWorker
 from .catalog import snapshot
@@ -117,10 +118,10 @@ def create_app(settings=None, database=None):
     @app.get(API+'/health')
     def health():
         with db.connect() as c, c.cursor() as q:
-            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 9')
+            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 10')
             versions={row['version'] for row in q.fetchall()}
-            if versions != set(range(1,10)):
-                raise HTTPException(503,'管理库迁移未完成，需要完成009装备快照迁移（包含此前迁移）')
+            if versions != set(range(1,11)):
+                raise HTTPException(503,'管理库迁移未完成，需要完成010玩家问题工作台迁移（包含此前迁移）')
         return {'ok':True,'version':'0.3.1'}
 
     @app.get(API+'/ready')
@@ -257,6 +258,51 @@ def create_app(settings=None, database=None):
         key=user(request,True,True)
         limits.check('native-cancel:'+key,12)
         return native_ops.cancel(key,op)
+
+    @app.get(API+'/support/profiles/{uid}')
+    def support_profile(request:Request,uid:int=PathParameter(ge=1,le=2147483647)):
+        key=user(request);limits.check('support-read:'+key,90)
+        return service.support.profile(uid)
+
+    @app.put(API+'/support/profiles/{uid}')
+    def support_profile_save(data:ProfileSave,request:Request,uid:int=PathParameter(ge=1,le=2147483647)):
+        key=user(request,True,True);limits.check('support-write:'+key,30)
+        return service.support.mutation('player-profile',uid,data.model_dump())
+
+    @app.get(API+'/support/cases')
+    def support_cases(request:Request,uid:int=Query(0,ge=0,le=2147483647),status:CaseStatus|Literal['']='',category:Category|Literal['']='',q:str=Query('',max_length=100),page:int=Query(1,ge=1,le=10000)):
+        key=user(request);limits.check('support-read:'+key,90)
+        return service.support.cases(uid,status,category,q,page)
+
+    @app.post(API+'/support/cases')
+    def support_create(data:CaseCreate,request:Request):
+        key=user(request,True,True);limits.check('support-write:'+key,30)
+        return service.support.mutation('case-create',None,data.model_dump())
+
+    @app.get(API+'/support/cases/{cid}')
+    def support_case(request:Request,cid:str=PathParameter(pattern=r'^[a-f0-9]{32}$'),event_page:int=Query(1,ge=1,le=10000),link_page:int=Query(1,ge=1,le=10000)):
+        key=user(request);limits.check('support-read:'+key,90)
+        return service.support.detail(cid,event_page,link_page)
+
+    @app.put(API+'/support/cases/{cid}')
+    def support_update(data:CaseUpdate,request:Request,cid:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('support-write:'+key,30)
+        return service.support.mutation('case-update',cid,data.model_dump())
+
+    @app.post(API+'/support/cases/{cid}/entries')
+    def support_comment(data:CaseEntry,request:Request,cid:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('support-write:'+key,30)
+        return service.support.mutation('case-comment',cid,data.model_dump())
+
+    @app.post(API+'/support/cases/{cid}/links')
+    def support_link(data:CaseLink,request:Request,cid:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('support-write:'+key,30)
+        return service.support.mutation('case-link',cid,data.model_dump())
+
+    @app.get(API+'/support/requests/{rid}')
+    def support_result(request:Request,rid:str=PathParameter(pattern=r'^[A-Za-z0-9_-]{16,64}$')):
+        key=user(request);limits.check('support-result:'+key,30)
+        return service.support.request(rid)
 
     @app.get(API+'/inventory/characters/{charac_no}/{container}/{slot}')
     def inventory_item(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647),

@@ -1,5 +1,5 @@
 import {afterEach,describe,it,expect,vi} from 'vitest'
-import {api,setCsrf,uncertainMessage} from './api'
+import {api,setCsrf,uncertainMessage,validationMessage} from './api'
 describe('same-origin API safety',()=>{
  afterEach(()=>vi.unstubAllGlobals())
  it('sends cookie and CSRF only on mutations, never stores tokens',async()=>{
@@ -16,4 +16,8 @@ describe('same-origin API safety',()=>{
 it('reports field validation without exposing supplied passwords',async()=>{
  vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({detail:[{loc:['body','delta'],type:'int_type',input:'secret-not-for-logs'}]}),{status:422})))
  await expect(api('/operations/preview','POST',{})).rejects.toThrow('变更金额：请填写整数')
+})
+
+it('uses Chinese support field names without echoing stored text',()=>{
+ const message=validationMessage([{loc:['body','note'],type:'string_too_short',input:'private-note'},{loc:['body','tags',0],type:'string_too_long'}]);expect(message).toContain('处理说明：内容不能为空');expect(message).toContain('玩家标签 / 0');expect(message).not.toContain('private-note')
 })

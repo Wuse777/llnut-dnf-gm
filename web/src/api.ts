@@ -5,7 +5,7 @@ export function setCsrf(value:string){csrf=value}
 export const requests=ref<{method:string,path:string,status:number|string,ms:number}[]>([])
 export function validationMessage(detail:unknown){
  if(typeof detail==='string')return detail
- const names:Record<string,string>={gold:'金币附件',reason:'操作原因',delta:'变更金额',quantity:'物品数量',uid:'账号 UID',charac_no:'收件角色',name:'模板名称',message:'邮件文字'}
+ const names:Record<string,string>={gold:'金币附件',reason:'操作原因',delta:'变更金额',quantity:'物品数量',uid:'账号 UID',charac_no:'收件角色',name:'模板名称',message:'邮件文字',title:'问题标题',description:'问题描述',category:'分类',status:'状态',notes:'账号备注',tags:'玩家标签',note:'处理说明',expected_revision:'记录版本',operation_id:'原操作编号',support_case_id:'关联问题编号',idempotency_key:'请求编号'}
  if(Array.isArray(detail))return detail.map(d=>{const field=d.loc?.filter((s:unknown)=>s!=='body').map((s:string)=>names[s]||s).join(' / ')||'参数';return field+'：'+(d.type==='int_type'?'请填写整数':d.type==='string_too_short'?'内容不能为空':d.type==='greater_than_equal'?'数值过小':d.type==='less_than_equal'?'数值过大':'格式或范围不正确')}).join('；')
  return '请求参数不正确'
 }

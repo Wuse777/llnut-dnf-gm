@@ -51,6 +51,8 @@ class Service:
         self.db, self.settings = db, settings
         self.catalog = Catalog(settings, db)
         self.mail_center = MailCenter(db)
+        from .support import SupportDesk
+        self.support = SupportDesk(db)
 
     def account(self, q, uid):
         a = one(q, 'SELECT UID AS uid,accountname FROM d_taiwan.accounts WHERE UID=%s', (uid,))
@@ -257,6 +259,8 @@ class Service:
                     raise HTTPException(409, '存在非本后台处罚，禁止覆盖')
                 if action == 'unban' and (not punishment or not punishment['apply_flag']):
                     raise HTTPException(409, '没有本后台创建的有效处罚')
+            support=self.support.reward_preview(q,data)
+            if support is not None:preview['support_case']=support
             op = uuid.uuid4().hex
             fingerprint = hashlib.sha256(dump({'request':data,'preview':preview}).encode()).hexdigest()
             t = int(time.time())
@@ -328,6 +332,8 @@ class Service:
                 account = self.target(q, data, lock=True)
                 if account['accountname'] != preview['target']['accountname'] or (action=='equipment-unlock' and account['character']['charac_name']!=preview['target']['character']['charac_name']):
                     raise HTTPException(409, '目标身份变化，重新预览')
+                support=self.support.reward_preview(q,data,lock=True)
+                if support != preview.get('support_case'):raise HTTPException(409,'关联问题记录或补偿次数已变化，请重新预览')
                 result = {'operation_id':op,'uid':data['uid'],'action':action,'client_verified':False}
                 if action == 'currency':
                     result.update(self.apply_currency(q,data,preview['before']))
@@ -358,6 +364,8 @@ class Service:
                         if q.rowcount != 1:
                             raise HTTPException(409, '解封条件未命中')
                     result.update(blocked=action=='ban',state='database_updated_login_test_pending',does_not_kick_online_player=True)
+                self.support.attach_reward(q,data,op,preview)
+                if support is not None:result['support_case_id']=support['case_id']
                 q.execute('INSERT INTO dnf_gm.audit(operation_id,actor,action,target_uid,reason,request_json,result_json) VALUES(%s,\'owner\',%s,%s,%s,%s,%s)',
                           (op,action,data['uid'],data['reason'],dump(data),dump(result)))
                 q.execute("UPDATE dnf_gm.operations SET status='committed',result_json=%s WHERE operation_id=%s", (dump(result),op))

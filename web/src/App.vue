@@ -9,6 +9,9 @@ import Modal from './components/Modal.vue'
 import MailCenter from './components/MailCenter.vue'
 import RewardJobs from './components/RewardJobs.vue'
 import Schedules from './components/Schedules.vue'
+import SupportDesk from './components/SupportDesk.vue'
+const supportDesk=ref<InstanceType<typeof SupportDesk>|null>(null)
+const supportUid=ref(0),supportCase=ref<any>(null),mailCenterUid=ref(0)
 import CurrencyRewardInputs from './components/CurrencyRewardInputs.vue'
 import FavoriteButton from './components/FavoriteButton.vue'
 import ItemCollection from './components/ItemCollection.vue'
@@ -16,7 +19,7 @@ import GiftVersions from './components/GiftVersions.vue'
 import PlayerCenter from './components/PlayerCenter.vue'
 import LiveSession from './components/LiveSession.vue'
 import NativeControls from './components/NativeControls.vue'
-import {inventoryNames,nativeNames,operationStatus} from './nativeStatus'
+import {supportNames,inventoryNames,nativeNames,operationStatus} from './nativeStatus'
 const detailSection=ref('basic')
 const giftHistory=ref(0)
 import CharacterDetails from './components/CharacterDetails.vue'
@@ -55,12 +58,13 @@ icons['schedules']='M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20 M12 6v6l4 3'
 icons['reward-jobs']='M3 3h18v18H3z M7 8h10 M7 12h10 M7 16h6'
 icons.mail='M3 5h18v14H3z M3 5l9 7 9-7'
 icons['unlock-center']='M5 10h14v11H5z M8 10V6a4 4 0 0 1 8 0 M12 14v3'
+icons.support='M4 3h16v14H9l-5 4V3z M8 7h8 M8 11h5'
 icons['native-controls']='M3 11h4l10-6v14L7 13H3z M7 13v7h4'
 icons['operations-dashboard']='M3 12h4l3-8 4 16 3-8h4'
-const tabs=[['overview','服务器概览'],['operations-dashboard','运维诊断'],['accounts','账号与角色'],['online','在线账号'],['native-controls','游戏内控制'],['mail','邮件发放'],['mail-center','邮件中心'],['reward-jobs','批量奖励'],['schedules','定时运营'],['unlock-center','装备解锁'],['catalog','物品索引'],['gifts','礼包模板'],['audit','操作审计']]
+const tabs=[['overview','服务器概览'],['operations-dashboard','运维诊断'],['accounts','账号与角色'],['support','玩家问题'],['online','在线账号'],['native-controls','游戏内控制'],['mail','邮件发放'],['mail-center','邮件中心'],['reward-jobs','批量奖励'],['schedules','定时运营'],['unlock-center','装备解锁'],['catalog','物品索引'],['gifts','礼包模板'],['audit','操作审计']]
 const cleanupStates:Record<string,string>={executing:'执行中',completed:'所选旧GM目录已删除',rejected:'执行端拒绝，未开始删除',needs_review:'可能部分完成，需要人工核对'}
 const cleanupFileStates:Record<string,string>={prepared:'未执行',deleting:'执行中',removed:'已删除',interrupted_unknown:'中断，结果未知',partial_or_unknown:'可能部分删除，需核对'}
-const actionNames:Record<string,string>={...nativeNames,...inventoryNames,'cleanup-release':'旧GM产物清理','unlock-batch':'批量提前解锁',reward:'组合奖励',currency:'余额变更',mail:'奖励邮件',ban:'封禁后续登录',unban:'解除封禁','equipment-unlock':'装备提前解锁','catalog-policy':'物品发放策略','gift-template':'礼包模板','role-soft-delete':'维护：角色软删除','test-fixture-cleanup':'维护：测试夹具归档'}
+const actionNames:Record<string,string>={...nativeNames,...inventoryNames,...supportNames,'cleanup-release':'旧GM产物清理','unlock-batch':'批量提前解锁',reward:'组合奖励',currency:'余额变更',mail:'奖励邮件',ban:'封禁后续登录',unban:'解除封禁','equipment-unlock':'装备提前解锁','catalog-policy':'物品发放策略','gift-template':'礼包模板','role-soft-delete':'维护：角色软删除','test-fixture-cleanup':'维护：测试夹具归档'}
 const currencyNames:Record<string,string>={cera:'点券',cera_point:'代币券',mileage:'积分'}
 const categoryNames:Record<string,string>={equipment:'装备',material:'材料',consumable:'消耗品',special:'特殊'}
 function sendable(i:any){return i.sendable??!!i.allowed}
@@ -70,9 +74,9 @@ function money(n:unknown){return n==null?'未知':Number(n).toLocaleString('zh-C
 function localTime(s:string){return s?new Date(s.replace(' ','T')+'Z').toLocaleString('zh-CN',{hour12:false}):'未知'}
 async function reveal(selector:string){await nextTick();document.querySelector(selector)?.scrollIntoView?.({block:'start'})}
 function openCharacter(id:number){detailSection.value='basic';notice.value='';error.value='';toastDismissed.value=true;detailCharacNo.value=id}
-function clearTarget(){detailCharacNo.value=0;confirmOpen.value=false;account.value=null;roles.value=[];selectedRole.value=0;preview.value=null;operationResult.value=null}
+function clearTarget(){supportCase.value=null;detailCharacNo.value=0;confirmOpen.value=false;account.value=null;roles.value=[];selectedRole.value=0;preview.value=null;operationResult.value=null}
 function clearSession(){mailCurrencies.value={};giftCurrencies.value={};giftHistory.value=0;giftGold.value=0;giftMessage.value='GM rewards';giftCategory.value='';detailCharacNo.value=0;policyDialog.value=null;toastDismissed.value=false;fieldErrors.value={};feedbackScope.value='';tableState.clear();logged.value=false;setCsrf('');clearTarget();rows.value=[];roleResults.value=[];mailAttachments.value=[];mailGold.value=0;giftAttachments.value=[];templateId.value=null;templateVersion.value=null;giftId.value=0;giftVersion.value=0;giftName.value='';giftEnabled.value=true;lookupId.value='';lookedUp.value=null;password.value='';code.value='';reason.value='';reauthOpen.value=false;notice.value='';requests.value=[];recipientResults.value=[];recipientSearch.value='';giftEditing.value=false;pickerOpen.value=false;reauthOpen.value=false;confirmOpen.value=false;mobileMenu.value=false}
-function requestBody(){const mail=action.value==='mail';return {action:mail&&hasMailCurrencies.value?'reward':action.value,...(mail&&hasMailCurrencies.value?{currency_rewards:mailCurrencies.value}:{}),uid:account.value?.uid,charac_no:mail||action.value==='currency'?selectedRole.value||null:null,currency:action.value==='currency'?currency.value:null,delta:action.value==='currency'?delta.value:null,reason:reason.value.trim(),items:mail&&templateId.value===null?mailAttachments.value.map(({id,quantity})=>({id,quantity})):[],gold:mail?mailGold.value:0,message:mail?message.value:'GM rewards',template_id:mail?templateId.value:null,template_version:mail?templateVersion.value:null}}
+function requestBody(){const mail=action.value==='mail';return {...(supportCase.value&&['currency','mail'].includes(action.value)?{support_case_id:supportCase.value.case_id}:{}),action:mail&&hasMailCurrencies.value?'reward':action.value,...(mail&&hasMailCurrencies.value?{currency_rewards:mailCurrencies.value}:{}),uid:account.value?.uid,charac_no:mail||action.value==='currency'?selectedRole.value||null:null,currency:action.value==='currency'?currency.value:null,delta:action.value==='currency'?delta.value:null,reason:reason.value.trim(),items:mail&&templateId.value===null?mailAttachments.value.map(({id,quantity})=>({id,quantity})):[],gold:mail?mailGold.value:0,message:mail?message.value:'GM rewards',template_id:mail?templateId.value:null,template_version:mail?templateVersion.value:null}}
 const draft=computed(()=>JSON.stringify(requestBody()))
 watch(draft,()=>{operationResult.value=null;if(preview.value){preview.value=null;notice.value='参数已变化，旧预览已失效；请重新生成。原编号仍可查询。'}},{flush:'sync'})
 watch([mailAttachments,mailGold,message,mailCurrencies],()=>{templateId.value=null;templateVersion.value=null},{deep:true,flush:'sync'})
@@ -120,6 +124,7 @@ async function searchRows(){page.value=1;roleMode.value=false;roleResults.value=
 const tableState=new Map<string,{search:string,page:number,category:string,roleMode:boolean,rolePage:number,roleQuery:string,accountMode:string}>()
 async function go(t:string){
  if(busy.value)return
+ if(tab.value==='support'&&t!=='support'&&supportDesk.value&&!supportDesk.value.canNavigate()){mobileMenu.value=false;await nextTick();document.querySelector('.support-desk [role=alert]')?.scrollIntoView?.({block:'center'});return}
  tableState.set(tab.value,{search:search.value,page:page.value,category:category.value,roleMode:roleMode.value,rolePage:rolePage.value,roleQuery:roleQuery.value,accountMode:accountMode.value})
  const saved=tableState.get(t)
  tab.value=t;page.value=saved?.page??1;search.value=saved?.search??'';category.value=saved?.category??'';rows.value=[];catalogMeta.value=null
@@ -128,7 +133,7 @@ async function go(t:string){
  await run(load)
  await nextTick();if(!pickerOpen.value)window.scrollTo?.({top:0,behavior:'instant'})
 }
-async function setTarget(uid:number,role=0){const a=await api('/accounts/'+uid);const r=(await api('/characters?uid='+uid)).items;account.value=a;roles.value=r;selectedRole.value=role;if(['accounts','online'].includes(tab.value))action.value='currency';preview.value=null;operationResult.value=null;notice.value='已选择账号 #'+uid+' '+a.accountname;recipientResults.value=[];await reveal(tab.value==='mail'?'#recipient':'[data-testid=account-operations]')}
+async function setTarget(uid:number,role=0){supportCase.value=null;const a=await api('/accounts/'+uid);const r=(await api('/characters?uid='+uid)).items;account.value=a;roles.value=r;selectedRole.value=role;if(['accounts','online'].includes(tab.value))action.value='currency';preview.value=null;operationResult.value=null;notice.value='已选择账号 #'+uid+' '+a.accountname;recipientResults.value=[];await reveal(tab.value==='mail'?'#recipient':'[data-testid=account-operations]')}
 async function copyMailDraft(data:any){
  if(busy.value||pendingId.value){error.value='当前有未完成的操作，请先查询其结果。';return}
  await go('mail')
@@ -149,9 +154,23 @@ async function correctOperation(record:any){
 }
 async function playerAction(data:{action:string,uid:number,charac_no?:number}){
  if(busy.value||pendingId.value)return
+ if(data.action==='support'){supportUid.value=data.uid;await go('support');return}
+ if(data.action==='support-mail'){mailCenterUid.value=data.uid;await go('mail-center');return}
  if(data.action==='detail'||data.action==='unlock'){detailSection.value=data.action==='unlock'?'unlock':'basic';detailCharacNo.value=data.charac_no||0;return}
  if(data.action==='mail')await go('mail')
+ else if(tab.value==='support')await go('accounts')
  await run(async()=>{await setTarget(data.uid,data.charac_no||0);action.value=data.action;await reveal(data.action==='mail'?'#recipient':'[data-testid=account-operations]')})
+}
+async function supportCompensation(data:any){
+ if(busy.value||pendingId.value)return
+ await go(data.kind==='mail'?'mail':'accounts')
+ await run(async()=>{
+  await setTarget(data.uid,data.charac_no||0)
+  supportCase.value={case_id:data.case_id,title:data.title,uid:data.uid,charac_no:data.charac_no,compensation_count:data.compensation_count}
+  action.value=data.kind;delta.value=0;reason.value=('问题 #'+data.case_id+'：'+data.title).slice(0,200)
+  if(data.kind==='mail'){mailAttachments.value=[];mailGold.value=0;mailCurrencies.value={};templateId.value=null;templateVersion.value=null;message.value='问题补偿'}
+  notice.value='已建立关联问题的草稿，尚未发奖。请填写正确的金额或物品后预览。'
+ })
 }
 async function refreshAccount(){if(account.value)await run(async()=>{account.value=await api('/accounts/'+account.value.uid);notice.value='账号余额与在线状态已刷新'})}
 async function select(a:any){await run(()=>setTarget(a.uid))}
@@ -204,7 +223,7 @@ function openScheduledChild(kind:string,id:string){
  if(kind==='reward'){sessionStorage.setItem('dnfgm.pending-reward-job',JSON.stringify({id,uncertain:false}));go('reward-jobs')}
  else{sessionStorage.setItem('dnfgm-native-operation',id);go('native-controls')}
 }
-const descriptions:Record<string,string>={'schedules':'北京时间定时奖励与公告，按期冻结名单；错过不补发，异常不重放。','native-controls':'预览确认后发送公告或账号控制；不把传输成功当成游戏生效。','operations-dashboard':'资源历史、占用分类、保护原因与发布信息；不把过期数据当成正常。','unlock-center':'查找保存的申请、关联物品与倒计时，明确选择后整批设为到期。','reward-jobs':'固定名单、账号奖励去重与持久任务；异常时核对原任务，不重复发奖。','mail-center':'查找每一笔投递和全部附件；从历史记录生成新草稿。',overview:'服务健康与玩家数据，一眼掌握。',accounts:'先选账号，再管理余额、角色与登录权限。',online:'按游戏登录状态查看在线账号。',mail:'选定收件角色，组合奖励，核对后投递。',catalog:'搜索当前 PVF，管理物品的发放策略。',gifts:'把常用奖励保存成礼包，版本与历史发放可追溯。',audit:'追踪每一笔操作；查询历史结果不会重复执行。'}
+const descriptions:Record<string,string>={support:'玩家备注、问题处理与补偿追踪；不把记录保存当成游戏操作。','schedules':'北京时间定时奖励与公告，按期冻结名单；错过不补发，异常不重放。','native-controls':'预览确认后发送公告或账号控制；不把传输成功当成游戏生效。','operations-dashboard':'资源历史、占用分类、保护原因与发布信息；不把过期数据当成正常。','unlock-center':'查找保存的申请、关联物品与倒计时，明确选择后整批设为到期。','reward-jobs':'固定名单、账号奖励去重与持久任务；异常时核对原任务，不重复发奖。','mail-center':'查找每一笔投递和全部附件；从历史记录生成新草稿。',overview:'服务健康与玩家数据，一眼掌握。',accounts:'先选账号，再管理余额、角色与登录权限。',online:'按游戏登录状态查看在线账号。',mail:'选定收件角色，组合奖励，核对后投递。',catalog:'搜索当前 PVF，管理物品的发放策略。',gifts:'把常用奖励保存成礼包，版本与历史发放可追溯。',audit:'追踪每一笔操作；查询历史结果不会重复执行。'}
 const feedbackMessage=computed(()=>{const fields=Object.values(fieldErrors.value);return error.value?(fields.length?fields[0]+(fields.length>1?' 另有 '+(fields.length-1)+' 项需检查。':''):error.value):notice.value})
 watch([error,notice],()=>{toastDismissed.value=false})
 const shownResult=computed(()=>operationResult.value?.result??operationResult.value)
@@ -289,14 +308,16 @@ onUnmounted(()=>clearInterval(timer))
   <div class="release-note"><span class="pill">公网测试版</span><span>未经完整游戏客户端验收；数据库提交不等于客户端已领取或生效。索引物品按策略开放试发，不代表已验证；批量任务逐角色提交；不提供装备回收或玩家私信。</span></div>
 <div v-if="pendingId" class="warning banner"><div><b>提交结果待确认</b><p class="mono">{{pendingId}}</p><small>禁止新建替代操作；自动核对原编号，不重发。刷新网页后仍保留待确认编号。</small><p v-if="pendingStatus">{{pendingStatus}}<small v-if="pendingChecked"> · {{new Date(pendingChecked).toLocaleTimeString()}}</small></p></div><button :disabled="busy" @click="inspectOperation(pendingId)">查询待确认操作</button></div>
 
+  <p v-if="supportCase&&['accounts','mail'].includes(tab)" class="notice" role="status">关联问题：{{supportCase.title}} · #{{supportCase.case_id}}。已关联补偿 {{supportCase.compensation_count}} 笔，请先核对历史。提交成功后会在同一事务内记录关联，不自动解决问题。<button :disabled="busy||!!pendingId" @click="supportCase=null">解除此草稿关联</button></p>
   <div class="page-body" :key="tab">
   <GiftVersions v-if="giftHistory" :template-id="giftHistory" @close="giftHistory=0" @copy="copyGiftVersion" />
+  <SupportDesk ref="supportDesk" v-if="tab==='support'" :uid="supportUid" @reauth="reauthOpen=true" @expired="clearSession" @action="playerAction" @inspect="inspectOperation" @compensate="supportCompensation"/>
   <NativeControls v-if="tab==='native-controls'" :account="account" @reauth="reauthOpen=true" @expired="clearSession" @select-player="go('accounts')"/>
   <OperationsDashboard v-if="tab==='operations-dashboard'" @reauth="reauthOpen=true"/>
   <UnlockCenter v-if="tab==='unlock-center'" @reauth="reauthOpen=true" @inspect="inspectOperation"/>
   <Schedules v-if="tab==='schedules'" @reauth="reauthOpen=true" @expired="clearSession" @child="openScheduledChild" />
   <RewardJobs v-if="tab==='reward-jobs'" @reauth="reauthOpen=true" @inspect="inspectOperation" />
-  <MailCenter v-if="tab==='mail-center'" @draft="copyMailDraft" />
+  <MailCenter v-if="tab==='mail-center'" :uid="mailCenterUid" @draft="copyMailDraft" />
   <template v-if="tab==='overview'">
     <template v-if="overview"><div class="metrics"><article><span>注册账号</span><strong>{{money(overview.counts.accounts)}}</strong><small>累计注册</small></article><article><span>游戏角色</span><strong>{{money(overview.counts.characters)}}</strong><small>未删除角色</small></article><article><span>当前在线</span><strong class="mint">{{money(overview.counts.online_accounts)}}</strong><small>登录状态表统计</small></article><article><span>状态采集</span><strong :class="overview.server.fresh?'mint':'amber'">{{overview.server.fresh?'实时':'未知'}}</strong><small>{{overview.server.collected_at?new Date(overview.server.collected_at*1000).toLocaleString('zh-CN'):'无有效快照'}}</small></article></div>
     <div class="two-col"><section class="panel"><div class="section-title"><h2>服务器资源</h2><span class="pill">15s 采集 · 30s 刷新</span></div><template v-if="overview.server.fresh"><div class="resource" v-for="[key,label,unit] in [['cpu_percent','CPU 使用率','%'],['mem_available_mib','可用物理内存','MiB'],['swap_free_mib','Swap 剩余','MiB'],['disk_free_gib','磁盘剩余','GiB']]" :key="key"><span>{{label}}</span><b>{{overview.server[key]??'未知'}} <small>{{unit}}</small></b></div></template><p v-else class="empty">{{overview.server.reason}}。过期数据不显示为正常。</p></section><section class="panel"><div class="section-title"><h2>核心服务</h2><span class="pill">只读监控</span></div><div v-if="overview.server.fresh" class="service-grid"><div v-for="(v,k) in overview.server.services??{}" :key="k" class="service-item"><span>{{k}}</span><span class="status-badge" :class="v?'success':'failure'">{{v?'运行中':'异常 / 未知'}}</span></div></div><p class="empty" v-else>状态未知，等待有效快照。</p></section></div>
@@ -336,7 +357,7 @@ onUnmounted(()=>clearInterval(timer))
   </main>
   <FeedbackToast v-if="(error||notice)&&!toastDismissed&&!mobileMenu&&!reauthOpen&&!(confirmOpen&&preview)&&!pickerOpen&&!detailCharacNo&&!policyDialog&&!giftHistory" :message="feedbackMessage" :error="!!error" :can-locate="!!error&&!!Object.keys(fieldErrors).length" @dismiss="toastDismissed=true" @locate="focusProblem"/>
 
-  <Modal v-if="confirmOpen&&preview&&!reauthOpen" title="确认操作预览" :busy="busy" @close="closePreview"><div class="confirmation-title"><span class="pill">{{actionNames[preview.preview.action]}}</span><h3>{{preview.preview.target.accountname}} <small>UID {{preview.preview.target.uid}}</small></h3></div><dl class="confirmation-details"><div><dt>操作原因</dt><dd>{{preview.preview.reason||reason}}</dd></div><div v-if="preview.preview.action==='currency'"><dt>{{currencyNames[preview.preview.currency]||preview.preview.currency}}</dt><dd class="balance-change">{{money(preview.preview.before)}} <span>→</span> <strong>{{money(preview.preview.after)}}</strong></dd></div><div v-if="preview.preview.target.character"><dt>收件角色</dt><dd>{{preview.preview.target.character.charac_name}} #{{preview.preview.target.character.charac_no}}</dd></div></dl><p v-if="['mail','reward'].includes(preview.preview.action)" class="balance-change" data-testid="preview-gold">金币附件：<strong>{{money(preview.preview.gold??0)}}</strong><small> · 整封合计一次，领取效果未验收</small></p><dl v-if="preview.preview.balances" class="confirmation-details"><div v-for="(balance,coin) in preview.preview.balances" :key="coin"><dt>{{currencyNames[coin]||coin}}</dt><dd>{{money(balance.before)}} → <strong>{{money(balance.after)}}</strong></dd></div></dl><ul v-if="preview.preview.rewards" class="preview-rewards"><li v-for="(i,n) in preview.preview.rewards.items" :key="n"><span>{{i.name}} <small>#{{i.id}}</small></span><b>×{{i.quantity}}</b></li></ul><p v-if="['ban','unban'].includes(preview.preview.action)" class="warning">仅影响后续登录，不立即踢出在线玩家。只操作本后台处罚。</p><p class="field-hint">5分钟内有效。修改参数、余额、模板或 PVF 版本变化时须重新预览。{{preview.write_enabled?'':'该能力未激活，确认将被拒绝。'}}</p><p class="mono operation-number">操作编号 {{preview.operation_id}}</p><details><summary>完整服务端预览</summary><pre>{{JSON.stringify(preview.preview,null,2)}}</pre></details><p v-if="uncertain" class="warning">本编号已提交或结果待确认，不再允许直接重发。请先查询结果。</p><template #footer><p v-if="error" class="submit-error" role="alert" tabindex="-1" data-modal-error>{{error}}</p><button :disabled="busy" @click="closePreview">返回修改</button><button :disabled="busy" @click="queryResult">按原编号查询结果</button><button :class="['primary',{danger:['ban','unban'].includes(preview.preview.action)||preview.preview.after<preview.preview.before}]" :disabled="busy||uncertain||!preview.write_enabled" @click="confirmOperation">{{busy?'正在提交…':'确认执行一次'}}</button></template></Modal>
+  <Modal v-if="confirmOpen&&preview&&!reauthOpen" title="确认操作预览" :busy="busy" @close="closePreview"><div class="confirmation-title"><span class="pill">{{actionNames[preview.preview.action]}}</span><h3>{{preview.preview.target.accountname}} <small>UID {{preview.preview.target.uid}}</small></h3></div><dl class="confirmation-details"><div><dt>操作原因</dt><dd>{{preview.preview.reason||reason}}</dd></div><div v-if="preview.preview.action==='currency'"><dt>{{currencyNames[preview.preview.currency]||preview.preview.currency}}</dt><dd class="balance-change">{{money(preview.preview.before)}} <span>→</span> <strong>{{money(preview.preview.after)}}</strong></dd></div><div v-if="preview.preview.target.character"><dt>收件角色</dt><dd>{{preview.preview.target.character.charac_name}} #{{preview.preview.target.character.charac_no}}</dd></div></dl><p v-if="preview.preview.support_case" class="notice" role="status">关联问题：{{preview.preview.support_case.title}} · 已有 {{preview.preview.support_case.compensation_count}} 笔补偿；请核对是否重复。问题记录变化时必须重新预览。</p><p v-if="['mail','reward'].includes(preview.preview.action)" class="balance-change" data-testid="preview-gold">金币附件：<strong>{{money(preview.preview.gold??0)}}</strong><small> · 整封合计一次，领取效果未验收</small></p><dl v-if="preview.preview.balances" class="confirmation-details"><div v-for="(balance,coin) in preview.preview.balances" :key="coin"><dt>{{currencyNames[coin]||coin}}</dt><dd>{{money(balance.before)}} → <strong>{{money(balance.after)}}</strong></dd></div></dl><ul v-if="preview.preview.rewards" class="preview-rewards"><li v-for="(i,n) in preview.preview.rewards.items" :key="n"><span>{{i.name}} <small>#{{i.id}}</small></span><b>×{{i.quantity}}</b></li></ul><p v-if="['ban','unban'].includes(preview.preview.action)" class="warning">仅影响后续登录，不立即踢出在线玩家。只操作本后台处罚。</p><p class="field-hint">5分钟内有效。修改参数、余额、模板或 PVF 版本变化时须重新预览。{{preview.write_enabled?'':'该能力未激活，确认将被拒绝。'}}</p><p class="mono operation-number">操作编号 {{preview.operation_id}}</p><details><summary>完整服务端预览</summary><pre>{{JSON.stringify(preview.preview,null,2)}}</pre></details><p v-if="uncertain" class="warning">本编号已提交或结果待确认，不再允许直接重发。请先查询结果。</p><template #footer><p v-if="error" class="submit-error" role="alert" tabindex="-1" data-modal-error>{{error}}</p><button :disabled="busy" @click="closePreview">返回修改</button><button :disabled="busy" @click="queryResult">按原编号查询结果</button><button :class="['primary',{danger:['ban','unban'].includes(preview.preview.action)||preview.preview.after<preview.preview.before}]" :disabled="busy||uncertain||!preview.write_enabled" @click="confirmOperation">{{busy?'正在提交…':'确认执行一次'}}</button></template></Modal>
   <Modal v-if="reauthOpen" title="敏感操作重新认证" :busy="busy" @close="reauthOpen=false"><form id="reauth-form" @submit.prevent="reauth"><p class="muted">安全认证已超过5分钟，请重新输入管理员密码。验证不会自动重放任何操作。</p><label>管理员账号<input v-model="username" autocomplete="username" required></label><label>管理员密码<input v-model="password" type="password" autocomplete="current-password" required></label><label v-if="totpRequired">新动态码或恢复码<input v-model="code" autocomplete="one-time-code" required></label></form><template #footer><p v-if="error" class="submit-error" role="alert" tabindex="-1" data-modal-error>{{error}}</p><button :disabled="busy" @click="reauthOpen=false">取消</button><button class="primary" form="reauth-form" :disabled="busy">验证</button></template></Modal>
   <CatalogPolicy v-if="policyDialog" :item="policyDialog.item" :filters="policyDialog.filters" @close="policyDialog=null" @changed="policyChanged" @reauth="policyReauth" @expired="clearSession"/>
   <CharacterDetails v-if="detailCharacNo" :key="detailCharacNo" :charac-no="detailCharacNo" :initial-section="detailSection" @close="detailCharacNo=0" @reauth="detailCharacNo=0;reauthOpen=true" @expired="detailCharacNo=0;clearSession()"/>
