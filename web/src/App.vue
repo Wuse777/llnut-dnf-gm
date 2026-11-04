@@ -223,6 +223,11 @@ const recipientSearchType=ref('account')
 const recipientSearch=ref(''),recipientResults=ref<any[]>([]),recipientQueried=ref(false),pickerQuery=ref(''),pickerRows=ref<any[]>([]),pickerPage=ref(1),pickerCategory=ref('')
 const mailAllowedOnly=ref(true),catalogAllowedOnly=ref(false),pickerAllowedOnly=ref(true)
 const theme=ref('light'),accountMode=ref('account')
+const healthTask=ref(''),healthSchedule=ref('')
+function openHealthTask(kind:string,id:string){
+ if(kind==='reward'){healthTask.value=id;go('reward-jobs')}
+ else{healthSchedule.value=id;go('schedules')}
+}
 function openScheduledChild(kind:string,id:string){
  if(kind==='reward'){sessionStorage.setItem('dnfgm.pending-reward-job',JSON.stringify({id,uncertain:false}));go('reward-jobs')}
  else{sessionStorage.setItem('dnfgm-native-operation',id);go('native-controls')}
@@ -319,10 +324,10 @@ onUnmounted(()=>clearInterval(timer))
   <EconomyReports v-if="tab==='economy'" @expired="clearSession" @inspect="inspectOperation" @player="playerAction({action:'currency',uid:$event})" @support="playerAction({action:'support',uid:$event})"/>
   <SupportDesk ref="supportDesk" v-if="tab==='support'" :uid="supportUid" @reauth="reauthOpen=true" @expired="clearSession" @action="playerAction" @inspect="inspectOperation" @compensate="supportCompensation"/>
   <NativeControls v-if="tab==='native-controls'" :account="account" @reauth="reauthOpen=true" @expired="clearSession" @select-player="go('accounts')"/>
-  <OperationsDashboard v-if="tab==='operations-dashboard'" @reauth="reauthOpen=true"/>
+  <OperationsDashboard v-if="tab==='operations-dashboard'" @reauth="reauthOpen=true" @task="openHealthTask"/>
   <UnlockCenter v-if="tab==='unlock-center'" @reauth="reauthOpen=true" @inspect="inspectOperation"/>
-  <Schedules v-if="tab==='schedules'" @reauth="reauthOpen=true" @expired="clearSession" @child="openScheduledChild" />
-  <RewardJobs v-if="tab==='reward-jobs'" @reauth="reauthOpen=true" @inspect="inspectOperation" />
+  <Schedules v-if="tab==='schedules'" :initial-schedule="healthSchedule" @opened="healthSchedule=''" @reauth="reauthOpen=true" @expired="clearSession" @child="openScheduledChild" />
+  <RewardJobs v-if="tab==='reward-jobs'" :initial-job="healthTask" @opened="healthTask=''" @reauth="reauthOpen=true" @inspect="inspectOperation" />
   <MailCenter v-if="tab==='mail-center'" :uid="mailCenterUid" @draft="copyMailDraft" />
   <template v-if="tab==='overview'">
     <template v-if="overview"><div class="metrics"><article><span>注册账号</span><strong>{{money(overview.counts.accounts)}}</strong><small>累计注册</small></article><article><span>游戏角色</span><strong>{{money(overview.counts.characters)}}</strong><small>未删除角色</small></article><article><span>当前在线</span><strong class="mint">{{money(overview.counts.online_accounts)}}</strong><small>登录状态表统计</small></article><article><span>状态采集</span><strong :class="overview.server.fresh?'mint':'amber'">{{overview.server.fresh?'实时':'未知'}}</strong><small>{{overview.server.collected_at?new Date(overview.server.collected_at*1000).toLocaleString('zh-CN'):'无有效快照'}}</small></article></div>

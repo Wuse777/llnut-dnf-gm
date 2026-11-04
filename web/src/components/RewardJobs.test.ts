@@ -50,3 +50,25 @@ it('stops hidden-page polling and never starts the worker from reads',async()=>{
 it('displays unavailable worker and disables starting',async()=>{
  const {w}=setup({worker_enabled:false});await flushPromises();await fill(w);await preview(w);expect(w.text()).toContain('执行器未启用');expect(w.findAll('button').find(b=>b.text()==='确认启动该任务')!.attributes('disabled')).toBeDefined()
 })
+it('allows cancelled uncertain targets to be reconciled, never resumed or requeued',async()=>{
+ sessionStorage.setItem('dnfgm.pending-reward-job',JSON.stringify({id,uncertain:false}))
+ const {w,fetcher}=setup({status:'cancelled',counts:{uncertain:1}});await flushPromises()
+ expect(w.text()).not.toContain('重新排队未提交目标');expect(w.text()).not.toContain('继续未执行目标')
+ await click(w,'只核对已取消任务的中断目标（不重发）')
+ const req=fetcher.mock.calls.find(([u])=>String(u).endsWith('/control'))
+ expect(req).toBeTruthy();expect(JSON.parse(req![1].body)).toEqual({action:'reconcile'})
+})
+it('opens a health target read-only',async()=>{
+ const {w,fetcher}=setup();await flushPromises();w.unmount();wrappers.splice(wrappers.indexOf(w),1)
+ const target=mount(RewardJobs,{props:{initialJob:id}});wrappers.push(target);await flushPromises()
+ expect(target.emitted('opened')).toEqual([[]]);expect(fetcher.mock.calls.some(([u])=>String(u).endsWith('/'+id))).toBe(true)
+ expect(fetcher.mock.calls.some(([,o])=>o?.method==='POST')).toBe(false)
+})
+it('does not abandon an uncertain original to follow a health target',async()=>{
+ sessionStorage.setItem('dnfgm.pending-reward-job',JSON.stringify({id,uncertain:true,key:'pending-key'}))
+ const {w,fetcher}=setup();await flushPromises();w.unmount();wrappers.splice(wrappers.indexOf(w),1)
+ const other='c'.repeat(32),target=mount(RewardJobs,{props:{initialJob:other}});wrappers.push(target);await flushPromises()
+ expect(target.text()).toContain('已优先恢复结果待确认的任务')
+ expect(fetcher.mock.calls.some(([u])=>String(u).endsWith('/'+other))).toBe(false)
+ expect(JSON.parse(sessionStorage.getItem('dnfgm.pending-reward-job')!).id).toBe(id)
+})

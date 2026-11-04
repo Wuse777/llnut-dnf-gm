@@ -21,6 +21,7 @@ await page.context().route('**/dnf-gm/api/v1/**',async route=>{const req=route.r
  else if(p==='/overview')d={counts:{accounts:0,characters:0,online_accounts:0},server:{fresh:true,core_ok:true,services:{}},enabled_writes:[]};
  else if(p==='/operations-dashboard')d={state:'unavailable',fresh:false,current:{fresh:false},message:'合成夹具：未启用资源历史',points:[],events:[],storage:null,releases:null,protection:null,application:{version:'fixture',schema_versions:[],schema_state:'unknown'}};
  else if(p==='/release-cleanups')d={enabled:false,state:'disabled',message:'合成夹具：清理未启用'};
+ else if(p==='/task-health')d={state:'clear',checked_at:now,issues:[],truncated:false};
  else if(p==='/backup-health')d={state:'unavailable'};
  else if(p==='/alerts'){d={...data,state:mode};if(mode==='error'){status=503;d={detail:'合成告警读取失败'}}if(mode==='unavailable')d={state:'unavailable'}}
  else{errors.push('Unexpected route '+p);status=500;d={detail:'Unexpected route'}}

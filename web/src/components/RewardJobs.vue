@@ -2,8 +2,8 @@
 import {ref,computed,onMounted,onBeforeUnmount,watch} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
 import ItemQueue from './ItemQueue.vue'
-const props=defineProps<{scheduleDraft?:boolean,initialDraft?:any}>()
-const emit=defineEmits<{reauth:[],inspect:[id:string],schedule:[draft:any]}>()
+const props=defineProps<{scheduleDraft?:boolean,initialDraft?:any,initialJob?:string}>()
+const emit=defineEmits<{reauth:[],inspect:[id:string],schedule:[draft:any],opened:[]}>()
 const mode=ref('selected'),ids=ref(''),uid=ref(''),jobFilter=ref(''),minimum=ref(0),maximum=ref(255),name=ref('')
 const rewardMode=ref('once_per_account'),reason=ref(''),gold=ref(0),message=ref('GM rewards'),amounts=ref<Record<string,number>>({cera:0,cera_point:0,mileage:0})
 const currencyNames:Record<string,string>={cera:'点券',cera_point:'代币券',mileage:'商城积分'}
@@ -81,7 +81,7 @@ watch(()=>props.initialDraft,d=>{
  rewardMode.value=d.account_reward_mode;reason.value=d.reason;gold.value=r.gold||0;message.value=r.message||'GM rewards';amounts.value={cera:0,cera_point:0,mileage:0,...r.currency_rewards}
  items.value=(r.items||[]).map((i:any)=>({...i,name:i.name||'#'+i.id}));template.value=r.template_id?{id:r.template_id,current_version:r.template_version,name:'原计划礼包 #'+r.template_id}:null
 },{immediate:true})
-onMounted(async()=>{if(props.scheduleDraft)return;try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(saved&&/^[a-f0-9]{32}$/.test(saved.id)){pendingId.value=saved.id;key.value=saved.key||'';uncertain.value=!!saved.uncertain;queryId.value=saved.id;await inspect(saved.id)}}catch(e){lookupError.value=uncertainMessage(e)}await list();timer=setInterval(()=>{if(!busy.value&&!document.hidden&&selected.value){busy.value=true;void inspect(selected.value.id,false).catch(e=>{lookupError.value=uncertainMessage(e)}).finally(()=>{busy.value=false})}},30000)})
+onMounted(async()=>{if(props.scheduleDraft)return;try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(saved&&/^[a-f0-9]{32}$/.test(saved.id)){pendingId.value=saved.id;key.value=saved.key||'';uncertain.value=!!saved.uncertain;queryId.value=saved.id;await inspect(saved.id)}}catch(e){lookupError.value=uncertainMessage(e)}try{if(props.initialJob){if(uncertain.value&&pendingId.value!==props.initialJob){lookupError.value='已优先恢复结果待确认的任务；请先核对，再查看异常中心选择的任务 '+props.initialJob}else{await inspect(props.initialJob);draftVisible.value=false}emit('opened')}}catch(e){lookupError.value=uncertainMessage(e)}await list();if(!alive)return;timer=setInterval(()=>{if(!busy.value&&!document.hidden&&selected.value){busy.value=true;void inspect(selected.value.id,false).catch(e=>{lookupError.value=uncertainMessage(e)}).finally(()=>{busy.value=false})}},30000)})
 onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
 </script>
 <template>
@@ -136,6 +136,7 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
    <div v-else class="toolbar">
     <button v-if="selected.status==='running'" :disabled="busy||uncertain" @click="control('pause')">暂停后续发放</button>
     <template v-if="['paused','needs_attention'].includes(selected.status)"><button :disabled="busy||uncertain||!selected.worker_enabled" @click="control('resume')">继续未执行目标</button><button :disabled="busy||uncertain" @click="control('reconcile')">核对中断目标</button><button :disabled="busy||uncertain||!selected.counts.failed" @click="control('retry-failed')">重新排队未提交目标</button></template>
+    <button v-if="selected.status==='cancelled'&&(selected.counts.uncertain||selected.counts.executing)" :disabled="busy||uncertain" @click="control('reconcile')">只核对已取消任务的中断目标（不重发）</button>
     <button v-if="['running','paused','needs_attention'].includes(selected.status)" :disabled="busy||uncertain" @click="control('cancel')">取消剩余目标（不撤销已发）</button>
    </div>
    <p v-if="uncertain" class="submit-error" role="alert">启动结果待确认。只查询原任务，禁止重新创建或重复发放。刷新页面后仍会保留这个任务编号。</p>

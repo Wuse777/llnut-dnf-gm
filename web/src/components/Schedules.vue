@@ -3,7 +3,8 @@ import {ref,computed,onMounted,onBeforeUnmount} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
 import RewardJobs from './RewardJobs.vue'
 import {shanghaiInput,shanghaiTimestamp,scheduleTime,scheduleStates} from '../scheduleTime'
-const emit=defineEmits<{reauth:[],expired:[],child:[kind:string,id:string]}>()
+const props=defineProps<{initialSchedule?:string}>()
+const emit=defineEmits<{reauth:[],expired:[],child:[kind:string,id:string],opened:[]}>()
 const title=ref(''),kind=ref('reward'),first=ref(shanghaiInput(Math.floor(Date.now()/1000)+3600)),recurrence=ref('once'),end=ref(''),message=ref(''),reason=ref('')
 const showDraft=ref(true),seed=ref<any>(null),draftKey=ref(0),fields=ref<Record<string,string>>({}),error=ref(''),busy=ref(false),items=ref<any[]>([]),runs=ref<any[]>([]),selected=ref<any>(null),page=ref(1),runPage=ref(1)
 const confirmation=ref(''),recurringAck=ref(false),repeatAck=ref(false),attentionAck=ref(false),canActivate=ref(false),uncertain=ref(false),activationKey=ref(''),query=ref(''),workerEnabled=ref(false)
@@ -67,7 +68,8 @@ function copyPlan(){
 }
 async function changePage(delta:number,history=false){if(busy.value)return;busy.value=true;try{if(history){runPage.value+=delta;await read(selected.value.id)}else{page.value+=delta;await list()}}catch(e){fail(e)}finally{busy.value=false}}
 onMounted(async()=>{
- try{await list();const id=sessionStorage.getItem(storage);if(id)await read(id)}catch(e){fail(e)}
+ try{await list();const id=sessionStorage.getItem(storage);if(id)await read(id);if(props.initialSchedule){if(selected.value?.status==='preview'&&id!==props.initialSchedule){error.value='保留尚未确认的原计划，请先核对，再查看计划 '+props.initialSchedule}else{await read(props.initialSchedule)}emit('opened')}}catch(e){fail(e)}
+ if(!alive)return
  timer=setInterval(()=>{if(document.hidden||busy.value||!selected.value)return;void inspect(selected.value.id)},30000)
 })
 onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})

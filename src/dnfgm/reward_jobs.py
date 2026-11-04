@@ -218,7 +218,7 @@ class RewardJobs:
                 q.execute("UPDATE dnf_gm.reward_jobs SET status='running',pause_reason='' WHERE id=%s",(job_id,))
             elif action in ('reconcile','retry-failed'):
                 if job['status']=='running':raise HTTPException(409,'请先暂停任务，再核对或重试')
-                if job['status']=='cancelled':raise HTTPException(409,'已取消任务不能重新发放，请保留记录')
+                if job['status']=='cancelled' and action!='reconcile':raise HTTPException(409,'已取消任务不能重新发放，请保留记录')
                 last=0
                 states="('failed')" if action=='retry-failed' else "('executing','uncertain')"
                 while True:
@@ -226,11 +226,13 @@ class RewardJobs:
                     rows=q.fetchall()
                     for target in rows:
                         state=self.reconcile_target(q,target)
+                        if job['status']=='cancelled' and state=='failed':
+                            q.execute("UPDATE dnf_gm.reward_targets SET error_message='已确认未提交；任务已取消，不会重新发放' WHERE job_id=%s AND ordinal=%s",(job_id,target['ordinal']))
                         if action=='retry-failed' and state=='failed':
                             q.execute("UPDATE dnf_gm.reward_targets SET status='pending',error_type='',error_message='' WHERE job_id=%s AND ordinal=%s",(job_id,target['ordinal']))
                     if len(rows)<100:break
                     last=rows[-1]['ordinal']
-                q.execute("UPDATE dnf_gm.reward_jobs SET status='paused' WHERE id=%s",(job_id,))
+                q.execute("UPDATE dnf_gm.reward_jobs SET status=IF(status='cancelled','cancelled','paused') WHERE id=%s",(job_id,))
             else:raise HTTPException(422,'未知任务操作')
             self.audit(q,job,action,{'action':action});c.commit()
         return self.detail(job_id)

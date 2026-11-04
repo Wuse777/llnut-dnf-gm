@@ -98,3 +98,13 @@ it('polling is read-only, hidden tabs stop polling and unmount clears timer',asy
  w.unmount();hidden.mockReturnValue(false);await vi.advanceTimersByTimeAsync(60000);expect(vi.mocked(api).mock.calls.length).toBe(n+3)
  expect(vi.mocked(api).mock.calls.every(c=>!c[1])).toBe(true)
 })
+it('opens an anomaly target without activation or changing its schedule',async()=>{
+ state=make({title:'异常计划',kind:'notice',first_due:1,recurrence:'once',notice:{message:'hi'}});state.status='active'
+ const w=mount(Schedules,{props:{initialSchedule:id}});wrappers.push(w);await flushPromises()
+ expect(api).toHaveBeenCalledWith('/schedules/'+id);expect(w.emitted('opened')).toEqual([[]]);expect(vi.mocked(api).mock.calls.every(c=>!c[1])).toBe(true)
+})
+it('keeps a recovered preview rather than replacing uncertain context',async()=>{
+ state=make({title:'原计划',kind:'notice',first_due:1,recurrence:'once',notice:{message:'hi'}});sessionStorage.setItem(storage,id)
+ const other='a'.repeat(32),w=mount(Schedules,{props:{initialSchedule:other}});wrappers.push(w);await flushPromises()
+ expect(w.text()).toContain('保留尚未确认的原计划');expect(api).not.toHaveBeenCalledWith('/schedules/'+other);expect(sessionStorage.getItem(storage)).toBe(id)
+})

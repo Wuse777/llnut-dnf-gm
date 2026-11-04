@@ -370,8 +370,10 @@ class Schedules:
 
 class OperationsWorker:
     """One thread for scheduled triggers and existing per-target reward work."""
-    def __init__(self, schedules, jobs, settings):
+    def __init__(self, schedules, jobs, settings, pulse=None):
         self.schedules, self.jobs, self.settings = schedules, jobs, settings
+        from .task_health import WorkerPulse
+        self.pulse = pulse or WorkerPulse()
         self.last_scan = float('-inf')
 
     def step(self):
@@ -379,9 +381,9 @@ class OperationsWorker:
         if self.settings.schedule_worker_enabled and now - self.last_scan >= 5:
             self.last_scan = now
             try:
-                self.schedules.step()
+                self.pulse.call("schedules", self.schedules.step)
             except Exception as error:
                 logging.getLogger('dnfgm.schedules').warning('Schedule scan failed: %s; durable state retained', type(error).__name__)
         # A scheduler failure must not starve already-authorized reward jobs.
         if self.settings.batch_worker_enabled:
-            self.jobs.step()
+            self.pulse.call("rewards", self.jobs.step)

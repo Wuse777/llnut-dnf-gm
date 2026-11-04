@@ -89,14 +89,20 @@ def create_app(settings=None, database=None):
     native_ops = NativeOperations(service, native_monitor)
     inventory_ops = InventoryOperations(service)
     schedules = Schedules(db, settings, jobs, native_ops)
+    from .task_health import TaskHealth, WorkerPulse
+    pulse = WorkerPulse()
+    task_monitor = TaskHealth(db,settings,pulse,lambda: bool(getattr(app.state,"worker",None) and app.state.worker.thread.is_alive()))
     @asynccontextmanager
     async def lifespan(app):
-        worker = JobWorker(OperationsWorker(schedules,jobs,settings),settings.batch_worker_interval) if (settings.batch_worker_enabled or settings.schedule_worker_enabled) else None
+        worker = JobWorker(OperationsWorker(schedules,jobs,settings,pulse),settings.batch_worker_interval) if (settings.batch_worker_enabled or settings.schedule_worker_enabled) else None
+        app.state.worker = worker
         if worker: worker.start()
         try: yield
         finally:
             if worker: worker.stop()
     app = FastAPI(title='DNF GM', docs_url=None, redoc_url=None, openapi_url=None,lifespan=lifespan)
+    app.state.task_health = task_monitor
+    app.state.worker = None
     app.state.schedules = schedules
     app.state.reward_jobs = jobs
     app.state.native_monitor = native_monitor
@@ -411,6 +417,12 @@ def create_app(settings=None, database=None):
         key=user(request,True,True)
         limits.check('cleanup-dispatch:'+key,10)
         return cleanup.dispatch(op)
+
+    @app.get(API+'/task-health')
+    def task_health(request:Request):
+        key=user(request)
+        limits.check('task-health:'+key,15)
+        return task_monitor.read()
 
     @app.get(API+'/backup-health')
     def backup_health(request:Request):
