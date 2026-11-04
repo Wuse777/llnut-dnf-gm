@@ -1,0 +1,6 @@
+{
+  "health_host": "127.0.0.1:8765",
+  "thresholds": {"memory": 256, "swap": 1536, "disk": 2},
+  "webhook_url": "",
+  "webhook_token": ""
+}

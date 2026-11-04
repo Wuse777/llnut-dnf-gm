@@ -1,0 +1,28 @@
+[Unit]
+Description=DNF GM independent read-only health notification observer
+After=network.target
+[Service]
+Type=oneshot
+User=dnfgm-alert
+Group=dnfgm-alert
+Slice=dnf-gm.slice
+Environment=PYTHONPATH=/opt/dnf-gm/current/src
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/dnf-gm/venv/bin/python /opt/dnf-gm/current/deploy/alert_worker.py
+TimeoutStartSec=15
+UMask=0077
+MemoryMax=32M
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/dnf-gm/alerts
+InaccessiblePaths=-/etc/dnf-gm/config.json -/etc/dnf-gm/monitor.json -/run/docker.sock -/var/run/docker.sock -/var/lib/dnf -/root
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

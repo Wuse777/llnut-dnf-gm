@@ -412,6 +412,13 @@ def create_app(settings=None, database=None):
         limits.check('cleanup-dispatch:'+key,10)
         return cleanup.dispatch(op)
 
+    @app.get(API+'/alerts')
+    def alerts(request:Request):
+        key=user(request)
+        limits.check('alerts:'+key,30)
+        from .alerts import read_report
+        return read_report(settings.alert_file,time.time())
+
     @app.get(API+'/operations-dashboard')
     def operations_dashboard(request:Request,window:Literal['24h','7d']='24h',before:int=Query(0,ge=0,le=9223372036854775807)):
         key=user(request)

@@ -27,5 +27,6 @@
   "native_control_actions": [],
   "upgrade_catalog_file": "",
   "upgrade_assets_dir": "",
-  "upgrade_image_digest": ""
+  "upgrade_image_digest": "",
+  "alert_file": "/var/lib/dnf-gm/alerts/public.json"
 }

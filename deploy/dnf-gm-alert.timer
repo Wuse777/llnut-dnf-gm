@@ -1,0 +1,9 @@
+[Unit]
+Description=DNF GM health notification checks every 30 seconds
+[Timer]
+OnBootSec=45
+OnUnitInactiveSec=30
+AccuracySec=1
+Unit=dnf-gm-alert.service
+[Install]
+WantedBy=timers.target

@@ -287,3 +287,7 @@ sudo /opt/dnf-gm/venv/bin/python deploy/upgrade-economy.py \
 无新增迁移和数据库授权，仍要求合并版001–011。可选维护配置 `upgrade_catalog_file`、`upgrade_assets_dir`、`upgrade_image_digest` 默认空；按[升级检查手册](UPGRADE-CHECK.md)将候选文件放在独立私有目录，运行账号只读，不能覆盖当前索引/图片包。只有维护配置可选候选路径，网页无上传、路径输入或自动激活接口。
 
 安装应用/读取新配置只重启GM，不影响游戏、mihomo、cliproxyapi或共享Docker。报告中“声明镜像”未拉取/运行，不等于结构已验证。完整引用导出也不是发布许可。回滚旧版应用前移除其不认识的三个`upgrade_*`配置键或恢复旧配置，不删除游戏、审计或候选报告。
+
+## 可选独立健康告警
+
+维护者按[主动告警手册](ALERTS.md)安装独立`dnfgm-alert`观察器。渠道配置为`/etc/dnf-gm-alerts.json`，不开放原数据库凭据目录；普通安装默认不启用定时器。已有告警部署升级时重新运行`deploy/enable-alerts.sh`更新单元；回滚不含告警代码的旧版前先停用自身timer并保留状态。本地验证不代表生产通知/资源已验收。
