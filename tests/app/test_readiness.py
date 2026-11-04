@@ -21,3 +21,10 @@ def test_readiness_exposes_degraded_collector_without_breaking_health(env, state
     result = client.get(P + '/ready')
     assert result.status_code == (200 if state == 'healthy' else 503)
     if state == 'healthy': assert result.json()['version'] == '0.3.1'
+
+
+def test_health_requires_mail_ledger_migration(env):
+    client,settings,db,app=env
+    with db.connect() as c,c.cursor() as q:
+        q.execute('DELETE FROM dnf_gm.schema_versions WHERE version>=4');c.commit()
+    assert client.get(P+'/health').status_code==503

@@ -8,6 +8,7 @@ from .encoding import inspect_name, mysql_latin1_text
 from .catalog import Catalog, snapshot
 from . import equipment_unlock as unlock
 from .limits import MAIL_GOLD_MAX
+from .mail_center import MailCenter
 from .character_detail import INFO_COLUMNS, ATTRIBUTES, decode_container, profession
 
 
@@ -48,6 +49,7 @@ class Service:
     def __init__(self, db, settings):
         self.db, self.settings = db, settings
         self.catalog = Catalog(settings, db)
+        self.mail_center = MailCenter(db)
 
     def account(self, q, uid):
         a = one(q, 'SELECT UID AS uid,accountname FROM d_taiwan.accounts WHERE UID=%s', (uid,))
@@ -217,7 +219,17 @@ class Service:
                     t = one(q, 'SELECT t.enabled,t.current_version,v.payload_json FROM dnf_gm.gift_templates t JOIN dnf_gm.gift_versions v ON v.template_id=t.id AND v.version=%s WHERE t.id=%s', (data['template_version'],data['template_id']))
                     if not t or not t['enabled'] or t['current_version'] != data['template_version']:
                         raise HTTPException(409, '礼包已停用或版本已变化')
-                    attachments = json.loads(t['payload_json'])['items']
+                    payload = json.loads(t['payload_json'])
+                    attachments = payload['items']
+                    if 'gold' in payload:
+                        if gold not in (0,payload['gold']):
+                            raise HTTPException(409, '金币与绑定模板不符；修改奖励请解除模板绑定')
+                        gold = data['gold'] = payload['gold']
+                    if 'message' in payload:
+                        if data['message'] not in ('GM rewards',payload['message']):
+                            raise HTTPException(409, '邮件文字与模板不符；修改文字请解除模板绑定')
+                        data['message'] = payload['message']
+                wire_name(data['message'])
                 if not attachments and not gold:
                     raise HTTPException(422, '邮件至少包含物品或大于0的金币附件')
                 preview['gold'] = gold
@@ -240,9 +252,13 @@ class Service:
 
     def operation(self, session_hash, op):
         with self.db.connect() as c, c.cursor() as q:
-            row = one(q, 'SELECT operation_id,action,status,preview_json,result_json,expires_at FROM dnf_gm.operations WHERE operation_id=%s', (op,))
+            row = one(q, 'SELECT operation_id,action,status,request_json,preview_json,result_json,expires_at FROM dnf_gm.operations WHERE operation_id=%s', (op,))
             if not row:
                 raise HTTPException(404, '操作不存在')
+            row['request'] = json.loads(row.pop('request_json'))
+            q.execute('SELECT error_type,created_at FROM dnf_gm.failures WHERE operation_id=%s ORDER BY id DESC LIMIT 20', (op,))
+            row['failure_attempts'] = q.fetchall()
+            row['failure_note'] = '历史尝试错误不代表当前操作最终失败；以本操作状态为准。'
             row['preview'] = json.loads(row.pop('preview_json'))
             row['result'] = json.loads(row.pop('result_json') or 'null')
             if row['result'] and row['action'] == 'mail':
@@ -290,9 +306,9 @@ class Service:
                 if self.settings.test_uids and data['uid'] not in self.settings.test_uids:
                     raise HTTPException(403, '当前仅允许测试账号写入')
                 # Verify expected transactional engines; never mutate schema.
-                q.execute("SELECT TABLE_SCHEMA,TABLE_NAME,ENGINE FROM information_schema.TABLES WHERE (TABLE_SCHEMA='dnf_gm' AND TABLE_NAME IN ('operations','audit','owned_bans','catalog_policy_state','catalog_policy_items')) OR (TABLE_SCHEMA='taiwan_billing' AND TABLE_NAME IN ('cash_cera','cash_cera_point')) OR (TABLE_SCHEMA='taiwan_cain_2nd' AND TABLE_NAME IN ('letter','postal')) OR (TABLE_SCHEMA='d_taiwan' AND TABLE_NAME='member_punish_info')")
+                q.execute("SELECT TABLE_SCHEMA,TABLE_NAME,ENGINE FROM information_schema.TABLES WHERE (TABLE_SCHEMA='dnf_gm' AND TABLE_NAME IN ('operations','audit','owned_bans','catalog_policy_state','catalog_policy_items','mail_batches','mail_deliveries')) OR (TABLE_SCHEMA='taiwan_billing' AND TABLE_NAME IN ('cash_cera','cash_cera_point')) OR (TABLE_SCHEMA='taiwan_cain_2nd' AND TABLE_NAME IN ('letter','postal')) OR (TABLE_SCHEMA='d_taiwan' AND TABLE_NAME='member_punish_info')")
                 engines = q.fetchall()
-                if len(engines) != 10 or any(r['ENGINE'] != 'InnoDB' for r in engines):
+                if len(engines) != 12 or any(r['ENGINE'] != 'InnoDB' for r in engines):
                     raise HTTPException(409, '事务表结构基线不满足，拒绝写入')
                 q.execute('UPDATE dnf_gm.operations SET idempotency_key=%s WHERE operation_id=%s', (key,op))
                 account = self.target(q, data, lock=True)
@@ -377,9 +393,14 @@ class Service:
                                       (data['charac_no'],item['id'],add_info,item['durability'] if kind == 'equipment' else 0,gold if postal_count == 0 else 0,letter_id,int(kind == 'avatar'),int(kind == 'creature')))
                             # Keep result/audit memory independent of copy count.
                             # All actual records remain queryable by letter_id.
+                            postal_id = q.lastrowid
                             if len(postal_ids) < 20:
-                                postal_ids.append(q.lastrowid)
+                                postal_ids.append(postal_id)
                             postal_count += 1
+                            q.execute('INSERT INTO dnf_gm.mail_deliveries(operation_id,ordinal,postal_id,item_id,quantity,gold) VALUES(%s,%s,%s,%s,%s,%s)',
+                                      (op,postal_count,postal_id,item['id'],1 if kind in ('equipment','avatar','creature') else item['quantity'],gold if postal_count == 1 else 0))
+                    q.execute('INSERT INTO dnf_gm.mail_batches(operation_id,target_uid,charac_no,account_name,character_name,letter_id,postal_count,recorded_count,message,request_json) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                              (op,data['uid'],data['charac_no'],account['accountname'],account['character']['charac_name'],letter_id,postal_count,postal_count,data['message'],dump({**data,'items':[{'id':i['id'],'quantity':i['quantity']} for i in rewards['items']]})))
                     result.update(letter_id=letter_id,postal_ids=postal_ids,postal_count=postal_count,postal_ids_truncated=postal_count>len(postal_ids),items=rewards,gold=gold,template_id=data.get('template_id'),template_version=data.get('template_version'),state='database_delivered_not_claimed')
                 else:
                     existing = one(q, 'SELECT apply_flag,admin_id,reason FROM d_taiwan.member_punish_info WHERE m_id=%s AND punish_type=1 FOR UPDATE', (data['uid'],))
@@ -423,11 +444,11 @@ class Service:
                 raise HTTPException(409, '操作编号或幂等键冲突，请查询原结果') from None
             raise
 
-    def templates(self, text='', page=1):
+    def templates(self, text='', page=1, category=''):
         term = '%' + text.replace('\\','\\\\').replace('%','\\%').replace('_','\\_') + '%'
         with self.db.connect() as c, c.cursor() as q:
-            q.execute("SELECT t.id,t.name,t.current_version,t.enabled,v.payload_json FROM dnf_gm.gift_templates t JOIN dnf_gm.gift_versions v ON t.id=v.template_id AND t.current_version=v.version WHERE (%s='' OR t.name LIKE %s OR t.id=%s) ORDER BY t.id DESC LIMIT 50 OFFSET %s",
-                      (text, term, int(text) if text.isascii() and text.isdigit() and len(text)<11 else 0, (page-1)*50))
+            q.execute("SELECT t.id,t.name,t.current_version,t.enabled,v.payload_json FROM dnf_gm.gift_templates t JOIN dnf_gm.gift_versions v ON t.id=v.template_id AND t.current_version=v.version WHERE (%s='' OR t.name LIKE %s OR t.id=%s) AND (%s='' OR JSON_UNQUOTE(JSON_EXTRACT(v.payload_json,'$.category'))=%s) ORDER BY t.id DESC LIMIT 50 OFFSET %s",
+                      (text, term, int(text) if text.isascii() and text.isdigit() and len(text)<11 else 0, category, category, (page-1)*50))
             rows = q.fetchall()
         items = []
         for row in rows:
@@ -437,12 +458,21 @@ class Service:
             items.append({**row, 'rewards':rewards})
         return {'items':items, 'page':page}
 
+    def template_versions(self, template_id, page=1):
+        with self.db.connect() as c, c.cursor() as q:
+            q.execute('SELECT version,payload_json,created_at FROM dnf_gm.gift_versions WHERE template_id=%s ORDER BY version DESC LIMIT 51 OFFSET %s', (template_id,(page-1)*50))
+            rows = q.fetchall()
+        return {'items':[{'version':r['version'],'created_at':r['created_at'],'payload':json.loads(r['payload_json'])} for r in rows[:50]],'has_more':len(rows)>50,'page':page}
+
     def save_template(self, template_id, data):
         # Management-only metadata, never a game write; catalog validates boundaries.
         if not data['name'].strip():
             raise HTTPException(422, '模板名称不能为空')
         with self.db.connect() as c, c.cursor() as q:
-            self.catalog.items(data['items'], active=False, q=q)
+            gold = data.get('gold') or 0
+            self.catalog.items(data['items'], active=False, q=q, allow_empty=gold>0)
+            if data.get('message') is not None:
+                wire_name(data['message'])
             if template_id:
                 old = one(q, 'SELECT current_version FROM dnf_gm.gift_templates WHERE id=%s FOR UPDATE', (template_id,))
                 if not old or old['current_version'] != data['expected_version']:
@@ -455,7 +485,7 @@ class Service:
                 version = 1
                 q.execute('INSERT INTO dnf_gm.gift_templates(name,current_version,enabled) VALUES(%s,1,%s)', (data['name'],int(data['enabled'])))
                 template_id = q.lastrowid
-            q.execute('INSERT INTO dnf_gm.gift_versions(template_id,version,payload_json) VALUES(%s,%s,%s)', (template_id,version,dump({'items':data['items']})))
+            q.execute('INSERT INTO dnf_gm.gift_versions(template_id,version,payload_json) VALUES(%s,%s,%s)', (template_id,version,dump({k:data[k] for k in ('items','gold','message','category','name','enabled') if k in data and data[k] is not None})))
             result = {'id':template_id,'version':version,'enabled':data['enabled']}
             q.execute('INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) VALUES(%s,\'owner\',\'gift-template\',\'模板版本变更\',%s,%s)', (uuid.uuid4().hex,dump(data),dump(result)))
             c.commit()

@@ -8,7 +8,7 @@ PYTHON=${PYTHON_BIN:-python3.12}
 "$PYTHON" -c 'import sys; assert sys.version_info[:2] == (3,12), "Build target is CPython 3.12"'
 (cd "$ROOT/web"; npm ci; npm test; npm run build)
 mkdir -p "$OUT/web"
-cp -R "$ROOT/src" "$ROOT/deploy" "$ROOT/migrations" "$ROOT/licenses" "$ROOT/docs" "$OUT/"
+cp -R "$ROOT/src" "$ROOT/deploy" "$ROOT/migrations" "$ROOT/tools" "$ROOT/licenses" "$ROOT/docs" "$OUT/"
 cp "$ROOT/CHANGELOG.md" "$ROOT/SECURITY.md" "$ROOT/CONTRIBUTING.md" "$OUT/"
 if git -C "$ROOT" rev-parse --verify HEAD >/dev/null 2>&1; then git -C "$ROOT" describe --always --dirty > "$OUT/SOURCE_REVISION"; fi
 cp "$ROOT/requirements.lock" "$ROOT/pyproject.toml" "$ROOT/README.md" "$ROOT/LICENSE" "$ROOT/THIRD_PARTY.md" "$OUT/"

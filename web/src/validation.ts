@@ -25,11 +25,13 @@ export function operationErrors(data:{action:string,account:any,delta:number,rea
  else if(data.reason.trim().length>200)errors['operation-reason']='操作原因不能超过200个字符。'
  return errors
 }
-export function giftErrors(name:string,items:any[]):FieldErrors{
+export function giftErrors(name:string,items:any[],gold=0,message='GM rewards'):FieldErrors{
  const errors:FieldErrors={}
  if(!name.trim())errors['gift-name']='请填写模板名称。'
  else if(name.trim().length>80)errors['gift-name']='模板名称不能超过80个字符。'
- return {...errors,...itemErrors(items,'gift')}
+ if(!Number.isInteger(gold)||gold<0||gold>1000000000)errors['gift-gold']='金币附件须为0至10亿的整数。'
+ if(message.length>60)errors['gift-message']='邮件文字不能超过60个字符。'
+ return {...errors,...(items.length||gold<=0?itemErrors(items,'gift'):{})}
 }
 
 // Only map structured server-validation locations; never guess business errors
@@ -39,7 +41,7 @@ export function serverFieldErrors(detail:unknown,scope:string):FieldErrors{
  if(!Array.isArray(detail)||!['gift','operation'].includes(scope))return errors
  for(const issue of detail){
   const loc=issue.loc?.filter((x:unknown)=>x!=='body')??[]
-  const map:Record<string,string>=scope==='gift'?{name:'gift-name',items:'gift-items'}:scope==='operation'?{reason:'operation-reason',delta:'operation-delta',uid:'mail-recipient',charac_no:'mail-role',items:'mail-items',message:'mail-message',gold:'mail-gold'}:{}
+  const map:Record<string,string>=scope==='gift'?{name:'gift-name',items:'gift-items',gold:'gift-gold',message:'gift-message'}:scope==='operation'?{reason:'operation-reason',delta:'operation-delta',uid:'mail-recipient',charac_no:'mail-role',items:'mail-items',message:'mail-message',gold:'mail-gold'}:{}
   let key=map[loc[0]]
   if(loc[0]==='items'&&Number.isInteger(loc[1])&&loc[2]==='quantity')key=(scope==='gift'?'gift':'mail')+'-quantity-'+loc[1]
   if(key)errors[key]=validationMessage([issue])

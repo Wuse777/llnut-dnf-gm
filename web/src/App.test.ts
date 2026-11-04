@@ -2,7 +2,7 @@
 import {afterEach,it,expect,vi} from 'vitest'
 import {mount,flushPromises} from '@vue/test-utils'
 import App from './App.vue'
-afterEach(()=>{vi.unstubAllGlobals();document.body.innerHTML=''})
+afterEach(()=>{sessionStorage.clear();vi.unstubAllGlobals();document.body.innerHTML=''})
 it('shows password-only login and hides all factor/recovery inputs',async()=>{
  vi.stubGlobal('fetch',vi.fn(async(url)=>url.toString().endsWith('/auth/methods')?new Response('{"totp_required":false}'):new Response('{"detail":"请登录"}',{status:401})))
  const w=mount(App);await flushPromises();expect(w.text()).toContain('管理员密码');expect(w.text()).not.toContain('动态验证码');expect(w.find('input[type=password]').exists()).toBe(true);w.unmount()

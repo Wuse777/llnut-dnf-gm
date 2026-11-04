@@ -3,13 +3,14 @@ from pathlib import Path
 import re
 import time
 from fastapi import Path as PathParameter, FastAPI, Request, Response, HTTPException, Query
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from .config import load_settings
 from .db import Database, Busy
 from .models import Login, Preview, Confirm, Gift, CatalogPolicyPreview
 from .security import COOKIE, Limits, authenticate, new_session, session, digest
 from .service import Service
 from .catalog import snapshot
+from .audit_export import export_audit
 
 BASE = '/dnf-gm'
 API = BASE + '/api/v1'
@@ -87,8 +88,9 @@ def create_app(settings=None, database=None):
     def health():
         with db.connect() as c, c.cursor() as q:
             q.execute('SELECT version FROM dnf_gm.schema_versions ORDER BY version DESC LIMIT 1')
-            if not q.fetchone():
-                raise HTTPException(503,'管理库迁移未完成')
+            version=q.fetchone()
+            if not version or version['version']<4:
+                raise HTTPException(503,'管理库迁移未完成，需要004邮件流水迁移')
         return {'ok':True,'version':'0.3.1'}
 
     @app.get(API+'/ready')
@@ -192,9 +194,14 @@ def create_app(settings=None, database=None):
         return service.preview_policy(key,data.model_dump())
 
     @app.get(API+'/gift-templates')
-    def templates(request:Request,q:str=Query('',max_length=80),page:int=Query(1,ge=1,le=10000)):
+    def templates(request:Request,q:str=Query('',max_length=80),page:int=Query(1,ge=1,le=10000),category:str=Query('',max_length=32)):
         user(request)
-        return service.templates(q,page)
+        return service.templates(q,page,category)
+
+    @app.get(API+'/gift-templates/{tid}/versions')
+    def template_versions(request:Request,tid:int=PathParameter(ge=1),page:int=Query(1,ge=1,le=10000)):
+        user(request)
+        return service.template_versions(tid,page)
 
     @app.post(API+'/gift-templates')
     def new_template(data:Gift,request:Request):
@@ -226,6 +233,22 @@ def create_app(settings=None, database=None):
         if not re.fullmatch('[a-f0-9]{32}',op):
             raise HTTPException(422,'非法操作编号')
         return service.operation(key,op)
+
+    @app.get(API+'/mail-center')
+    def mail_center(request:Request,uid:int=Query(0,ge=0,le=2147483647),charac_no:int=Query(0,ge=0,le=2147483647),operation_id:str=Query('',pattern=r'^(?:[a-f0-9]{32})?$'),page:int=Query(1,ge=1,le=10000)):
+        user(request)
+        return service.mail_center.list(uid,charac_no,operation_id,page)
+
+    @app.get(API+'/mail-center/{op}')
+    def mail_details(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$'),after:int=Query(0,ge=0,le=9223372036854775807)):
+        user(request)
+        return service.mail_center.details(op,after)
+
+    @app.get(API+'/audit/export')
+    def audit_export(request:Request,uid:int=Query(0,ge=0,le=2147483647)):
+        key=user(request)
+        limits.check('audit-export:'+key,3)
+        return StreamingResponse(export_audit(db,uid),media_type='application/x-ndjson',headers={'Content-Disposition':'attachment; filename="dnf-gm-audit.ndjson"'})
 
     @app.get(API+'/audit')
     def audit(request:Request,page:int=Query(1,ge=1,le=10000),uid:int=Query(0,ge=0)):

@@ -41,7 +41,10 @@ class Gift(Model):
     name: str = Field(min_length=1, max_length=80)
     enabled: bool = True
     expected_version: StrictInt = Field(ge=0)
-    items: list[Attachment] = Field(min_length=1, max_length=20)
+    items: list[Attachment] = Field(default_factory=list, max_length=20)
+    gold: StrictInt | None = Field(default=None, ge=0, le=MAIL_GOLD_MAX)
+    message: str | None = Field(default=None, max_length=60)
+    category: str = Field(default='', max_length=32)
 
 
 class CatalogFilters(Model):

@@ -2,7 +2,7 @@
 import {afterEach,it,expect,vi} from 'vitest'
 import {mount,flushPromises} from '@vue/test-utils'
 import App from './App.vue'
-afterEach(()=>{vi.unstubAllGlobals();document.body.innerHTML=''})
+afterEach(()=>{sessionStorage.clear();vi.unstubAllGlobals();document.body.innerHTML=''})
 function setup(){
  const calls:any[]=[];let mail:any
  vi.stubGlobal('fetch',vi.fn(async(url,opts:any={})=>{

@@ -3,7 +3,7 @@ import {ref,computed,watch,onUnmounted,nextTick} from 'vue'
 import {api,uncertainMessage} from '../api'
 import Modal from './Modal.vue'
 import UnlockRequests from './UnlockRequests.vue'
-const props=defineProps<{characNo:number}>()
+const props=withDefaults(defineProps<{characNo:number,initialSection?:string}>(),{initialSection:'basic'})
 const emit=defineEmits<{close:[],reauth:[],expired:[]}>()
 const unlockBusy=ref(false),unlockVisited=ref(false),unlockPending=ref(false)
 const root=ref<HTMLElement|null>(null)
@@ -18,7 +18,7 @@ async function load(){
  catch(e){if(current===generation)error.value=uncertainMessage(e)}
  finally{if(current===generation)loading.value=false}
 }
-watch(()=>props.characNo,()=>{section.value='basic';search.value='';kind.value='';page.value=1;void load()},{immediate:true})
+watch(()=>[props.characNo,props.initialSection],()=>{section.value=tabs.some(t=>t[0]===props.initialSection)?props.initialSection:'basic';search.value='';kind.value='';page.value=1;void load()},{immediate:true})
 onUnmounted(()=>generation++)
 const container=computed(()=>data.value?.[section.value])
 const items=computed(()=>container.value?.items??[])

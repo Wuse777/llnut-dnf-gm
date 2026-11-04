@@ -6,6 +6,7 @@ def bootstrap_sql(config,ph):
     sql=(Path(__file__).resolve().parents[1]/'migrations/001.sql').read_text()
     sql += '\n'+(Path(__file__).resolve().parents[1]/'migrations/002-catalog-policy.sql').read_text()
     sql += '\n'+(Path(__file__).resolve().parents[1]/'migrations/003-all-items.sql').read_text(encoding='utf-8')
+    sql += '\n'+(Path(__file__).resolve().parents[1]/'migrations/004-mail-center.sql').read_text(encoding='utf-8')
     name=config.get('db_user','dnf_gm_app')
     host=config.get('db_account_host','127.0.0.1')
     if not re.fullmatch(r'[A-Za-z0-9_]{1,32}', name) or name.lower() in ('root','game'):
@@ -23,14 +24,15 @@ def bootstrap_sql(config,ph):
     grant('UPDATE(last_totp)','dnf_gm.admins')
     for t in ['operations','gift_templates','owned_bans']:grant('SELECT,INSERT,UPDATE','dnf_gm.'+t)
     grant('SELECT,INSERT,UPDATE,DELETE','dnf_gm.sessions')
-    for t in ['audit','gift_versions']:grant('SELECT,INSERT','dnf_gm.'+t)
-    grant('INSERT','dnf_gm.failures')
+    for t in ['audit','gift_versions','mail_batches','mail_deliveries']:grant('SELECT,INSERT','dnf_gm.'+t)
+    grant('SELECT(id,operation_id,error_type,created_at),INSERT','dnf_gm.failures')
     grant('SELECT(UID,accountname)','d_taiwan.accounts')
     sql += character_read_sql(user)
     sql += catalog_policy_sql(user)
     sql += mail_gold_sql(user)
     sql += equipment_unlock_sql(user)
     sql += rewards_sql(user)
+    sql += mail_center_sql(user)
     grant('SELECT(m_id,login_status,m_channel_no)','taiwan_login.login_account_3')
     for table,col in [('cash_cera','cera'),('cash_cera_point','cera_point')]:
         grant(f'SELECT(account,{col}),UPDATE({col},mod_date)','taiwan_billing.'+table)
@@ -73,3 +75,10 @@ def rewards_sql(user="'dnf_gm_app'@'127.0.0.1'"):
             f'GRANT INSERT(charac_no,it_id,jewel_socket,expire_date,reg_date,obtain_from,stat) ON taiwan_cain_2nd.user_items TO {user};\n'
             f'GRANT INSERT(charac_no,it_id,reg_date,stomach,creature_type) ON taiwan_cain_2nd.creature_items TO {user};\n'
             f'GRANT INSERT(avata_flag,creature_flag) ON taiwan_cain_2nd.postal TO {user};\n')
+
+
+def mail_center_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return (f'GRANT SELECT(id,operation_id,error_type,created_at) ON dnf_gm.failures TO {user};\n'
+            f'GRANT SELECT,INSERT ON dnf_gm.mail_batches TO {user};\n'
+            f'GRANT SELECT,INSERT ON dnf_gm.mail_deliveries TO {user};\n'
+            f'GRANT SELECT(receive_charac_no,letter_id,item_id,add_info,avata_flag,creature_flag) ON taiwan_cain_2nd.postal TO {user};\n')
