@@ -309,6 +309,7 @@ class RewardJobs:
             if request['account_reward_mode']=='once_per_account' and data['currency_rewards']:
                 q.execute('INSERT INTO dnf_gm.reward_account_credits(job_id,target_uid,operation_id) VALUES(%s,%s,%s)',(job['id'],data['uid'],op))
             q.execute("INSERT INTO dnf_gm.audit(operation_id,actor,action,target_uid,reason,request_json,result_json) VALUES(%s,%s,'reward',%s,%s,%s,%s)",(op,'scheduler' if request.get('schedule_id') else 'owner',data['uid'],data['reason'],dump(data),dump(result)))
+            self.service.economy.record(q,op)
             q.execute("UPDATE dnf_gm.operations SET status='committed',result_json=%s WHERE operation_id=%s",(dump(result),op))
             q.execute("UPDATE dnf_gm.reward_targets SET status='committed',error_type='',error_message='' WHERE job_id=%s AND ordinal=%s",(job['id'],target['ordinal']))
             attempted=True;c.commit()

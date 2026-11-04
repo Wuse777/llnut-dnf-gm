@@ -19,7 +19,7 @@ def test_operations_dashboard_readonly_auth_schema_and_no_path_override(env,tmp_
         r.observe(status());r.record_event('protection_stop',{'reason':'resource_failure','password':'must-not-leak'})
         d=client.get(P+'/operations-dashboard?window=7d&filename=/etc/shadow');assert d.status_code==200,d.text
         payload=d.json();assert payload['fresh'] and payload['current']['fresh']
-        assert payload['application']['schema_versions'][0]['version']==10
+        assert payload['application']['schema_versions'][0]['version']==11
         assert payload['events'][0]['details']=={'reason':'resource_failure'}
         assert '/etc/shadow' not in d.text and 'must-not-leak' not in d.text
         assert client.post(P+'/operations-dashboard',json={'command':'restart docker'}).status_code==405

@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import date
 from typing import Literal
 from pathlib import Path
 import re
@@ -24,6 +25,7 @@ from .models import NativePreview, SchedulePreview, ActivateSchedule, ScheduleCo
 from .schedules import Schedules, OperationsWorker
 from .catalog import snapshot
 from .audit_export import export_audit
+from .report_stream import ReportStream
 
 BASE = '/dnf-gm'
 API = BASE + '/api/v1'
@@ -118,10 +120,10 @@ def create_app(settings=None, database=None):
     @app.get(API+'/health')
     def health():
         with db.connect() as c, c.cursor() as q:
-            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 10')
+            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 11')
             versions={row['version'] for row in q.fetchall()}
-            if versions != set(range(1,11)):
-                raise HTTPException(503,'管理库迁移未完成，需要完成010玩家问题工作台迁移（包含此前迁移）')
+            if versions != set(range(1,12)):
+                raise HTTPException(503,'管理库迁移未完成，需要完成011发放统计迁移（包含此前迁移）')
         return {'ok':True,'version':'0.3.1'}
 
     @app.get(API+'/ready')
@@ -258,6 +260,31 @@ def create_app(settings=None, database=None):
         key=user(request,True,True)
         limits.check('native-cancel:'+key,12)
         return native_ops.cancel(key,op)
+
+    @app.get(API+'/economy/summary')
+    def economy_summary(request:Request,start:date,end:date,uid:int=Query(0,ge=0,le=2147483647)):
+        key=user(request);limits.check('economy-summary:'+key,10)
+        return service.economy.summary(start,end,uid)
+
+    @app.get(API+'/economy/operations')
+    def economy_operations(request:Request,start:date,end:date,uid:int=Query(0,ge=0,le=2147483647),before:int=Query(0,ge=0,le=9223372036854775807),upper:int=Query(0,ge=0,le=9223372036854775807),large:bool=False,currency_threshold:int=Query(100000,ge=1,le=4294967295),gold_threshold:int=Query(100000000,ge=1,le=1000000000)):
+        key=user(request);limits.check('economy-operations:'+key,30)
+        return service.economy.operations(start,end,uid,before,upper,large,currency_threshold,gold_threshold)
+
+    @app.get(API+'/economy/backlog')
+    def economy_backlog(request:Request,start:date,end:date,uid:int=Query(0,ge=0,le=2147483647)):
+        key=user(request);limits.check('economy-backlog:'+key,10)
+        return service.economy.backlog(start,end,uid)
+
+    @app.get(API+'/economy/compensation')
+    def economy_compensation(request:Request,start:date,end:date,uid:int=Query(0,ge=0,le=2147483647)):
+        key=user(request);limits.check('economy-compensation:'+key,20)
+        return service.economy.repeated_compensation(start,end,uid)
+
+    @app.get(API+'/economy/export')
+    def economy_export(request:Request,start:date,end:date,uid:int=Query(0,ge=0,le=2147483647)):
+        key=user(request);limits.check('economy-export:'+key,5)
+        return ReportStream(service.economy.export(start,end,uid),media_type='application/x-ndjson',headers={'Content-Disposition':'attachment; filename="gm-reward-report.ndjson"'})
 
     @app.get(API+'/support/profiles/{uid}')
     def support_profile(request:Request,uid:int=PathParameter(ge=1,le=2147483647)):

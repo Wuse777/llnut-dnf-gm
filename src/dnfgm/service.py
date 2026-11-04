@@ -10,6 +10,7 @@ from . import equipment_unlock as unlock
 from . import unlock_center
 from .limits import MAIL_GOLD_MAX
 from .mail_center import MailCenter
+from .economy import Economy
 from .character_detail import INFO_COLUMNS, ATTRIBUTES, decode_container, profession
 
 
@@ -51,6 +52,7 @@ class Service:
         self.db, self.settings = db, settings
         self.catalog = Catalog(settings, db)
         self.mail_center = MailCenter(db)
+        self.economy = Economy(db)
         from .support import SupportDesk
         self.support = SupportDesk(db)
 
@@ -368,6 +370,7 @@ class Service:
                 if support is not None:result['support_case_id']=support['case_id']
                 q.execute('INSERT INTO dnf_gm.audit(operation_id,actor,action,target_uid,reason,request_json,result_json) VALUES(%s,\'owner\',%s,%s,%s,%s,%s)',
                           (op,action,data['uid'],data['reason'],dump(data),dump(result)))
+                if action in ('currency','mail','reward'):self.economy.record(q,op)
                 q.execute("UPDATE dnf_gm.operations SET status='committed',result_json=%s WHERE operation_id=%s", (dump(result),op))
                 commit_attempted = True
                 c.commit()

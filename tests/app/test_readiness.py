@@ -35,7 +35,7 @@ def test_health_requires_preferences_migration(env):
     with db.connect() as c,c.cursor() as q:
         q.execute('DELETE FROM dnf_gm.schema_versions WHERE version>=5');c.commit()
     response=client.get(P+'/health')
-    assert response.status_code==503 and '010' in response.text
+    assert response.status_code==503 and '011' in response.text
 
 
 def test_health_requires_native_history_migration(env):
@@ -63,4 +63,11 @@ def test_health_requires_support_migration(env):
     client,settings,db,app=env
     with db.connect() as c,c.cursor() as q:
         q.execute('DELETE FROM dnf_gm.schema_versions WHERE version=10');c.commit()
+    assert client.get(P+'/health').status_code==503
+
+
+def test_health_requires_economy_projection(env):
+    client,settings,db,app=env
+    with db.connect() as c,c.cursor() as q:
+        q.execute('DELETE FROM dnf_gm.schema_versions WHERE version=11');c.commit()
     assert client.get(P+'/health').status_code==503
