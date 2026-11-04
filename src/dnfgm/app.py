@@ -15,6 +15,7 @@ from .service import Service
 from .unlock_center import UnlockCenter
 from .operations_dashboard import dashboard
 from .release_cleanup import ReleaseCleanup
+from .native_monitor import NativeMonitor
 from .catalog import snapshot
 from .audit_export import export_audit
 
@@ -75,6 +76,7 @@ def create_app(settings=None, database=None):
     service, limits = Service(db,settings), Limits()
     jobs = RewardJobs(db,settings,service)
     cleanup = ReleaseCleanup(db,settings)
+    native_monitor = NativeMonitor(settings)
     @asynccontextmanager
     async def lifespan(app):
         worker = JobWorker(jobs,settings.batch_worker_interval) if settings.batch_worker_enabled else None
@@ -84,6 +86,7 @@ def create_app(settings=None, database=None):
             if worker: worker.stop()
     app = FastAPI(title='DNF GM', docs_url=None, redoc_url=None, openapi_url=None,lifespan=lifespan)
     app.state.reward_jobs = jobs
+    app.state.native_monitor = native_monitor
     app.add_middleware(Guard, settings=settings)
     app.state.db, app.state.settings, app.state.service = db,settings,service
 
@@ -182,6 +185,21 @@ def create_app(settings=None, database=None):
     def online(request:Request,page:int=Query(1,ge=1,le=10000)):
         user(request)
         return service.accounts('',page,True)
+
+    @app.get(API+'/online/{uid}/live')
+    def live_online(request:Request,uid:int=PathParameter(ge=1,le=4294967295)):
+        key=user(request)
+        limits.check('native-query:'+key,12)
+        limits.check('native-query-global',60)
+        # No DB connection is held while waiting on the native UDP response.
+        with db.connect() as c,c.cursor() as q:
+            q.execute('SELECT UID FROM d_taiwan.accounts WHERE UID=%s',(uid,))
+            if not q.fetchone():
+                raise HTTPException(404,'账号不存在')
+            q.execute('SELECT login_status,m_channel_no AS channel FROM taiwan_login.login_account_3 WHERE m_id=%s',(uid,))
+            recorded=q.fetchone()
+        return {'uid':uid,'database':{'source':'login_status_table','record':recorded,'observed_at':time.time()},
+                'native':native_monitor.query(uid)}
 
     @app.get(API+'/characters')
     def characters(request:Request,uid:int=Query(0,ge=0),q:str=Query('',max_length=80),page:int=Query(1,ge=1,le=10000)):

@@ -29,6 +29,7 @@ class Settings:
     pvf_sha256: str = ''
     write_approvals: dict = field(default_factory=dict)
     mail_stack_limits: dict = field(default_factory=dict)
+    native_monitor_enabled: bool = False
     batch_worker_enabled: bool = False
     batch_worker_interval: int = 1
 
@@ -52,6 +53,12 @@ class Settings:
         for action in self.writes:
             if self.write_approvals.get(action) is not True:
                 raise ValueError('Write capability has no explicit activation record')
+        if type(self.native_monitor_enabled) is not bool:
+            raise ValueError('Native monitor enable flag must be boolean')
+        if self.native_monitor_enabled:
+            from .native_monitor import private_ipv4
+            if not private_ipv4(self.db_host) or not self.image_digest:
+                raise ValueError('Native monitor requires an explicit private IPv4 database host and image fingerprint')
         if type(self.batch_worker_enabled) is not bool:
             raise ValueError('Batch worker enabled must be a boolean')
         if type(self.batch_worker_interval) is not int or not 1 <= self.batch_worker_interval <= 60:

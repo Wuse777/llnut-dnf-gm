@@ -210,3 +210,33 @@ def test_failed_sample_invalidates_snapshot_immediately_and_backs_off(monkeypatc
     assert calls == [100, 115]
     assert all(not s['core_ok'] and 'pvf_sha256' not in s for s in loops[:3])
     assert loops[-1]['core_ok']
+
+
+def test_optional_native_program_fingerprint_cache_and_changes(tmp_path,monkeypatch):
+    import hashlib
+    c=monitor.Collector({})
+    path=tmp_path/'monitor';path.write_bytes(b'fixture-program')
+    expected=hashlib.sha256(path.read_bytes()).hexdigest()
+    assert c._native_file_fingerprint(path)==expected
+    original=Path.open
+    def no_open(p,*a,**kw):raise AssertionError('Unchanged program should use cached hash')
+    with monkeypatch.context() as ctx:
+        ctx.setattr(Path,'open',no_open)
+        assert c._native_file_fingerprint(path)==expected
+    path.write_bytes(b'new-fixture-program')
+    assert c._native_file_fingerprint(path)!=expected
+    path.unlink();assert c._native_file_fingerprint(path) is None
+    assert c.native_sig is None and c.native_sha is None
+
+
+def test_optional_native_fingerprint_rejects_symlink_directory_empty_and_large(tmp_path):
+    c=monitor.Collector({})
+    target=tmp_path/'target';target.write_bytes(b'fixture')
+    link=tmp_path/'link';link.symlink_to(target)
+    empty=tmp_path/'empty';empty.touch()
+    large=tmp_path/'large'
+    with large.open('wb') as stream:stream.truncate(15*1024*1024+1)
+    for path in (tmp_path,link,empty,large):
+        assert c._native_file_fingerprint(path) is None
+    for pid in (None,True,0,1,'42','../file'):
+        assert c.native_fingerprint(pid) is None

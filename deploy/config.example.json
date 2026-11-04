@@ -21,5 +21,6 @@
   "write_approvals": {},
   "batch_worker_enabled": false,
   "batch_worker_interval": 1,
-  "assets_dir": ""
+  "assets_dir": "",
+  "native_monitor_enabled": false
 }

@@ -4,6 +4,8 @@ import hashlib
 import ipaddress
 import json
 import re
+import os
+import stat
 from urllib.parse import urlsplit
 from urllib.request import ProxyHandler, build_opener, HTTPRedirectHandler
 
@@ -49,6 +51,46 @@ class Collector:
     def __init__(self, cfg, auxiliary=None):
         self.cfg, self.auxiliary = cfg, auxiliary
         self.cached_sig = self.pvf_sha = None
+        self.native_sig = self.native_sha = None
+
+    def native_fingerprint(self, pid):
+        # Fixed image path, not a path accepted from the web. A missing/changed
+        # optional protocol fingerprint never changes core health/protection.
+        if type(pid) is not int or pid <= 1:
+            self.native_sig = self.native_sha = None
+            return None
+        path = Path(f'/proc/{pid}/root/home/template/neople/monitor/df_monitor_r')
+        return self._native_file_fingerprint(path)
+
+    def _native_file_fingerprint(self, path):
+        def signature(st):
+            return (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+        try:
+            st = path.lstat()
+            if not stat.S_ISREG(st.st_mode) or not 0 < st.st_size <= 15 * 1024 * 1024:
+                raise ValueError('Unsupported program file')
+            sig = (str(path), *signature(st))
+            if sig != self.native_sig:
+                digest = hashlib.sha256()
+                remaining = st.st_size
+                with path.open('rb') as stream:
+                    if signature(os.fstat(stream.fileno())) != signature(st):
+                        raise ValueError('Program replaced')
+                    while remaining:
+                        block = stream.read(min(remaining, 65536))
+                        if not block:
+                            raise ValueError('Short program read')
+                        remaining -= len(block)
+                        digest.update(block)
+                    if stream.read(1) or signature(os.fstat(stream.fileno())) != signature(st):
+                        raise ValueError('Program changed')
+                if signature(path.lstat()) != signature(st):
+                    raise ValueError('Program path changed')
+                self.native_sig, self.native_sha = sig, digest.hexdigest()
+            return self.native_sha
+        except (OSError, ValueError):
+            self.native_sig = self.native_sha = None
+            return None
 
     def __call__(self):
         cfg = self.cfg
@@ -87,7 +129,8 @@ class Collector:
             if sig != (after.st_ino, after.st_size, after.st_mtime_ns):
                 raise RuntimeError('PVF changed while hashing')
             self.pvf_sha, self.cached_sig = sha, sig
-        return dict(services=services, core_ok=all(services.values()), pvf_sha256=self.pvf_sha, image_digest=image)
+        return dict(services=services, core_ok=all(services.values()), pvf_sha256=self.pvf_sha, image_digest=image,
+                    native_monitor_sha256=self.native_fingerprint(state.get('Pid')))
 
 
 def main():
