@@ -56,3 +56,20 @@ input[aria-invalid=true]:focus,select[aria-invalid=true]:focus{box-shadow:0 0 0 
 
 /* Background notices must not cover modal actions, including child-owned dialogs. */
 .shell:has(.modal-overlay) .feedback-toast{display:none}
+
+/* Private, version-bound game artwork; missing files remain explicit text. */
+.game-image{display:inline-flex;vertical-align:middle;align-items:center;justify-content:center;width:40px;height:40px;flex:0 0 40px;margin-inline-end:8px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-tertiary);overflow:hidden}
+.game-image img{display:block;width:100%;height:100%;object-fit:contain;image-rendering:pixelated}
+.game-image-fallback{font-size:10px;color:var(--text-secondary);text-align:center}
+.game-portrait{width:64px;height:64px;flex-basis:64px}.game-portrait img{image-rendering:auto}
+.inventory-view-switch{margin:12px 0}.inventory-view-switch [aria-pressed=true]{background:var(--bg-tertiary);border-color:var(--text-secondary)}
+.character-detail .inventory-empty-toggle{display:flex;flex-direction:row;justify-content:flex-start;align-items:center;gap:8px;margin:12px 0;width:fit-content}.inventory-empty-toggle input{width:auto}
+.inventory-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.inventory-layout:has(.inventory-item-detail){grid-template-columns:minmax(0,1fr) minmax(220px,0.7fr)}
+.inventory-slot-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;align-items:stretch}
+.inventory-slot{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-width:0;min-height:125px;padding:8px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-secondary);color:var(--text-primary);overflow-wrap:anywhere;white-space:normal}
+.inventory-slot .game-image{margin:0}.inventory-slot b{font-size:12px;line-height:1.4}.inventory-slot small{font-size:11px}.empty-slot{color:var(--text-tertiary);background:var(--bg-primary)}
+.slot-selected{outline:2px solid var(--primary-color);outline-offset:1px}.slot-enhancement{position:absolute;top:20px;right:4px;font-size:11px;background:var(--bg-secondary);border-radius:4px;padding:2px}
+.inventory-item-detail{min-width:0;align-self:start;border:1px solid var(--border-color);border-radius:12px;padding:16px;background:var(--bg-secondary);overflow-wrap:anywhere}.inventory-item-detail .section-title h3{min-width:0;font-size:16px}.inventory-item-detail:focus{outline:2px solid var(--primary-color);outline-offset:2px}
+@media(max-width:680px){.inventory-layout:has(.inventory-item-detail){grid-template-columns:minmax(0,1fr)}.inventory-item-detail{grid-row:1;scroll-margin-block:16px}.inventory-slot-grid{grid-template-columns:repeat(auto-fill,minmax(80px,1fr))}.game-portrait{width:48px;height:48px;flex-basis:48px}}
+
+@media(max-width:680px){.inventory-item-detail .character-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}

@@ -177,8 +177,11 @@ class Service:
                 meta = labels['items'].get(item['id'])
                 item.update(name=meta['name'] if meta else f"未知物品 #{item['id']}",
                             catalog_known=bool(meta),level=meta['level'] if meta else None)
+        art_sha=self.settings.pvf_sha256 if labels['state']=='ok' else ''
+        self.catalog.assets.decorate(art_sha,[i for group in containers for i in group['items']])
+        portrait=self.catalog.assets.portrait(art_sha,row['job'],row['grow_type'],row['sex'])
         attrs = [{'key':key,'label':label,'value':row.pop(key)} for key,label in ATTRIBUTES.items()]
-        return {'character':row, 'account':owner, 'account_online':online, 'play_state':play_state,
+        return {'character':row, 'portrait':portrait, 'assets':self.catalog.assets.status(art_sha), 'account':owner, 'account_online':online, 'play_state':play_state,
                 'profession':profession(row['job'],row['grow_type'],labels['jobs']),
                 'attributes':attrs, 'wealth':{'state':'ok' if inventory else 'missing',
                     'gold':inventory['money'] if inventory else None,

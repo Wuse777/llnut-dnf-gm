@@ -20,6 +20,7 @@ class Settings:
     status_file: str = '/run/dnf-gm/status.json'
     catalog_file: str = '/var/lib/dnf-gm/catalog.sqlite'
     static_dir: str = ''
+    assets_dir: str = ''
     image_digest: str = ''
     pvf_sha256: str = ''
     write_approvals: dict = field(default_factory=dict)
@@ -53,6 +54,8 @@ class Settings:
             raise ValueError('Batch worker interval must be 1..60 seconds')
         if self.batch_worker_enabled and 'batch-reward' not in self.writes:
             raise ValueError('Batch worker requires explicit batch-reward activation')
+        if not isinstance(self.assets_dir,str) or (self.assets_dir and not Path(self.assets_dir).is_absolute()):
+            raise ValueError('Assets directory must be empty or an absolute private path')
         # Deprecated compatibility key: old per-item caps no longer affect
         # startup, previews or issuance. No PVF-bound quantity overrides needed.
         return self

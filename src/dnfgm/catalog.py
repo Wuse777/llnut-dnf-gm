@@ -7,6 +7,7 @@ import time
 from fastapi import HTTPException
 from .limits import MAIL_ITEM_QUANTITY_MAX
 from .item_preferences import ItemPreferences
+from .game_assets import GameAssets
 
 
 def snapshot(settings):
@@ -26,6 +27,7 @@ def snapshot(settings):
 class Catalog:
     def __init__(self, settings, db=None):
         self.settings, self.db = settings, db
+        self.assets = GameAssets(settings)
 
     def connect(self):
         p = Path(self.settings.catalog_file).resolve()
@@ -147,7 +149,8 @@ class Catalog:
                 result.append(item)
             if cursor is not None:
                 ItemPreferences.decorate(cursor,m.get('pvf_sha256'),result)
-            return {'items':result,'page':page,'total':total,'metadata':{**m,'policy_revision':revision}}
+            self.assets.decorate(m.get('pvf_sha256'),result)
+            return {'items':result,'page':page,'total':total,'metadata':{**m,'policy_revision':revision},'assets':self.assets.status(m.get('pvf_sha256'))}
 
     def selection(self, cursor, data, lock=False):
         with closing(self.connect()) as c:
@@ -202,6 +205,7 @@ class Catalog:
             for a in requests:
                 row = c.execute('SELECT * FROM items WHERE id=?', (a['id'],)).fetchone()
                 result.append({**(self.annotate(row,overrides,creature_types) if row else {'id':a['id'],'name':'索引中已不存在','allowed':0,'sendable':False}), 'quantity':a['quantity']})
+            self.assets.decorate(self.meta(c).get('pvf_sha256'),result)
             return result
 
     def items(self, requests, active=True, q=None, allow_empty=False):

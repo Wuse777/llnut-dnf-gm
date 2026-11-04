@@ -50,3 +50,8 @@ release/
 *.tgz
 id_rsa
 id_ed25519
+
+# Private client archives / derived image packages
+*.npk
+*.NPK
+game-assets/

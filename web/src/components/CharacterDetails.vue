@@ -2,6 +2,9 @@
 import {ref,computed,watch,onUnmounted,nextTick} from 'vue'
 import {api,uncertainMessage} from '../api'
 import Modal from './Modal.vue'
+import GameImage from './GameImage.vue'
+import InventoryGrid from './InventoryGrid.vue'
+const visual=ref(false)
 import UnlockRequests from './UnlockRequests.vue'
 const props=withDefaults(defineProps<{characNo:number,initialSection?:string}>(),{initialSection:'basic'})
 const emit=defineEmits<{close:[],reauth:[],expired:[]}>()
@@ -44,8 +47,8 @@ function tab(id:string){if(unlockBusy.value)return;section.value=id;search.value
    <p v-if="loading" role="status" class="empty"><span class="spinner"/> 正在读取角色资料、装备、背包与仓库…</p>
    <div v-else-if="error" class="submit-error" role="alert"><b>无法读取角色详情</b><p>{{error}}</p><button @click="load">重试查询</button></div>
    <template v-else-if="data">
-    <div class="character-identity"><div><h3>{{data.character.charac_name}}</h3><p>{{data.profession.name}} · Lv.{{data.character.lev}} · {{data.account?.accountname??'归属账号缺失'}} / UID {{data.character.uid}}</p></div><span class="status-badge" :class="data.character.delete_flag?'neutral':'success'">{{data.character.delete_flag?'已删除（仅查看存档）':'未删除'}}</span></div>
-    <p class="field-hint snapshot-note">{{data.snapshot_note}}<br>读取时间：{{new Date(data.collected_at*1000).toLocaleString('zh-CN',{hour12:false})}}。资料、金币及物品为只读查询；装备解锁需在专页单独预览确认。</p>
+    <div class="character-identity"><GameImage :image="data.portrait" :label="data.profession.name" portrait/><div><h3>{{data.character.charac_name}}</h3><p>{{data.profession.name}} · Lv.{{data.character.lev}} · {{data.account?.accountname??'归属账号缺失'}} / UID {{data.character.uid}}</p></div><span class="status-badge" :class="data.character.delete_flag?'neutral':'success'">{{data.character.delete_flag?'已删除（仅查看存档）':'未删除'}}</span></div>
+    <p v-if="data.assets&&data.assets.state!=='ready'" class="field-hint">图片：{{data.assets.note}}；文字查询不受影响。</p><p class="field-hint snapshot-note">{{data.snapshot_note}}<br>读取时间：{{new Date(data.collected_at*1000).toLocaleString('zh-CN',{hour12:false})}}。资料、金币及物品为只读查询；装备解锁需在专页单独预览确认。</p>
     <p v-if="data.account_online?.login_status===1" class="warning">所属账号在线；不代表当前角色在线。背包、仓库、金币和属性可能等待游戏进程保存，刷新网页不会强制保存。</p>
     <p v-if="data.catalog_state!=='ok'" class="submit-error" role="status">物品索引不可用或版本不匹配：仍显示存档编号，但物品名称、等级及职业名称可能未知。</p>
     <div class="operation-tabs detail-tabs" role="tablist" aria-label="角色详情分类" @keydown="tabKey"><button v-for="[id,label] in tabs" :id="'character-tab-'+id" :key="id" role="tab" :disabled="unlockBusy" :aria-selected="section===id" :tabindex="section===id?0:-1" :aria-controls="'character-section-'+id" :class="{active:section===id}" @click="tab(id)">{{label}}<span v-if="id==='equipment'||id==='backpack'"> · {{data[id].state==='ok'?data[id].items.length:'未知'}}</span></button></div>
@@ -73,14 +76,18 @@ function tab(id:string){if(unlockBusy.value)return;section.value=id;search.value
       <template v-else>
        <form class="toolbar" @submit.prevent><input v-model="search" aria-label="筛选角色物品" placeholder="当前容器内搜索名称或物品编号"><select v-model="kind" aria-label="角色物品类型"><option value="">全部类型</option><option v-for="[id,label] in kinds" :key="id" :value="id">{{label}}</option></select><button type="button" @click="search='';kind=''">清除筛选</button></form>
        <p class="field-hint">共 {{items.length}} 个非空槽位，筛选后 {{filtered.length}} 条；容器共 {{container.slot_count}} 个存档槽位（不代表已解锁格数）。{{storageNotes[section]}}物品可查看不代表可通过邮件发放。</p>
-       <div v-if="visible.length" class="table-wrap character-items"><table><thead><tr><th>槽位</th><th>物品 / 编号</th><th>类型</th><th>数量</th><th>装备信息</th></tr></thead><tbody><tr v-for="i in visible" :key="i.slot"><td>{{i.slot_label}}<small class="cell-note">#{{i.slot}}</small></td><td><b>{{i.name}}</b><small class="cell-note">#{{i.id}} · {{i.level===null?'等级未知':'Lv.'+i.level}}</small></td><td>{{i.type_name}}</td><td>{{number(i.quantity)}}</td><td v-if="i.enhancement!==null"><span>强化 +{{i.enhancement}} · 锻造 +{{i.forge}}</span><small class="cell-note">耐久 {{i.durability}} · 增幅类型 {{i.amplify_type}} / 数值 {{i.amplify_value}}</small><small class="cell-note">附魔 ID {{i.orb_id}} · 封装原始标记 {{i.sealed_raw}}</small></td><td v-else>—</td></tr></tbody></table></div>
+       <div class="button-row inventory-view-switch" role="group" aria-label="物品展示方式"><button type="button" :aria-pressed="!visual" @click="visual=false">列表视图</button><button type="button" :aria-pressed="visual" @click="visual=true">格子视图</button></div>
+       <InventoryGrid v-if="visual" :items="filtered" :slot-count="container.slot_count" :equipment="section==='equipment'" :filtered="!!search.trim()||!!kind"/>
+       <template v-else>
+       <div v-if="visible.length" class="table-wrap character-items"><table><thead><tr><th>槽位</th><th>物品 / 编号</th><th>类型</th><th>数量</th><th>装备信息</th></tr></thead><tbody><tr v-for="i in visible" :key="i.slot"><td>{{i.slot_label}}<small class="cell-note">#{{i.slot}}</small></td><td><GameImage :image="i.image" :label="i.name"/><b>{{i.name}}</b><small class="cell-note">#{{i.id}} · {{i.level===null?'等级未知':'Lv.'+i.level}}</small></td><td>{{i.type_name}}</td><td>{{number(i.quantity)}}</td><td v-if="i.enhancement!==null"><span>强化 +{{i.enhancement}} · 锻造 +{{i.forge}}</span><small class="cell-note">耐久 {{i.durability}} · 增幅类型 {{i.amplify_type}} / 数值 {{i.amplify_value}}</small><small class="cell-note">附魔 ID {{i.orb_id}} · 封装原始标记 {{i.sealed_raw}}</small></td><td v-else>—</td></tr></tbody></table></div>
        <div v-if="visible.length" class="inventory-mobile-cards"><article v-for="i in visible" :key="i.slot">
-        <div class="section-title"><b>{{i.name}}</b><span class="pill">{{i.slot_label}} / #{{i.slot}}</span></div>
+        <div class="section-title"><GameImage :image="i.image" :label="i.name"/><b>{{i.name}}</b><span class="pill">{{i.slot_label}} / #{{i.slot}}</span></div>
         <p class="field-hint">物品 #{{i.id}} · {{i.type_name}} · {{i.level===null?'等级未知':'Lv.'+i.level}}</p>
         <dl class="character-facts"><div><dt>数量</dt><dd>{{number(i.quantity)}}</dd></div><template v-if="i.enhancement!==null"><div><dt>强化 / 锻造</dt><dd>+{{i.enhancement}} / +{{i.forge}}</dd></div><div><dt>耐久</dt><dd>{{i.durability}}</dd></div><div><dt>增幅类型 / 数值</dt><dd>{{i.amplify_type}} / {{i.amplify_value}}</dd></div><div><dt>附魔 ID</dt><dd>{{i.orb_id}}</dd></div><div><dt>封装原始标记</dt><dd>{{i.sealed_raw}}</dd></div></template></dl>
        </article></div>
        <p v-else class="empty">{{items.length?'没有匹配的物品，请调整筛选条件。':'该容器存档没有非空物品。'}}</p>
        <div class="pagination"><button :disabled="page<=1" @click="page--">上一页物品</button><span>第 {{page}} / {{pages}} 页 · 每页30条</span><button :disabled="page>=pages" @click="page++">下一页物品</button></div>
+       </template>
       </template>
      </template>
     </section>

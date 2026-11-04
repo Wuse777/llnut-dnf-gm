@@ -224,6 +224,16 @@ def create_app(settings=None, database=None):
         limits.check('policy-preview:'+key,12)
         return service.preview_policy(key,data.model_dump())
 
+    @app.get(API+'/assets/status')
+    def asset_status(request:Request):
+        user(request)
+        return service.catalog.assets.status(settings.pvf_sha256)
+
+    @app.get(API+'/assets/{pvf_sha}/{image_hash}.png')
+    def asset_image(request:Request,pvf_sha:str=PathParameter(pattern=r'^[a-f0-9]{64}$'),image_hash:str=PathParameter(pattern=r'^[a-f0-9]{64}$')):
+        user(request)
+        return Response(service.catalog.assets.png(pvf_sha,image_hash),media_type='image/png')
+
     @app.get(API+'/gift-templates')
     def templates(request:Request,q:str=Query('',max_length=80),page:int=Query(1,ge=1,le=10000),category:str=Query('',max_length=32)):
         user(request)

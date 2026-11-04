@@ -20,5 +20,6 @@
   "pvf_sha256": "",
   "write_approvals": {},
   "batch_worker_enabled": false,
-  "batch_worker_interval": 1
+  "batch_worker_interval": 1,
+  "assets_dir": ""
 }

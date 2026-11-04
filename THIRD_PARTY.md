@@ -22,3 +22,9 @@
 - 职业名称直接离线提取部署者的匹配 PVF的`character/character.lst`与`[growtype name]`，不复制第三方职业字典，也不猜测觉醒位标记。
 
 - 仓库读取：对照同一格式资料与2026-11-04当前部署实际DDL，角色仓库使用`charac_inven_expand.cargo`，账号仓库使用`account_cargo.cargo`。专用测试角色仓库存档解码为152槽空容器；非空内容、共享归属及金币边界由合成数据测试覆盖，不把这些测试冒充游戏客户端验收。未复制第三方仓库业务实现。
+
+## NPK / IMG 图片格式参考（独立实现）
+
+- `dof-dev/godof`，commit `7a272861f6c733386239702a0b023a7b7f2cbd3f`：`npk/npk.go`、`npk/file.go`、`npk/consts.go`、`npk/img/v2.go`、`v4.go`、`npk/image/`及`formatter/`的格式定义，用于核对NPK目录、IMG元数据、像素顺序及调色板布局。
+- `HsOjo/PyDnfEx`，commit `e417cefe43f54a40e20ef0df235aa1c8ecd8595a`：`pydnfex/img/image/link.py`，用于交叉核对格式17链接帧字段。
+- `npk_assets.py`、`asset_builder.py`独立实现；未复制这些项目代码、图片、客户端或素材，不将其安装为运行依赖。格式实现已进行合成数据测试，但尚缺匹配客户端NPK实物验证。支持与未支持范围见`docs/ASSETS.md`。
