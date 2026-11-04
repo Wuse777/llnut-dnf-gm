@@ -215,8 +215,13 @@ def test_actual_runtime_grants(env):
     r=limited.post('/dnf-gm/api/v1/auth/login',json={'username':'admin','password':'fixture-password-no-production'})
     assert r.status_code==200,r.text
     limited.headers['X-CSRF-Token']=r.json()['csrf']
-    for route in ('overview','accounts','characters','online','characters/900001','catalog'):
+    for route in ('overview','accounts','characters','online','characters/900001','catalog','catalog/collections'):
         r=limited.get('/dnf-gm/api/v1/'+route);assert r.status_code==200,r.text
+    r=limited.put(P+'/catalog/990002/favorite',json={'pvf_sha256':'a'*64,'favorite':True})
+    assert r.status_code==200,r.text
+    r=limited.post(P+'/catalog/990002/selection',json={'pvf_sha256':'a'*64})
+    assert r.status_code==200,r.text
+    assert limited.get(P+'/catalog/collections').json()['total']==1
     for args in ({},{'currency':'mileage'},{'action':'mail','charac_no':900001,'currency':None,'delta':None,'gold':1000,'items':[]},{'action':'mail','charac_no':900001,'currency':None,'delta':None,'items':[{'id':990002,'quantity':2}]},{'action':'mail','charac_no':900001,'currency':None,'delta':None,'items':[{'id':990003,'quantity':1},{'id':990004,'quantity':1}]},{'action':'ban','currency':None,'delta':None},{'action':'unban','currency':None,'delta':None}):
         r=preview(limited,**args);assert r.status_code==200,r.text
         r=confirm(limited,r.json()['operation_id'],key='runtime-grants-'+__import__('uuid').uuid4().hex)
@@ -244,6 +249,17 @@ def test_actual_runtime_grants(env):
         with pytest.raises(pymysql.MySQLError):q.execute('DELETE FROM dnf_gm.audit')
         with pytest.raises(pymysql.MySQLError):q.execute('UPDATE taiwan_cain_2nd.inventory SET money=1 WHERE charac_no=900001')
         with pytest.raises(pymysql.MySQLError):q.execute('SELECT VIP FROM taiwan_cain.charac_info')
+        for statement in (
+            'DELETE FROM dnf_gm.item_preferences',
+            "UPDATE dnf_gm.item_preferences SET pvf_sha256='forged'",
+            'SELECT jewel FROM taiwan_cain_2nd.charac_inven_expand',
+            'SELECT switch_equipslot FROM taiwan_cain_2nd.charac_inven_expand',
+            'UPDATE taiwan_cain_2nd.charac_inven_expand SET cargo_capacity=99 WHERE charac_no=900001',
+            'UPDATE taiwan_cain.account_cargo SET money=1 WHERE m_id=900001',
+            'DELETE FROM taiwan_cain.account_cargo WHERE m_id=900001',
+        ):
+            with pytest.raises(pymysql.MySQLError) as denied:q.execute(statement)
+            assert denied.value.args[0] in (1142,1143), denied.value
     limited.close()
 
 

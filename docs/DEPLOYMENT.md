@@ -129,3 +129,20 @@ PYTHONPATH=/opt/dnf-gm/current/src /opt/dnf-gm/venv/bin/python \
 `writes`及`write_approvals`中的`currency`同时控制点券、代币券和积分；`mail`控制所有类型邮件。原有测试UID、PVF及资源门禁继续生效。恢复后先核对健康版本0.3.0、完整索引与可发放总数、账号积分和邮件预览。时装、宠物、积分与大额领取尚需真实客户端验收。
 
 回退应用时同时恢复原索引和catalog_policy_items/catalog_policy_state/schema_versions的管理库备份；保留或按授权备份撤销新增列权限。回退代码不会撤回已经确认的奖励。
+
+
+## 开发版管理扩展（未发布，不是0.3.1的必需升级）
+
+当前源码在0.3.1之后加入004邮件流水、005物品偏好及仓库只读。发布前先在隔离环境演练并按当前实例逐项核验权限，不可重新运行`provision.py`。在完整备份和升级窗口中，仅停止GM应用，保留游戏、数据库、共享Docker及核心代理服务。
+
+在新的版本目录、root维护身份下依次执行（参数必须替换为已核实的现有容器和数据库用户精确来源）：
+
+```bash
+python3 deploy/upgrade-mail-center.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
+python3 deploy/upgrade-warehouse-read.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
+python3 deploy/upgrade-item-preferences.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
+```
+
+这些工具只执行管理库DDL或专用账号增量授权，不修改游戏表结构、不发奖励、不重启服务。`health`要求管理库至少版本5；它不替代实际运行账号的列权限核验。安装应用后用管理员认证分别检查角色详情中的两类仓库、物品收藏/最近选择、邮件中心和原业务；历史邮件导入步骤仍见第一批阶段说明。
+
+回滚旧应用时保留004/005表、邮件流水、偏好、审计及操作编号，不删除玩家数据或执行降级DDL。新增账号仓库金币只是只读存档，与金币邮件上限无关。

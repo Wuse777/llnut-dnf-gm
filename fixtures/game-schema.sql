@@ -228,3 +228,23 @@ CREATE TABLE taiwan_cain_2nd.creature_items (
  stomach int unsigned NOT NULL DEFAULT 0,
  creature_type tinyint NOT NULL DEFAULT 0
 ) ENGINE=InnoDB;
+
+-- Synthetic empty fixtures matching the observed 1031 warehouse columns.
+CREATE TABLE taiwan_cain_2nd.charac_inven_expand (
+ charac_no int NOT NULL DEFAULT 0 PRIMARY KEY,
+ cargo blob NOT NULL,
+ cargo_capacity int unsigned NOT NULL DEFAULT 0,
+ jewel blob NOT NULL,
+ current_equipslot char(1) NOT NULL DEFAULT '',
+ switch_equipslot blob NOT NULL,
+ expand_equipslot blob NOT NULL,
+ redeem_info blob NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+CREATE TABLE taiwan_cain.account_cargo (
+ m_id bigint unsigned NOT NULL DEFAULT 0 PRIMARY KEY,
+ money int unsigned NOT NULL DEFAULT 0,
+ capacity tinyint unsigned NOT NULL DEFAULT 0,
+ cargo blob NOT NULL,
+ occ_time datetime NOT NULL DEFAULT '0000-00-00 00:00:00'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;

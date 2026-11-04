@@ -28,6 +28,8 @@ def bootstrap_sql(config,ph):
     grant('SELECT(id,operation_id,error_type,created_at),INSERT','dnf_gm.failures')
     grant('SELECT(UID,accountname)','d_taiwan.accounts')
     sql += character_read_sql(user)
+    sql += warehouse_read_sql(user)
+    sql += item_preferences_sql(user)
     sql += catalog_policy_sql(user)
     sql += mail_gold_sql(user)
     sql += equipment_unlock_sql(user)
@@ -82,3 +84,14 @@ def mail_center_sql(user="'dnf_gm_app'@'127.0.0.1'"):
             f'GRANT SELECT,INSERT ON dnf_gm.mail_batches TO {user};\n'
             f'GRANT SELECT,INSERT ON dnf_gm.mail_deliveries TO {user};\n'
             f'GRANT SELECT(receive_charac_no,letter_id,item_id,add_info,avata_flag,creature_flag) ON taiwan_cain_2nd.postal TO {user};\n')
+
+
+def warehouse_read_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    # No raw unrelated blobs, game UPDATE, DELETE or table-wide SELECT.
+    return (f'GRANT SELECT(charac_no,cargo,cargo_capacity) ON taiwan_cain_2nd.charac_inven_expand TO {user};\n'
+            f'GRANT SELECT(m_id,money,capacity,cargo,occ_time) ON taiwan_cain.account_cargo TO {user};\n')
+
+
+def item_preferences_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return (f'GRANT SELECT,INSERT(pvf_sha256,item_id,favorite,favorited_at,selected_at),'
+            f'UPDATE(favorite,favorited_at,selected_at) ON dnf_gm.item_preferences TO {user};\n')

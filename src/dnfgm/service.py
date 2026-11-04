@@ -156,10 +156,23 @@ class Service:
             online = one(q, 'SELECT login_status,m_channel_no AS channel FROM taiwan_login.login_account_3 WHERE m_id=%s', (row['uid'],))
             inventory = one(q, 'SELECT money,coin,inventory_capacity,inventory,equipslot FROM taiwan_cain_2nd.inventory WHERE charac_no=%s', (charac_no,))
             play_state = one(q, 'SELECT exp,fatigue,used_fatigue,last_play_time FROM taiwan_cain.charac_stat WHERE charac_no=%s', (charac_no,))
+            storage = one(q, 'SELECT cargo,cargo_capacity FROM taiwan_cain_2nd.charac_inven_expand WHERE charac_no=%s', (charac_no,))
+            # Account ownership comes only from charac_info, never a caller-supplied UID.
+            account_storage = one(q, 'SELECT money,capacity,cargo,occ_time FROM taiwan_cain.account_cargo WHERE m_id=%s', (row['uid'],))
         equipment = decode_container(inventory['equipslot'] if inventory else None, True)
         backpack = decode_container(inventory['inventory'] if inventory else None)
-        labels = self.catalog.read_labels([i['id'] for group in (equipment,backpack) for i in group['items']])
-        for group in (equipment,backpack):
+        warehouse = decode_container(storage['cargo'] if storage else None)
+        warehouse.update(owner_uid=row['uid'], charac_no=charac_no,
+                         capacity_raw=storage['cargo_capacity'] if storage else None)
+        account_warehouse = decode_container(account_storage['cargo'] if account_storage else None)
+        account_warehouse.update(owner_uid=row['uid'],
+            capacity_raw=account_storage['capacity'] if account_storage else None,
+            gold=account_storage['money'] if account_storage else None,
+            gold_state='ok' if account_storage else 'missing',
+            stored_at=account_storage['occ_time'] if account_storage else None)
+        containers = (equipment, backpack, warehouse, account_warehouse)
+        labels = self.catalog.read_labels([i['id'] for group in containers for i in group['items']])
+        for group in containers:
             for item in group['items']:
                 meta = labels['items'].get(item['id'])
                 item.update(name=meta['name'] if meta else f"未知物品 #{item['id']}",
@@ -171,7 +184,8 @@ class Service:
                     'gold':inventory['money'] if inventory else None,
                     'revival_coin_raw':inventory['coin'] if inventory else None,
                     'inventory_capacity_raw':inventory['inventory_capacity'] if inventory else None},
-                'equipment':equipment, 'backpack':backpack, 'catalog_state':labels['state'],
+                'equipment':equipment, 'backpack':backpack, 'warehouse':warehouse,
+                'account_warehouse':account_warehouse, 'catalog_state':labels['state'],
                 'collected_at':time.time(), 'read_only':True,
                 'snapshot_note':'数据库存档快照，不是在线实时战斗面板；在线变化可能尚未保存。属性为原始字段值，未叠加装备、技能和临时效果。未解析的属性不猜测。'}
 

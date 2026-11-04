@@ -6,6 +6,7 @@ import sqlite3
 import time
 from fastapi import HTTPException
 from .limits import MAIL_ITEM_QUANTITY_MAX
+from .item_preferences import ItemPreferences
 
 
 def snapshot(settings):
@@ -144,6 +145,8 @@ class Catalog:
                 item = self.annotate(row,overrides,creature_types)
                 item.pop('source_path',None)
                 result.append(item)
+            if cursor is not None:
+                ItemPreferences.decorate(cursor,m.get('pvf_sha256'),result)
             return {'items':result,'page':page,'total':total,'metadata':{**m,'policy_revision':revision}}
 
     def selection(self, cursor, data, lock=False):

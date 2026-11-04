@@ -33,7 +33,10 @@ function testApp(){
   else if(path==='/operations/preview')d={operation_id:'a'.repeat(32),write_enabled:true,preview:{target:{uid:3,accountname:'gm'},action:'currency',currency:body.currency,before:1050,after:1051}}
   else if(path.endsWith('/confirm'))d={operation_id:'a'.repeat(32),state:'database_committed_refresh_client',before:1050,after:1051}
   else if(path==='/operations/'+ 'a'.repeat(32))d={operation_id:'a'.repeat(32),status:'committed',action:'currency',preview:{target:{uid:3}},result:{currency:'cera',before:1050,after:1051}}
-  else if(path.startsWith('/catalog?'))d={items:[{id:1000,name:'野草莓',category:'consumable',stack_limit:1000,allowed:1,reviewed:1}]}
+  else if(path.startsWith('/catalog?'))d={items:[{id:1000,name:'野草莓',category:'consumable',stack_limit:1000,allowed:1,reviewed:1,pvf_sha256:'a'.repeat(64),favorite:false}]}
+  else if(path==='/catalog/1000/favorite')d={favorite:body.favorite}
+  else if(path==='/catalog/1000/selection')d={item_id:1000}
+  else if(path.startsWith('/catalog/collections?'))d={items:[],total:0}
   else if(path==='/gift-templates'&&opts.method==='POST')d={id:9,version:1,enabled:true}
   else if(path==='/gift-templates/9'&&opts.method==='PUT')d={id:9,version:2,enabled:true}
   else if(path.startsWith('/gift-templates?'))d={items:[{id:9,name:'测试礼包',enabled:true,current_version:1,rewards:{items:[{id:1000,name:'野草莓',quantity:2,stack_limit:1000,category:'consumable'}]}}]}
@@ -207,4 +210,22 @@ it('focuses reauthentication failures beside the verification action',async()=>{
 
 it('opens character inspector from account and deleted-role search via read-only GET',async()=>{
  const {w,calls}=testApp();await target(w);await click(w,'查看详情');expect(calls.at(-1)?.path).toBe('/characters/4');expect(calls.at(-1)?.method).toBe('GET');await click(w,'关闭详情');expect(w.find('[data-testid=character-detail]').exists()).toBe(false);await click(w,'按角色搜索');await click(w,'查看详情');expect(calls.at(-1)?.path).toBe('/characters/2');expect(calls.some(c=>c.path==='/operations/preview')).toBe(false);w.unmount()
+})
+
+
+it('remembers actual draft selections and syncs favorite buttons without issuing rewards',async()=>{
+ const {w,calls}=testApp();await flushPromises();await click(w,'邮件发放');await w.find('[aria-label="收藏 野草莓"]').trigger('click');await flushPromises();expect(w.find('[aria-label="取消收藏 野草莓"]').attributes('aria-pressed')).toBe('true');await click(w,'加入清单');expect(calls.find(x=>x.path==='/catalog/1000/selection')?.body).toEqual({pvf_sha256:'a'.repeat(64)});expect(w.find('#mail-quantity-0').exists()).toBe(true);expect(calls.some(x=>x.path.startsWith('/operations/'))).toBe(false);w.unmount()
+})
+it('preserves the draft and shows a local warning when recent-selection persistence fails',async()=>{
+ const {w}=testApp();await flushPromises();await click(w,'邮件发放');vi.mocked(fetch).mockResolvedValueOnce(new Response('{"detail":"管理库暂不可用"}',{status:503}));await click(w,'加入清单');expect(w.find('#mail-quantity-0').exists()).toBe(true);expect(w.find('.catalog-panel .submit-error').text()).toContain('物品已加入本地草稿');expect(w.find('.catalog-panel .submit-error').text()).toContain('无需重复加入');w.unmount()
+})
+
+
+it('hides background notices while character modal is open so footer actions stay reachable',async()=>{
+ const {w}=testApp();await target(w);expect(w.find('.feedback-toast').exists()).toBe(true);await click(w,'查看详情');expect(w.find('[role=dialog]').exists()).toBe(true);expect(w.find('.feedback-toast').exists()).toBe(false);await click(w,'关闭详情');expect(w.find('[role=dialog]').exists()).toBe(false);w.unmount()
+})
+
+
+it('can save a pure-gold mail draft as a template with its message',async()=>{
+ const {w,calls}=testApp();await flushPromises();await click(w,'邮件发放');await w.find('#mail-gold').setValue(50000);await w.find('#mail-message').setValue('Gold reward');expect(w.text()).not.toContain('金币不保存到礼包模板');await click(w,'另存为礼包模板');expect((w.find('#gift-gold').element as HTMLInputElement).value).toBe('50000');expect((w.find('#gift-message').element as HTMLInputElement).value).toBe('Gold reward');await w.find('#gift-name').setValue('纯金币奖励');await click(w,'创建礼包模板');expect(calls.find(x=>x.path==='/gift-templates'&&x.method==='POST')?.body).toMatchObject({gold:50000,message:'Gold reward',items:[]});expect(calls.some(x=>x.path.startsWith('/operations/'))).toBe(false);w.unmount()
 })

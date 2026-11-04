@@ -59,3 +59,11 @@ class CatalogPolicyPreview(Model):
     filters: CatalogFilters = Field(default_factory=CatalogFilters)
     enabled: bool
     reason: str = Field(min_length=1,max_length=200)
+
+
+class ItemSelection(Model):
+    pvf_sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
+class ItemFavorite(ItemSelection):
+    favorite: bool

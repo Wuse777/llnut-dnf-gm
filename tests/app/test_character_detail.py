@@ -148,3 +148,73 @@ def test_offline_profession_metadata_uses_pvf_not_guessed_map():
             if 'missing' in path:raise KeyError()
             return {'[growtype name]':['鬼剑士','剑魂']}
     assert job_metadata(Reader())=={'0':{'grow_names':['鬼剑士','剑魂']}}
+
+
+def seed_warehouses(db, charac_no=900001, uid=900001, cargo=None, shared=None):
+    """Only synthetic records: unrelated blobs must never reach the endpoint."""
+    with db.connect() as conn, conn.cursor() as q:
+        q.execute('INSERT INTO taiwan_cain_2nd.charac_inven_expand VALUES(%s,%s,9,%s,%s,%s,%s,%s)',
+                  (charac_no,cargo if cargo is not None else blob(slot(990002,3,456)),
+                   b'private jewel blob','a',b'private switch blob',b'private expand blob',b'private redeem blob'))
+        q.execute('INSERT INTO taiwan_cain.account_cargo VALUES(%s,4000000000,7,%s,%s)',
+                  (uid,shared if shared is not None else blob(slot(990001),slot(888888,2,8)), '2026-11-04 01:02:03'))
+        conn.commit()
+
+
+def test_warehouses_are_bound_to_actual_owner_and_money_is_separate(env):
+    c,s,db=seed(env)
+    seed_warehouses(db)
+    seed_warehouses(db,900002,900002,blob(slot(990002,3,999)),blob(slot(990002,3,999)))
+    # A caller-supplied uid cannot substitute another account's shared warehouse.
+    r=c.get(P+'/characters/900001?uid=900002')
+    assert r.status_code==200,r.text
+    d=r.json(); own=d['warehouse']; shared=d['account_warehouse']
+    assert own['owner_uid']==900001 and own['charac_no']==900001
+    assert own['state']=='ok' and own['capacity_raw']==9
+    assert own['items'][0]['quantity']==456 and own['items'][0]['name']=='测试材料'
+    assert shared['owner_uid']==900001 and shared['slot_count']==2 and shared['capacity_raw']==7
+    assert shared['gold']==4000000000 and shared['gold_state']=='ok'
+    assert shared['items'][0]['name']=='测试装备' and shared['items'][1]['name']=='未知物品 #888888'
+    assert shared['stored_at']=='2026-11-04T01:02:03'
+    assert d['wealth']['gold']==150460
+    assert 'private' not in r.text and 'cargo' not in r.text and 'jewel' not in r.text
+    with db.connect() as conn,conn.cursor() as q:
+        q.execute('SELECT COUNT(*) n FROM dnf_gm.operations');assert q.fetchone()['n']==0
+        q.execute('SELECT COUNT(*) n FROM dnf_gm.audit');assert q.fetchone()['n']==0
+        q.execute('SELECT money FROM taiwan_cain.account_cargo WHERE m_id=900001');assert q.fetchone()['money']==4000000000
+
+
+def test_warehouses_missing_invalid_empty_and_gold_are_independent(env):
+    c,s,db=seed(env)
+    d=c.get(P+'/characters/900001').json()
+    assert d['warehouse']['state']==d['account_warehouse']['state']=='missing'
+    assert d['warehouse']['capacity_raw'] is None
+    assert d['account_warehouse']['gold'] is None and d['account_warehouse']['gold_state']=='missing'
+    seed_warehouses(db,cargo=b'corrupt',shared=blob(bytes(61*152)))
+    d=c.get(P+'/characters/900001').json()
+    assert d['warehouse']['state']=='invalid' and '不代表空容器' in d['warehouse']['message']
+    assert d['account_warehouse']['state']=='ok' and d['account_warehouse']['items']==[]
+    assert d['account_warehouse']['slot_count']==152
+    with db.connect() as conn,conn.cursor() as q:
+        q.execute('UPDATE taiwan_cain.account_cargo SET cargo=%s,money=0 WHERE m_id=900001',(b'bad',));conn.commit()
+    d=c.get(P+'/characters/900001').json()
+    assert d['account_warehouse']['state']=='invalid'
+    assert d['account_warehouse']['gold']==0 and d['account_warehouse']['gold_state']=='ok'
+
+
+def test_shared_warehouse_follows_owner_not_character_id_and_deleted_is_readonly(env):
+    c,s,db=seed(env)
+    seed_warehouses(db)
+    with db.connect() as conn,conn.cursor() as q:
+        q.execute('UPDATE taiwan_cain.charac_info SET m_id=900001,delete_flag=1 WHERE charac_no=900002');conn.commit()
+    d=c.get(P+'/characters/900002').json()
+    assert d['character']['delete_flag']==1 and d['read_only']
+    assert d['warehouse']['state']=='missing'
+    assert d['account_warehouse']['owner_uid']==900001
+    assert d['account_warehouse']['gold']==4000000000
+    s.pvf_sha256='f'*64
+    d=c.get(P+'/characters/900001').json()
+    assert d['warehouse']['items'][0]['name']=='未知物品 #990002'
+    assert not d['account_warehouse']['items'][0]['catalog_known']
+    c.cookies.clear()
+    assert c.get(P+'/characters/900001').status_code==401

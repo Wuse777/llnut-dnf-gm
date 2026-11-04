@@ -6,7 +6,8 @@ from fastapi import Path as PathParameter, FastAPI, Request, Response, HTTPExcep
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from .config import load_settings
 from .db import Database, Busy
-from .models import Login, Preview, Confirm, Gift, CatalogPolicyPreview
+from .models import Login, Preview, Confirm, Gift, CatalogPolicyPreview, ItemFavorite, ItemSelection
+from .item_preferences import ItemPreferences
 from .security import COOKIE, Limits, authenticate, new_session, session, digest
 from .service import Service
 from .catalog import snapshot
@@ -89,8 +90,8 @@ def create_app(settings=None, database=None):
         with db.connect() as c, c.cursor() as q:
             q.execute('SELECT version FROM dnf_gm.schema_versions ORDER BY version DESC LIMIT 1')
             version=q.fetchone()
-            if not version or version['version']<4:
-                raise HTTPException(503,'管理库迁移未完成，需要004邮件流水迁移')
+            if not version or version['version']<5:
+                raise HTTPException(503,'管理库迁移未完成，需要005物品偏好迁移')
         return {'ok':True,'version':'0.3.1'}
 
     @app.get(API+'/ready')
@@ -186,6 +187,25 @@ def create_app(settings=None, database=None):
     def catalog(request:Request,q:str=Query('',max_length=80),category:str=Query('',max_length=24),page:int=Query(1,ge=1,le=10000),allowed_only:bool=False,state:Literal['','trial','verified','blocked']=''):
         user(request)
         return service.catalog.search(q,category,page,allowed_only,state)
+
+    preferences = ItemPreferences(db,service.catalog)
+
+    @app.get(API+'/catalog/collections')
+    def item_collection(request:Request,collection:Literal['favorites','recent']='favorites',page:int=Query(1,ge=1,le=10000)):
+        user(request)
+        return preferences.list(collection,page)
+
+    @app.put(API+'/catalog/{item_id}/favorite')
+    def favorite_item(data:ItemFavorite,request:Request,item_id:int=PathParameter(ge=1,le=4294967295)):
+        key=user(request,True)
+        limits.check('item-preference:'+key,60)
+        return preferences.update(item_id,data.pvf_sha256,data.favorite)
+
+    @app.post(API+'/catalog/{item_id}/selection')
+    def select_item(data:ItemSelection,request:Request,item_id:int=PathParameter(ge=1,le=4294967295)):
+        key=user(request,True)
+        limits.check('item-selection:'+key,120)
+        return preferences.update(item_id,data.pvf_sha256)
 
     @app.post(API+'/catalog/policy/preview')
     def policy_preview(data:CatalogPolicyPreview,request:Request):

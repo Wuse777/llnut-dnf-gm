@@ -30,7 +30,7 @@ def decode_container(blob, equipment=False):
         return {'state':'missing','message':'无此容器的存档记录','items':[], 'slot_count':None}
     # Empty or truncated bytes are not evidence of an empty backpack.
     if not isinstance(blob, bytes) or not 5 <= len(blob) <= 65535:
-        return {'state':'invalid','message':'存档长度异常，无法解析；不代表空背包','items':[], 'slot_count':None}
+        return {'state':'invalid','message':'存档长度异常，无法解析；不代表空容器','items':[], 'slot_count':None}
     try:
         expected = struct.unpack_from('<I', blob)[0]
         if expected == 0 or expected > MAX_SLOTS*SLOT_SIZE or expected % SLOT_SIZE:
@@ -61,7 +61,7 @@ def decode_container(blob, equipment=False):
             })
         return {'state':'ok','message':'已读取数据库存档','slot_count':expected//SLOT_SIZE,'items':items}
     except (ValueError, struct.error, zlib.error):
-        return {'state':'invalid','message':'存档格式或压缩数据异常，无法解析；不代表空背包','items':[], 'slot_count':None}
+        return {'state':'invalid','message':'存档格式或压缩数据异常，无法解析；不代表空容器','items':[], 'slot_count':None}
 
 
 def profession(job, grow_type, jobs):

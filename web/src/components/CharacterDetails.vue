@@ -9,7 +9,7 @@ const unlockBusy=ref(false),unlockVisited=ref(false),unlockPending=ref(false)
 const root=ref<HTMLElement|null>(null)
 const data=ref<any>(null),loading=ref(false),error=ref(''),section=ref('basic'),search=ref(''),kind=ref(''),page=ref(1)
 let generation=0
-const tabs=[['basic','基本信息'],['attributes','属性存档'],['equipment','穿戴装备'],['backpack','背包道具'],['unlock','装备解锁']]
+const tabs=[['basic','基本信息'],['attributes','属性存档'],['equipment','穿戴装备'],['backpack','背包道具'],['warehouse','角色仓库'],['account_warehouse','账号仓库'],['unlock','装备解锁']]
 function number(n:unknown){return n===null||n===undefined?'未知':Number(n).toLocaleString('zh-CN')}
 function date(s:unknown){if(typeof s!=='string'||s.startsWith('0000-'))return '未记录';const d=new Date(s.replace(' ','T')+'Z');return Number.isNaN(d.getTime())?'未记录':d.toLocaleString('zh-CN',{hour12:false})}
 async function load(){
@@ -20,7 +20,13 @@ async function load(){
 }
 watch(()=>[props.characNo,props.initialSection],()=>{section.value=tabs.some(t=>t[0]===props.initialSection)?props.initialSection:'basic';search.value='';kind.value='';page.value=1;void load()},{immediate:true})
 onUnmounted(()=>generation++)
-const container=computed(()=>data.value?.[section.value])
+const container=computed(()=>data.value?.[section.value]??{state:'missing',items:[],slot_count:null,message:'未返回此容器记录，不能视为空仓库'})
+const storageNotes:Record<string,string>={
+ equipment:'普通穿戴槽，不含独立时装栏或宠物栏。',
+ backpack:'仅本角色背包，不含仓库、时装栏、宠物栏或未领取邮件。',
+ warehouse:'本角色独立仓库；不含账号共享仓库、换装栏或未领取邮件。',
+ account_warehouse:'同一账号下角色共享的仓库；不与角色背包或角色金币合并。'
+}
 const items=computed(()=>container.value?.items??[])
 const filtered=computed(()=>items.value.filter((i:any)=>(!kind.value||String(i.type)===kind.value)&&(!search.value.trim()||i.name.includes(search.value.trim())||String(i.id).includes(search.value.trim()))))
 const pages=computed(()=>Math.max(1,Math.ceil(filtered.value.length/30)))
@@ -35,12 +41,12 @@ function tab(id:string){if(unlockBusy.value)return;section.value=id;search.value
  <Modal title="角色详情" :busy="unlockBusy" @close="emit('close')">
   <div ref="root" class="character-detail" data-testid="character-detail">
    <div class="section-title character-toolbar"><span class="pill">角色详情 · #{{characNo}}</span><button :disabled="loading||unlockBusy||unlockPending||section==='unlock'" @click="load">{{loading?'正在读取…':'刷新角色存档'}}</button></div>
-   <p v-if="loading" role="status" class="empty"><span class="spinner"/> 正在读取角色资料、装备与背包…</p>
+   <p v-if="loading" role="status" class="empty"><span class="spinner"/> 正在读取角色资料、装备、背包与仓库…</p>
    <div v-else-if="error" class="submit-error" role="alert"><b>无法读取角色详情</b><p>{{error}}</p><button @click="load">重试查询</button></div>
    <template v-else-if="data">
     <div class="character-identity"><div><h3>{{data.character.charac_name}}</h3><p>{{data.profession.name}} · Lv.{{data.character.lev}} · {{data.account?.accountname??'归属账号缺失'}} / UID {{data.character.uid}}</p></div><span class="status-badge" :class="data.character.delete_flag?'neutral':'success'">{{data.character.delete_flag?'已删除（仅查看存档）':'未删除'}}</span></div>
     <p class="field-hint snapshot-note">{{data.snapshot_note}}<br>读取时间：{{new Date(data.collected_at*1000).toLocaleString('zh-CN',{hour12:false})}}。资料、金币及物品为只读查询；装备解锁需在专页单独预览确认。</p>
-    <p v-if="data.account_online?.login_status===1" class="warning">所属账号在线；不代表当前角色在线。背包、金币和属性可能等待游戏进程保存，刷新网页不会强制保存。</p>
+    <p v-if="data.account_online?.login_status===1" class="warning">所属账号在线；不代表当前角色在线。背包、仓库、金币和属性可能等待游戏进程保存，刷新网页不会强制保存。</p>
     <p v-if="data.catalog_state!=='ok'" class="submit-error" role="status">物品索引不可用或版本不匹配：仍显示存档编号，但物品名称、等级及职业名称可能未知。</p>
     <div class="operation-tabs detail-tabs" role="tablist" aria-label="角色详情分类" @keydown="tabKey"><button v-for="[id,label] in tabs" :id="'character-tab-'+id" :key="id" role="tab" :disabled="unlockBusy" :aria-selected="section===id" :tabindex="section===id?0:-1" :aria-controls="'character-section-'+id" :class="{active:section===id}" @click="tab(id)">{{label}}<span v-if="id==='equipment'||id==='backpack'"> · {{data[id].state==='ok'?data[id].items.length:'未知'}}</span></button></div>
     <section :id="'character-section-'+section" role="tabpanel" :aria-labelledby="'character-tab-'+section" tabindex="0">
@@ -55,11 +61,24 @@ function tab(id:string){if(unlockBusy.value)return;section.value=id;search.value
      </template>
      <template v-else-if="section==='unlock'"></template>
      <template v-else>
+      <div v-if="section==='warehouse'||section==='account_warehouse'" class="warehouse-summary">
+       <p class="field-hint">{{storageNotes[section]}}所属 UID：{{container.owner_uid??data.character.uid}}<span v-if="section==='warehouse'"> · 角色 #{{data.character.charac_no}}</span></p>
+       <dl class="character-facts">
+        <div v-if="section==='account_warehouse'"><dt>账号仓库金币</dt><dd>{{number(container.gold)}}<small>{{container.gold_state==='ok'?'独立存档，不包含角色携带金币':'无金币存档记录，不能视为0'}}</small></dd></div>
+        <div><dt>仓库容量原始值</dt><dd>{{number(container.capacity_raw)}}<small>不据此推断实际已开放格数</small></dd></div>
+        <div v-if="section==='account_warehouse'"><dt>仓库存档时间</dt><dd>{{date(container.stored_at)}}<small>不是在线实时保存时间保证</small></dd></div>
+       </dl>
+      </div>
       <div v-if="container.state!=='ok'" class="submit-error" role="status">{{container.message}}</div>
       <template v-else>
        <form class="toolbar" @submit.prevent><input v-model="search" aria-label="筛选角色物品" placeholder="当前容器内搜索名称或物品编号"><select v-model="kind" aria-label="角色物品类型"><option value="">全部类型</option><option v-for="[id,label] in kinds" :key="id" :value="id">{{label}}</option></select><button type="button" @click="search='';kind=''">清除筛选</button></form>
-       <p class="field-hint">共 {{items.length}} 个非空槽位，筛选后 {{filtered.length}} 条；容器共 {{container.slot_count}} 个存档槽位（不代表已解锁格数）。{{section==='backpack'?'仅本角色背包，不含仓库、时装栏、宠物栏或未领取邮件。':'普通穿戴槽，不含独立时装栏或宠物栏。'}}物品可查看不代表可通过邮件发放。</p>
+       <p class="field-hint">共 {{items.length}} 个非空槽位，筛选后 {{filtered.length}} 条；容器共 {{container.slot_count}} 个存档槽位（不代表已解锁格数）。{{storageNotes[section]}}物品可查看不代表可通过邮件发放。</p>
        <div v-if="visible.length" class="table-wrap character-items"><table><thead><tr><th>槽位</th><th>物品 / 编号</th><th>类型</th><th>数量</th><th>装备信息</th></tr></thead><tbody><tr v-for="i in visible" :key="i.slot"><td>{{i.slot_label}}<small class="cell-note">#{{i.slot}}</small></td><td><b>{{i.name}}</b><small class="cell-note">#{{i.id}} · {{i.level===null?'等级未知':'Lv.'+i.level}}</small></td><td>{{i.type_name}}</td><td>{{number(i.quantity)}}</td><td v-if="i.enhancement!==null"><span>强化 +{{i.enhancement}} · 锻造 +{{i.forge}}</span><small class="cell-note">耐久 {{i.durability}} · 增幅类型 {{i.amplify_type}} / 数值 {{i.amplify_value}}</small><small class="cell-note">附魔 ID {{i.orb_id}} · 封装原始标记 {{i.sealed_raw}}</small></td><td v-else>—</td></tr></tbody></table></div>
+       <div v-if="visible.length" class="inventory-mobile-cards"><article v-for="i in visible" :key="i.slot">
+        <div class="section-title"><b>{{i.name}}</b><span class="pill">{{i.slot_label}} / #{{i.slot}}</span></div>
+        <p class="field-hint">物品 #{{i.id}} · {{i.type_name}} · {{i.level===null?'等级未知':'Lv.'+i.level}}</p>
+        <dl class="character-facts"><div><dt>数量</dt><dd>{{number(i.quantity)}}</dd></div><template v-if="i.enhancement!==null"><div><dt>强化 / 锻造</dt><dd>+{{i.enhancement}} / +{{i.forge}}</dd></div><div><dt>耐久</dt><dd>{{i.durability}}</dd></div><div><dt>增幅类型 / 数值</dt><dd>{{i.amplify_type}} / {{i.amplify_value}}</dd></div><div><dt>附魔 ID</dt><dd>{{i.orb_id}}</dd></div><div><dt>封装原始标记</dt><dd>{{i.sealed_raw}}</dd></div></template></dl>
+       </article></div>
        <p v-else class="empty">{{items.length?'没有匹配的物品，请调整筛选条件。':'该容器存档没有非空物品。'}}</p>
        <div class="pagination"><button :disabled="page<=1" @click="page--">上一页物品</button><span>第 {{page}} / {{pages}} 页 · 每页30条</span><button :disabled="page>=pages" @click="page++">下一页物品</button></div>
       </template>
@@ -67,6 +86,6 @@ function tab(id:string){if(unlockBusy.value)return;section.value=id;search.value
     </section>
    </template>
   </div>
-  <template #footer><span class="muted">装备/背包只读 · 提前解锁需单独预览确认</span><button class="primary" :disabled="unlockBusy" @click="emit('close')">关闭详情</button></template>
+  <template #footer><span class="muted">装备/背包/仓库只读 · 提前解锁需单独预览确认</span><button class="primary" :disabled="unlockBusy" @click="emit('close')">关闭详情</button></template>
  </Modal>
 </template>

@@ -37,3 +37,12 @@ npm run build
 - SSH 隧道、HTTPS 路由、Cookie、相邻页面同源风险与回滚演练。
 
 公开导出不包含原服务器的历史验收报告、截图、玩家名单或私有操作收据。公开副本测试结果见 `docs/RELEASE-CHECK.md`，没有完成的项目须明确记录。
+
+
+## 开发版第二批覆盖
+
+`tests/app/test_character_detail.py`覆盖角色/账号仓库归属、跨角色共享、缺失/损坏/空容器、独立金币、未知索引以及无游戏写入；`test_actual_runtime_grants`在实际MySQL5.7专用用户下检查只读可用且写仓库、读取无关blob被拒绝。
+
+`tests/app/test_item_preferences.py`覆盖按PVF隔离、分页、停用/缺失物品、去收藏、幂等收藏、收藏与选择并发、认证/CSRF/Origin、迁移重复执行、服务对象重建后持久存在，以及修改收藏不影响既有奖励预览或发放数量。前端覆盖收藏按钮、最近选择失败时保留草稿、仓库页和弹窗提示遮挡回归。
+
+浏览器检查使用合成API验证桌面和390px手机点击，不等价于生产已部署或客户端物品效果验收。具体本轮结果见`reports/MANAGEMENT-EXPANSION-02.md`。

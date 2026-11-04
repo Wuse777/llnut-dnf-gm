@@ -39,3 +39,23 @@ it('supports closing while loading and restores focus to trigger',async()=>{
 it('arrow keys move selected role-inspector tab and focus',async()=>{
  const {w}=setup();await flushPromises();const tab=w.find('[role=tab][aria-selected=true]');await tab.trigger('keydown',{key:'ArrowRight'});await flushPromises();expect(w.find('[role=tab][aria-selected=true]').text()).toBe('属性存档');expect(document.activeElement).toBe(w.find('[role=tab][aria-selected=true]').element);w.unmount()
 })
+
+
+it('shows distinct role and shared warehouses, separate gold and raw capacity',async()=>{
+ const d:any=fixture();d.warehouse={state:'ok',slot_count:152,capacity_raw:9,owner_uid:3,charac_no:4,items:[item(8388,'角色仓库材料',3,456)]};d.account_warehouse={state:'ok',slot_count:56,capacity_raw:7,owner_uid:3,gold:4000000000,gold_state:'ok',stored_at:'2026-11-04T01:02:03',items:[item(10000,'账号仓库装备',1)]}
+ const {w,calls}=setup(d);await flushPromises();await tab(w,'角色仓库');expect(w.text()).toContain('角色仓库材料');expect(w.text()).toContain('456');expect(w.find('tbody').text()).not.toContain('账号仓库装备');expect(w.text()).toContain('不据此推断实际已开放格数')
+ await tab(w,'账号仓库');expect(w.text()).toContain('账号仓库装备');expect(w.text()).toContain('4,000,000,000');expect(w.text()).not.toContain('150,460');expect(w.text()).toContain('同一账号下角色共享');expect(w.text()).toContain('所属 UID：3');expect(calls).toEqual(['GET /dnf-gm/api/v1/characters/4']);w.unmount()
+})
+
+it('does not invent empty warehouse or zero gold for missing records or older responses',async()=>{
+ const {w}=setup();await flushPromises();await tab(w,'账号仓库');expect(w.text()).toContain('未返回此容器记录');expect(w.text()).toContain('无金币存档记录，不能视为0');expect(w.text()).not.toContain('没有非空物品');w.unmount()
+})
+
+it('shows warehouse decode failure separately from known stored gold',async()=>{
+ const d:any=fixture();d.account_warehouse={state:'invalid',message:'存档格式异常，不代表空容器',items:[],slot_count:null,owner_uid:3,capacity_raw:7,gold:0,gold_state:'ok',stored_at:'0000-00-00 00:00:00'}
+ const {w}=setup(d);await flushPromises();await tab(w,'账号仓库');expect(w.text()).toContain('不代表空容器');expect(w.text()).toContain('独立存档，不包含角色携带金币');expect(w.text()).toContain('未记录');expect(w.text()).not.toContain('没有非空物品');expect(w.find('.character-facts dd').text()).toContain('0');w.unmount()
+})
+
+it('resets filters when switching between warehouses',async()=>{
+ const d:any=fixture();d.warehouse={state:'ok',slot_count:152,items:[item(8388,'角色材料',3)]};d.account_warehouse={state:'ok',slot_count:56,items:[item(10000,'共享装备',1)]};const {w}=setup(d);await flushPromises();await tab(w,'角色仓库');await w.find('[aria-label="筛选角色物品"]').setValue('找不到');expect(w.text()).toContain('没有匹配的物品');await tab(w,'账号仓库');expect(w.text()).toContain('共享装备');expect(w.findAll('tbody tr')).toHaveLength(1);w.unmount()
+})
