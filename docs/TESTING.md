@@ -63,3 +63,14 @@ node tools/browser-cleanup.mjs
 工具只接受回环HTTP地址，阻止外部请求；API全用合成拦截，不连接生产。可通过`PLAYWRIGHT_MODULE`指定开发环境模块路径，`CHROME_EXECUTABLE`指定浏览器；仅在必须的隔离开发环境才设置`DNF_GM_BROWSER_NO_SANDBOX=1`。输出桌面/手机截图到Git忽略的`outputs/`。`DNF_GM_E2E_BASE`可更改本地静态端口，不能设为公网。
 
 以上测试不替代生产systemd权限/资源验证，不证明已经释放生产磁盘空间。
+
+
+## 装备编码与维护窗口基础测试
+
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .runtime/venv/bin/python -m pytest -q \
+  tests/test_inventory_codec.py tests/test_inventory_fence.py \
+  tests/test_inventory_probe.py tests/test_monitor.py
+```
+
+使用合成61字节槽位、临时文件、模拟/proc和固定命令返回值；仅探测执行器的超时/输出边界使用本机测试Python子进程，不连接生产Docker或游戏。测试包括未知字节保持、数量范围、品级字节序、关联类型拒绝、历史恢复冲突、共享/独占文件锁、文件替换、许可生命周期、时钟回拨/过期、未知进程/组件、父子链、核心保护及默认关闭。真实游戏进程白名单、已知属性的游戏语义、事务API和页面仍需后续验证；不能用底层测试替代装备功能验收。

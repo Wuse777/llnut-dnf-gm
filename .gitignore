@@ -4,6 +4,7 @@
 !.env.example
 config.json
 monitor.json
+inventory-maintenance.json
 private/
 outputs/
 work/

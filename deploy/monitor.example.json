@@ -48,5 +48,6 @@
       "label": "系统日志",
       "path": "/var/log"
     }
-  ]
+  ],
+  "inventory_maintenance_enabled": false
 }

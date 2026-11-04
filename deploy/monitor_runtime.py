@@ -2,6 +2,7 @@
 from collections import deque
 from pathlib import Path
 import json
+import math
 import os
 import subprocess
 import time
@@ -160,6 +161,21 @@ class Controller:
             event('auto_recovery', success=success)
 
 
+def protection_health(status, now):
+    """Only the root collector can produce this status; core_ok stays truthful.
+
+    This is permission to keep the GM process alive, NOT permission for ordinary
+    rewards/native actions. Expired or unverified maintenance never waives failure.
+    """
+    window = status.get('maintenance')
+    if isinstance(window, dict) and window.get('active') is True:
+        at, expires = window.get('collected_at'), window.get('expires_at')
+        return (window.get('verified') is True and type(at) in (int, float)
+                and type(expires) in (int, float) and math.isfinite(at) and math.isfinite(expires)
+                and 0 <= now - at <= 30 and now < expires)
+    return status.get('core_ok') is True
+
+
 def run(collect, *, disk_path, min_memory=256, min_swap=1536, telemetry=None):
     global TELEMETRY
     TELEMETRY = telemetry
@@ -169,6 +185,7 @@ def run(collect, *, disk_path, min_memory=256, min_swap=1536, telemetry=None):
     baseline = cpu()
     next_collect = 0
     collection_failed = False
+    automatic_recovery_allowed = False
     while True:
         sampled, core_ok = False, None
         diagnostic = None
@@ -179,7 +196,8 @@ def run(collect, *, disk_path, min_memory=256, min_swap=1536, telemetry=None):
                 try:
                     status = collect()
                     metrics = resources(disk_path)
-                    core_ok = status['core_ok'] is True
+                    core_ok = protection_health(status, time.time())
+                    automatic_recovery_allowed = status.get('core_ok') is True and not status.get('maintenance', {}).get('active', False)
                     total, idle = cpu()
                     old_total, old_idle = baseline
                     baseline = total, idle
@@ -188,10 +206,13 @@ def run(collect, *, disk_path, min_memory=256, min_swap=1536, telemetry=None):
                     atomic(DEST, status)
                     diagnostic = status
                     if collection_failed:
-                        event('collection_recovered', core_ok=core_ok)
+                        event('collection_recovered', core_ok=status.get('core_ok') is True,
+                              maintenance_verified=bool(status.get('maintenance', {}).get('active')
+                                                        and status.get('maintenance', {}).get('verified')))
                     collection_failed = False
                 except Exception as error:
                     core_ok = None
+                    automatic_recovery_allowed = False
                     collection_failed = True
                     # Immediately fail closed: no stale fingerprints or healthy flag.
                     diagnostic = dict(collected_at=time.time(), core_ok=None, state='unknown',
@@ -208,7 +229,7 @@ def run(collect, *, disk_path, min_memory=256, min_swap=1536, telemetry=None):
                 atomic(DEST, diagnostic)
             now = time.monotonic()
             reason = policy.observe(now, safe, sampled=sampled, core_ok=core_ok)
-            controller.apply(reason, policy.recovered(now), now, metrics)
+            controller.apply(reason, automatic_recovery_allowed and policy.recovered(now), now, metrics)
             if TELEMETRY is not None and diagnostic is not None:
                 try:
                     TELEMETRY.observe(diagnostic)

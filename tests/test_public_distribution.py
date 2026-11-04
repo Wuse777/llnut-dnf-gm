@@ -94,3 +94,13 @@ def test_monitor_is_standalone_and_only_stops_gm():
     assert "['systemctl', 'stop', 'dnf-gm.service']" in runtime
     assert "['systemctl', 'start', 'dnf-gm.service']" in runtime
     assert 'shell=True' not in text + runtime
+
+
+def test_inventory_maintenance_is_opt_in_and_example_cannot_authorize():
+    m=module('inventory_probe')
+    cfg=json.loads((ROOT/'deploy/monitor.example.json').read_text())
+    assert cfg['inventory_maintenance_enabled'] is False
+    example=json.loads((ROOT/'deploy/inventory-maintenance.example.json').read_text())
+    assert not example['process_rules'] and not example['program_sha256']
+    with pytest.raises(m.Refused):m.validate(example)
+    assert 'inventory-maintenance.json' in (ROOT/'.gitignore').read_text().splitlines()

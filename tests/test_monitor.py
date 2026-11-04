@@ -240,3 +240,64 @@ def test_optional_native_fingerprint_rejects_symlink_directory_empty_and_large(t
         assert c._native_file_fingerprint(path) is None
     for pid in (None,True,0,1,'42','../file'):
         assert c.native_fingerprint(pid) is None
+
+
+@pytest.mark.parametrize('window,expected', [
+    (None,False), ({'active':True,'verified':False},False),
+    ({'active':True,'verified':True,'collected_at':990,'expires_at':1100},True),
+    ({'active':True,'verified':True,'collected_at':969,'expires_at':1100},False),
+    ({'active':True,'verified':True,'collected_at':1001,'expires_at':1100},False),
+    ({'active':True,'verified':True,'collected_at':990,'expires_at':1000},False),
+    ({'active':True,'verified':1,'collected_at':990,'expires_at':1100},False),
+    ({'active':True,'verified':True,'collected_at':float('nan'),'expires_at':1100},False),
+])
+def test_maintenance_protection_does_not_forge_normal_health(window,expected):
+    s={'core_ok':False,'maintenance':window}
+    assert runtime.protection_health(s,1000) is expected
+    assert s['core_ok'] is False
+
+
+def test_default_collector_does_not_load_maintenance(monkeypatch):
+    assert monitor.Collector({}).maintenance is None
+    cfg=json.loads((DEPLOY/'monitor.example.json').read_text())
+    cfg['inventory_maintenance_enabled']='true'
+    with pytest.raises(ValueError):monitor.validate(cfg)
+
+
+@pytest.mark.parametrize('auxiliary_ok', [True,False])
+@pytest.mark.parametrize('verified', [True,False])
+def test_maintenance_collector_keeps_game_unhealthy_and_requires_auxiliary(monkeypatch,tmp_path,auxiliary_ok,verified):
+    cfg=json.loads((DEPLOY/'monitor.example.json').read_text())
+    pvf=tmp_path/'Script.pvf';pvf.write_bytes(b'synthetic');cfg['pvf_path']=str(pvf)
+    def command(args,*,probe):
+        if probe=='container_state':return SimpleNamespace(returncode=0,stdout='{"Running":true,"OOMKilled":false}|sha256:test')
+        if probe=='dnf_components':return SimpleNamespace(returncode=0,stdout='\n'.join(n+'=down' for n in cfg['components']))
+        return SimpleNamespace(returncode=0)
+    class Window:
+        def status(self):return {'active':True,'verified':verified,'collected_at':990,'expires_at':1100}
+    monkeypatch.setattr(monitor,'command',command)
+    monkeypatch.setattr(monitor,'build_opener',lambda *a:SimpleNamespace(open=lambda *a,**k:(_ for _ in ()).throw(OSError())))
+    data=monitor.Collector(cfg,auxiliary=lambda:auxiliary_ok,maintenance=Window())()
+    assert data['core_ok'] is False and not data['services']['dnf_gateway']
+    assert data['maintenance']['verified'] is (verified and auxiliary_ok)
+    assert runtime.protection_health(data,1000) is (verified and auxiliary_ok)
+
+
+def test_runtime_does_not_autorecover_from_collector_failure_into_maintenance(monkeypatch,tmp_path):
+    monkeypatch.setattr(runtime,'DEST',tmp_path/'run/status.json')
+    monkeypatch.setattr(runtime,'STATE',tmp_path/'state/protection.json')
+    monkeypatch.setattr(runtime,'cpu',lambda:(100,50))
+    monkeypatch.setattr(runtime,'resources',lambda _:dict(mem_available_mib=700,swap_free_mib=4000,disk_free_gib=10))
+    clock=[1000];calls=[]
+    monkeypatch.setattr(runtime.time,'monotonic',lambda:clock[0])
+    monkeypatch.setattr(runtime.time,'time',lambda:clock[0])
+    monkeypatch.setattr(runtime.Controller,'apply',lambda self,reason,recovered,now,metrics:calls.append((reason,recovered)))
+    def collect():return {'core_ok':False,'maintenance':{'active':True,'verified':True,'collected_at':clock[0],'expires_at':2000}}
+    class End(BaseException):pass
+    def sleep(_):
+        clock[0]+=5
+        if clock[0]>=1050:raise End()
+    monkeypatch.setattr(runtime.time,'sleep',sleep)
+    with pytest.raises(End):runtime.run(collect,disk_path=str(tmp_path))
+    assert all(reason is None and recovered is False for reason,recovered in calls)
+    assert json.loads(runtime.DEST.read_text())['core_ok'] is False

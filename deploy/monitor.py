@@ -15,6 +15,8 @@ CONFIG = Path('/etc/dnf-gm/monitor.json')
 
 
 def validate(cfg):
+    if type(cfg.get('inventory_maintenance_enabled', False)) is not bool:
+        raise ValueError('Maintenance mode must be an explicit boolean')
     for name in [cfg['container'], *cfg['core_services'], *cfg['components']]:
         if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.@-]{0,127}', name):
             raise ValueError('Invalid local service identifier')
@@ -48,10 +50,14 @@ def validate(cfg):
 
 
 class Collector:
-    def __init__(self, cfg, auxiliary=None):
+    def __init__(self, cfg, auxiliary=None, maintenance=None):
         self.cfg, self.auxiliary = cfg, auxiliary
         self.cached_sig = self.pvf_sha = None
         self.native_sig = self.native_sha = None
+        self.maintenance = maintenance
+        if self.maintenance is None and cfg.get('inventory_maintenance_enabled', False):
+            from inventory_window import MonitorWindow
+            self.maintenance = MonitorWindow(cfg)
 
     def native_fingerprint(self, pid):
         # Fixed image path, not a path accepted from the web. A missing/changed
@@ -129,8 +135,20 @@ class Collector:
             if sig != (after.st_ino, after.st_size, after.st_mtime_ns):
                 raise RuntimeError('PVF changed while hashing')
             self.pvf_sha, self.cached_sig = sha, sig
-        return dict(services=services, core_ok=all(services.values()), pvf_sha256=self.pvf_sha, image_digest=image,
-                    native_monitor_sha256=self.native_fingerprint(state.get('Pid')))
+        status = dict(services=services, core_ok=all(services.values()), pvf_sha256=self.pvf_sha, image_digest=image,
+                      native_monitor_sha256=self.native_fingerprint(state.get('Pid')))
+        if self.maintenance is not None:
+            window = self.maintenance.status()
+            if window.get('active') is True:
+                # A permit never makes the game healthy. Ordinary writes keep
+                # failing their core_ok guard throughout the maintenance window.
+                status['core_ok'] = False
+                status['state'] = 'maintenance'
+                if (not all(services[name] for name in cfg['core_services'])
+                        or services.get('auxiliary_core') is False):
+                    window = {**window, 'verified': False, 'reason': 'non_game_core_failed'}
+            status['maintenance'] = window
+        return status
 
 
 def main():

@@ -1,0 +1,16 @@
+{
+  "container": "dnf",
+  "components": ["mysql", "llnut_gate", "channel", "game_siroco11", "relay", "stun"],
+  "protected_services": {
+    "docker": "docker.service",
+    "dnf": "dnf.service",
+    "mihomo": "mihomo.service",
+    "cliproxyapi": "cliproxyapi.service"
+  },
+  "pvf_path": "/var/lib/dnf/data/Script.pvf",
+  "program_path": "/var/lib/dnf/data/df_game_r",
+  "image_digest": "",
+  "pvf_sha256": "",
+  "program_sha256": "",
+  "process_rules": []
+}
