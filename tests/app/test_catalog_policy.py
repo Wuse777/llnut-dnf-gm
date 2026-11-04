@@ -159,8 +159,8 @@ def test_literal_filters_and_changed_items_preserve_bounds(env):
     c,s,db,app=env;add_items(s,1);apply(c,item_id=991000)
     assert c.get(P+'/catalog?q=%25').json()['items']==[]
     assert policy(c,filters={'q':"' OR 1=1 --"}).status_code==422
-    assert mail(c,[{'id':991000,'quantity':101}]).status_code==422
-    assert mail(c,[{'id':990001,'quantity':2}]).status_code==422
+    assert mail(c,[{'id':991000,'quantity':101}]).status_code==422  # explicitly disabled above
+    assert mail(c,[{'id':990001,'quantity':2}]).status_code==200
     assert mail(c,[{'id':991000,'quantity':1}]*21).status_code==422
     assert mail(c,[{'id':123456,'quantity':1}]).status_code==422
 

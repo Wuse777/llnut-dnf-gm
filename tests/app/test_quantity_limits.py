@@ -1,72 +1,76 @@
-"""Only a reviewed per-id maintenance cap can fill missing ordinary-item metadata."""
+"""PVF caps are informational; every reward uses only the storage boundary."""
 from contextlib import closing
-import json
 import sqlite3
 import uuid
 
 import pytest
 from test_catalog_policy import add_items, apply, scalar
-from test_application import mail, confirm
+from test_application import P, mail, preview, confirm
 
 
-def configure(settings, cap=1000):
-    settings.mail_stack_limits={'992000':dict(pvf_sha256=settings.pvf_sha256,stack_limit=cap,reason='synthetic quantity trial')}
-
-
-def test_single_missing_cap_trial_keeps_other_policies_and_bounds(env):
+@pytest.mark.parametrize('indexed_cap', [0, -1, 1, 99, 1000000])
+def test_all_stack_caps_accept_larger_quantities_and_commit_once(env, indexed_cap):
     client, settings, db, app = env
     add_items(settings, 1)
-    configure(settings)
-    before=client.get('/dnf-gm/api/v1/catalog?allowed_only=1').json()['total']
-    assert before==5
-    item=client.get('/dnf-gm/api/v1/catalog?q=992000').json()['items'][0]
-    assert item['sendable'] and item['stack_limit']==1000 and item['indexed_stack_limit']==0
-    assert item['policy_state']=='trial' and not item['verification_evidence']
-    assert item['quantity_limit_source']=='maintenance-trial'
-    assert client.get('/dnf-gm/api/v1/catalog?allowed_only=1').json()['total']==before
-    assert client.get('/dnf-gm/api/v1/catalog?q=991000').json()['items'][0]['sendable']
-    assert client.get('/dnf-gm/api/v1/catalog?q=990003').json()['items'][0]['sendable']
-    assert mail(client,[{'id':992000,'quantity':1001}]).status_code==422
-    preview=mail(client,[{'id':992000,'quantity':1000}]);assert preview.status_code==200,preview.text
-    result=confirm(client,preview.json()['operation_id'],uuid.uuid4().hex);assert result.status_code==200,result.text
-    assert result.json()['client_verified'] is False
-    with db.connect() as con,con.cursor() as cursor:
-        cursor.execute('SELECT item_id,add_info,endurance FROM taiwan_cain_2nd.postal')
-        assert cursor.fetchone()==dict(item_id=992000,add_info=1000,endurance=0)
-    apply(client,item_id=992000,enabled=False)
-    assert mail(client,[{'id':992000,'quantity':1}]).status_code==422
-
-
-def test_quantity_trial_never_bypasses_specials_or_pvf(env):
-    client, settings, db, app=env
-    add_items(settings,1);configure(settings)
-    settings.mail_stack_limits['990003']=dict(pvf_sha256=settings.pvf_sha256,stack_limit=1000,reason='synthetic special must refuse')
     with sqlite3.connect(settings.catalog_file) as index:
-        index.execute('UPDATE items SET stack_limit=0 WHERE id=990003')
-    from test_catalog_policy import policy
-    assert client.get('/dnf-gm/api/v1/catalog?q=990003').json()['items'][0]['stack_limit']==1
-    assert mail(client,[{'id':990003,'quantity':2}]).status_code==422
-    settings.mail_stack_limits['992000']['pvf_sha256']='b'*64
-    assert client.get('/dnf-gm/api/v1/catalog?q=992000').json()['items'][0]['stack_limit']==1
+        index.execute('UPDATE items SET stack_limit=? WHERE id=992000', (indexed_cap,))
+    # Legacy configuration must not silently retain the old restriction.
+    settings.mail_stack_limits={'992000':dict(pvf_sha256='b'*64,stack_limit=1,reason='legacy cap')}
+    item=client.get(P+'/catalog?q=992000').json()['items'][0]
+    assert item['sendable'] and item['stack_limit']==2147483647
+    assert item['indexed_stack_limit']==indexed_cap
+    assert item['quantity_unlimited'] and item['quantity_limit_source']=='storage-only'
+    assert item['policy_state']=='trial' and not item['verification_evidence']
+    for count in (1000001,2147483647):
+        preview=mail(client,[{'id':992000,'quantity':count}]);assert preview.status_code==200,preview.text
+        op,key=preview.json()['operation_id'],uuid.uuid4().hex
+        result=confirm(client,op,key);assert result.status_code==200,result.text
+        assert confirm(client,op,key).json()==result.json()
+        assert result.json()['client_verified'] is False
+    with db.connect() as con,con.cursor() as cursor:
+        cursor.execute('SELECT add_info FROM taiwan_cain_2nd.postal ORDER BY postal_id')
+        assert [row['add_info'] for row in cursor.fetchall()]==[1000001,2147483647]
+    apply(client,item_id=992000,enabled=False)
     assert mail(client,[{'id':992000,'quantity':2}]).status_code==422
 
 
-def test_cap_change_invalidates_pending_mail_and_verified_label(env):
-    client, settings, db, app=env
-    add_items(settings,1);configure(settings)
-    preview=mail(client,[{'id':992000,'quantity':500}]).json()['operation_id']
-    settings.mail_stack_limits['992000']['stack_limit']=100
-    assert confirm(client,preview,uuid.uuid4().hex).status_code in (409,422)
+@pytest.mark.parametrize('count', [0,-1,True,1.5,2147483648])
+def test_native_quantity_representation_is_still_checked(env,count):
+    client,settings,db,app=env
+    assert mail(client,[{'id':990002,'quantity':count}]).status_code==422
     assert scalar(db,'SELECT COUNT(*) FROM taiwan_cain_2nd.postal')==0
-    with db.connect() as con,con.cursor() as cursor:
-        cursor.execute("UPDATE dnf_gm.catalog_policy_items SET verification_evidence='synthetic evidence' WHERE item_id=992000");con.commit()
-    assert client.get('/dnf-gm/api/v1/catalog?state=verified').json()['total']==0
-    assert client.get('/dnf-gm/api/v1/catalog?q=992000').json()['items'][0]['policy_state']=='trial'
 
 
-def test_quantity_trial_sql_and_streaming_filters_agree(env):
-    client, settings, db, app=env
-    add_items(settings,1);configure(settings)
+def test_legacy_cap_changes_no_longer_invalidate_pending_preview(env):
+    client,settings,db,app=env
+    add_items(settings,1)
+    settings.mail_stack_limits={'992000':dict(pvf_sha256=settings.pvf_sha256,stack_limit=1000,reason='legacy')}
+    preview=mail(client,[{'id':992000,'quantity':500}]).json()['operation_id']
+    settings.mail_stack_limits['992000']['stack_limit']=1
+    assert confirm(client,preview,uuid.uuid4().hex).status_code==200
+    assert scalar(db,'SELECT add_info FROM taiwan_cain_2nd.postal')==500
+
+
+def test_gift_and_mail_share_unlimited_quantity_rules(env):
+    client,settings,db,app=env
+    add_items(settings,1)
+    body=dict(name='No PVF quantity cap',enabled=True,expected_version=0,
+              items=[dict(id=992000,quantity=2147483647),dict(id=990001,quantity=3)])
+    gift=client.post(P+'/gift-templates',json=body)
+    assert gift.status_code==200,gift.text
+    p=preview(client,action='mail',currency=None,delta=None,charac_no=900001,items=[],
+              template_id=gift.json()['id'],template_version=gift.json()['version'])
+    assert p.status_code==200,p.text
+    result=confirm(client,p.json()['operation_id'],uuid.uuid4().hex)
+    assert result.status_code==200,result.text
+    assert result.json()['postal_count']==4
+    assert scalar(db,'SELECT add_info FROM taiwan_cain_2nd.postal WHERE item_id=992000')==2147483647
+    assert scalar(db,'SELECT COUNT(*) FROM taiwan_cain_2nd.postal WHERE item_id=990001')==3
+
+
+def test_quantity_sql_and_streaming_filters_agree(env):
+    client,settings,db,app=env
+    add_items(settings,1)
     catalog=app.state.service.catalog
     with db.connect() as con,con.cursor() as cursor,closing(catalog.connect()) as index:
         _,overrides=catalog.policy(cursor,settings.pvf_sha256)
@@ -77,19 +81,3 @@ def test_quantity_trial_sql_and_streaming_filters_agree(env):
                 result=catalog.search(**filters)
                 assert result['total']==len(expected)
                 assert [i['id'] for i in result['items']]==expected
-
-
-def test_unlimited_single_trial_uses_signed_int_storage_bound_only(env):
-    client, settings, db, app=env
-    add_items(settings,1);configure(settings,None)
-    item=client.get('/dnf-gm/api/v1/catalog?q=992000').json()['items'][0]
-    assert item['quantity_unlimited'] and item['stack_limit']==2147483647
-    assert client.get('/dnf-gm/api/v1/catalog?allowed_only=1').json()['total']==5
-    assert mail(client,[{'id':992000,'quantity':2147483648}]).status_code==422
-    assert mail(client,[{'id':990002,'quantity':1000001}]).status_code==422
-    for count in (1000001,2147483647):
-        preview=mail(client,[{'id':992000,'quantity':count}]);assert preview.status_code==200,preview.text
-        result=confirm(client,preview.json()['operation_id'],uuid.uuid4().hex);assert result.status_code==200,result.text
-    with db.connect() as con,con.cursor() as cursor:
-        cursor.execute('SELECT add_info FROM taiwan_cain_2nd.postal ORDER BY postal_id')
-        assert [row['add_info'] for row in cursor.fetchall()]==[1000001,2147483647]

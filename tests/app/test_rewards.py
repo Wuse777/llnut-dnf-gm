@@ -82,8 +82,8 @@ def test_all_indexed_types_deliver_with_atomic_storage_records(env):
     assert items['total'] == 7 and all(i['sendable'] for i in items['items'])
     special = {i['id']:i for i in items['items'] if i['id'] >= 993001}
     assert [special[i]['mail_kind'] for i in sorted(special)] == ['avatar','creature','creature','stackable']
-    assert all(i['stack_limit'] == 1 for i in special.values())
-    assert mail(client, [{'id':993001,'quantity':2}]).status_code == 422
+    assert all(i['stack_limit'] == 2147483647 and i['quantity_unlimited'] for i in special.values())
+    assert mail(client, [{'id':993001,'quantity':2}]).status_code == 200
     p = mail(client, [{'id':i,'quantity':1} for i in special], gold=99)
     assert p.status_code == 200, p.text
     op, key = p.json()['operation_id'], uuid.uuid4().hex
@@ -132,3 +132,54 @@ def test_all_items_migration_runs_once_and_preserves_later_disables(env):
         for statement in migration.split(';'):
             if statement.strip(): q.execute(statement)
     assert scalar(db, 'SELECT enabled FROM dnf_gm.catalog_policy_items') == 0
+
+
+def test_multiple_equipment_and_special_copies_keep_native_linkage_and_gold_once(env):
+    client,settings,db,_=env
+    seed_specials(settings)
+    request=[{'id':990001,'quantity':2},{'id':993001,'quantity':3},
+             {'id':993002,'quantity':2},{'id':993003,'quantity':2},
+             {'id':993004,'quantity':1000001}]
+    p=mail(client,request,gold=123);assert p.status_code==200,p.text
+    op,key=p.json()['operation_id'],uuid.uuid4().hex
+    result=confirm(client,op,key);assert result.status_code==200,result.text
+    assert result.json()['postal_count']==10 and not result.json()['postal_ids_truncated']
+    assert confirm(client,op,key).json()==result.json()
+    with db.connect() as c,c.cursor() as q:
+        q.execute('SELECT item_id,add_info,endurance,avata_flag,creature_flag,gold FROM taiwan_cain_2nd.postal ORDER BY postal_id')
+        rows=q.fetchall()
+        q.execute('SELECT ui_id FROM taiwan_cain_2nd.user_items ORDER BY ui_id');avatars=q.fetchall()
+        q.execute('SELECT ui_id FROM taiwan_cain_2nd.creature_items ORDER BY ui_id');creatures=q.fetchall()
+    assert [r['item_id'] for r in rows]==[990001]*2+[993001]*3+[993002]*2+[993003]*2+[993004]
+    assert all(r['add_info']==0 and r['endurance']==20 for r in rows[:2])
+    assert [r['add_info'] for r in rows[2:5]]==[r['ui_id'] for r in avatars]
+    assert [r['add_info'] for r in rows[5:9]]==[r['ui_id'] for r in creatures]
+    assert rows[-1]['add_info']==1000001
+    assert [r['gold'] for r in rows]==[123]+[0]*9
+
+
+def test_expanded_delivery_does_not_materialize_unbounded_result_ids(env):
+    client,_,db,_=env
+    p=mail(client,[{'id':990001,'quantity':25}],gold=5)
+    assert p.status_code==200,p.text
+    result=confirm(client,p.json()['operation_id'],uuid.uuid4().hex)
+    assert result.status_code==200,result.text
+    assert result.json()['postal_count']==25 and result.json()['postal_ids_truncated']
+    assert len(result.json()['postal_ids'])==20
+    assert scalar(db,'SELECT COUNT(*) FROM taiwan_cain_2nd.postal')==25
+    status=client.get(P+'/operations/'+p.json()['operation_id']).json()
+    assert status['delivery_records_truncated'] is True
+    assert '前20条' in status['delivery_note']
+
+
+def test_failure_midway_through_multiple_copies_rolls_back_everything(env):
+    client,settings,db,_=env
+    seed_specials(settings)
+    p=mail(client,[{'id':993001,'quantity':3}])
+    assert p.status_code==200,p.text
+    with db.connect() as c,c.cursor() as q:
+        q.execute("CREATE TRIGGER taiwan_cain_2nd.fail_second_copy BEFORE INSERT ON taiwan_cain_2nd.postal FOR EACH ROW BEGIN IF (SELECT COUNT(*) FROM taiwan_cain_2nd.postal)>0 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='synthetic second-copy failure'; END IF; END")
+        c.commit()
+    assert confirm(client,p.json()['operation_id'],uuid.uuid4().hex).status_code==500
+    for table in ('user_items','creature_items','letter','postal'):
+        assert scalar(db,'SELECT COUNT(*) FROM taiwan_cain_2nd.'+table)==0

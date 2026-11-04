@@ -250,7 +250,8 @@ class Service:
                 if ids:
                     q.execute('SELECT postal_id,receive_time,delete_flag,gold FROM taiwan_cain_2nd.postal WHERE postal_id IN ('+','.join(['%s']*len(ids))+')', ids)
                     row['delivery_records'] = q.fetchall()
-                    row['delivery_note'] = '仅数据库领取标记，不等于客户端已正确领取'
+                    row['delivery_records_truncated'] = bool(row['result'].get('postal_ids_truncated'))
+                    row['delivery_note'] = ('仅显示前20条投递记录；' if row['delivery_records_truncated'] else '') + '仅数据库领取标记，不等于客户端已正确领取'
             return row
 
     def confirm(self, session_hash, op, key):
@@ -348,7 +349,7 @@ class Service:
                         if not t or not t['enabled'] or t['current_version'] != data['template_version']:
                             raise HTTPException(409, '礼包已更改或停用')
                     q.execute('INSERT INTO taiwan_cain_2nd.letter(charac_no,send_charac_name,letter_text,reg_date,stat) VALUES(%s,\'GM\',%s,UTC_TIMESTAMP(),0)', (data['charac_no'],wire_name(data['message'])))
-                    letter_id, postal_ids = q.lastrowid, []
+                    letter_id, postal_ids, postal_count = q.lastrowid, [], 0
                     # Gold belongs to the letter, carried ONCE by its first postal row.
                     # A gold-only letter uses item_id/add_info/endurance=0, not a PVF coin item.
                     deliveries = rewards['items'] or [{'id':0,'quantity':0,'category':'gold','durability':0}]
@@ -359,19 +360,27 @@ class Service:
                             engine = one(q, "SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA='taiwan_cain_2nd' AND TABLE_NAME=%s", (tables[kind],))
                             if not engine or engine['ENGINE'] != 'InnoDB':
                                 raise HTTPException(409, '特殊物品存储表不支持事务，拒绝发放')
-                    for index, item in enumerate(deliveries):
+                    for item in deliveries:
                         kind = item.get('mail_kind', 'stackable')
-                        add_info = 0 if kind == 'equipment' else item['quantity']
-                        if kind == 'avatar':
-                            q.execute("INSERT INTO taiwan_cain_2nd.user_items(charac_no,it_id,jewel_socket,expire_date,reg_date,obtain_from,stat) VALUES(%s,%s,%s,'9999-12-31 00:00:00',UTC_TIMESTAMP(),1,2)", (data['charac_no'],item['id'],b'\0'*30))
-                            add_info = q.lastrowid
-                        elif kind == 'creature':
-                            q.execute('INSERT INTO taiwan_cain_2nd.creature_items(charac_no,it_id,reg_date,stomach,creature_type) VALUES(%s,%s,UTC_TIMESTAMP(),100,%s)', (data['charac_no'],item['id'],item['creature_type']))
-                            add_info = q.lastrowid
-                        q.execute('INSERT INTO taiwan_cain_2nd.postal(occ_time,send_charac_name,receive_charac_no,item_id,add_info,endurance,gold,letter_id,avata_flag,creature_flag) VALUES(UTC_TIMESTAMP(),\'GM\',%s,%s,%s,%s,%s,%s,%s,%s)',
-                                  (data['charac_no'],item['id'],add_info,item['durability'] if kind == 'equipment' else 0,gold if index == 0 else 0,letter_id,int(kind == 'avatar'),int(kind == 'creature')))
-                        postal_ids.append(q.lastrowid)
-                    result.update(letter_id=letter_id,postal_ids=postal_ids,items=rewards,gold=gold,template_id=data.get('template_id'),template_version=data.get('template_version'),state='database_delivered_not_claimed')
+                        # Equipment/avatar/creature quantities are COPY counts,
+                        # not stacks or foreign IDs. Persist each copy natively.
+                        copies = item['quantity'] if kind in ('equipment','avatar','creature') else 1
+                        for _ in range(copies):
+                            add_info = 0 if kind == 'equipment' else item['quantity']
+                            if kind == 'avatar':
+                                q.execute("INSERT INTO taiwan_cain_2nd.user_items(charac_no,it_id,jewel_socket,expire_date,reg_date,obtain_from,stat) VALUES(%s,%s,%s,'9999-12-31 00:00:00',UTC_TIMESTAMP(),1,2)", (data['charac_no'],item['id'],b'\0'*30))
+                                add_info = q.lastrowid
+                            elif kind == 'creature':
+                                q.execute('INSERT INTO taiwan_cain_2nd.creature_items(charac_no,it_id,reg_date,stomach,creature_type) VALUES(%s,%s,UTC_TIMESTAMP(),100,%s)', (data['charac_no'],item['id'],item['creature_type']))
+                                add_info = q.lastrowid
+                            q.execute('INSERT INTO taiwan_cain_2nd.postal(occ_time,send_charac_name,receive_charac_no,item_id,add_info,endurance,gold,letter_id,avata_flag,creature_flag) VALUES(UTC_TIMESTAMP(),\'GM\',%s,%s,%s,%s,%s,%s,%s,%s)',
+                                      (data['charac_no'],item['id'],add_info,item['durability'] if kind == 'equipment' else 0,gold if postal_count == 0 else 0,letter_id,int(kind == 'avatar'),int(kind == 'creature')))
+                            # Keep result/audit memory independent of copy count.
+                            # All actual records remain queryable by letter_id.
+                            if len(postal_ids) < 20:
+                                postal_ids.append(q.lastrowid)
+                            postal_count += 1
+                    result.update(letter_id=letter_id,postal_ids=postal_ids,postal_count=postal_count,postal_ids_truncated=postal_count>len(postal_ids),items=rewards,gold=gold,template_id=data.get('template_id'),template_version=data.get('template_version'),state='database_delivered_not_claimed')
                 else:
                     existing = one(q, 'SELECT apply_flag,admin_id,reason FROM d_taiwan.member_punish_info WHERE m_id=%s AND punish_type=1 FOR UPDATE', (data['uid'],))
                     own = one(q, 'SELECT marker FROM dnf_gm.owned_bans WHERE uid=%s FOR UPDATE', (data['uid'],))

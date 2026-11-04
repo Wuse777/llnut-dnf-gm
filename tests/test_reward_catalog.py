@@ -21,7 +21,8 @@ def test_all_indexed_categories_are_enabled_without_review(path,category,kind,si
     item = Catalog.annotate(row, {}, creature_types={'7':0})
     assert item['sendable'] and item['supported'] and not item['metadata_reviewed']
     assert item['mail_kind'] == kind and item['single_item'] == single
-    assert item['stack_limit'] == 1 and item['indexed_stack_limit'] == 0
+    assert item['stack_limit'] == 2147483647 and item['indexed_stack_limit'] == 0
+    assert item['quantity_unlimited'] and item['quantity_limit_source'] == 'storage-only'
     assert item['policy_state'] == 'trial'
     disabled = Catalog.annotate(row, {7:dict(enabled=0,reason='manual disable')})
     assert not disabled['sendable'] and disabled['policy_state'] == 'blocked'

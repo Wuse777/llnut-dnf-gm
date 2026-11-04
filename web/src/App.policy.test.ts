@@ -32,6 +32,6 @@ it('allows an indexed special item into the mail draft',async()=>{
  await click(w,'物品索引');await click(w,'加入清单')
  expect(w.text()).toContain('1 条附件已加入邮件草稿');await click(w,'前往邮件工作区 · 1 条附件 →')
  expect(w.find('.queue-panel').text()).toContain('测试时装')
- expect(w.find('[aria-label="物品数量 13"]').attributes('disabled')).toBeDefined()
+ expect(w.find('[aria-label="物品数量 13"]').attributes('disabled')).toBeUndefined()
  w.unmount()
 })

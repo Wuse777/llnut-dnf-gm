@@ -107,8 +107,8 @@ def test_mail_atomic_and_results_not_claimed(env):
         assert q.fetchall()==[{'add_info':0,'endurance':20},{'add_info':20,'endurance':0}]
 
 
-@pytest.mark.parametrize('items',[ [{'id':12345,'quantity':1}], [{'id':990001,'quantity':2}], [{'id':990002,'quantity':100}], [{'id':12345,'quantity':1}] ])
-def test_mail_restricts_special_and_quantity(env,items):
+@pytest.mark.parametrize('items',[[{'id':12345,'quantity':1}],[{'id':990001,'quantity':0}],[{'id':990002,'quantity':2147483648}]])
+def test_mail_rejects_unknown_items_and_unrepresentable_quantity(env,items):
     assert mail(env[0],items).status_code==422
 
 

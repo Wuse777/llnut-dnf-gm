@@ -38,22 +38,6 @@ class Catalog:
     def meta(self, c):
         return dict(c.execute('SELECT key,value FROM metadata').fetchall())
 
-    def quantity_limits(self, c):
-        """Root-configured trials for a missing cap, never special-type bypasses."""
-        configured = self.settings.mail_stack_limits
-        if not configured or self.meta(c).get('pvf_sha256') != self.settings.pvf_sha256:
-            return {}
-        limits = {}
-        for item_id, entry in configured.items():
-            if entry['pvf_sha256'] != self.settings.pvf_sha256:
-                continue
-            row = c.execute('SELECT * FROM items WHERE id=?', (int(item_id),)).fetchone()
-            if (row and row['category'] in ('material', 'consumable') and row['stack_limit'] == 0
-                    and 0 <= row['durability'] <= 65535
-                    and not any(word in row['source_path'].lower() for word in ('avatar', 'creature', 'pet/'))):
-                limits[row['id']] = entry
-        return limits
-
     def policy(self, q, sha, lock=False, ids=None):
         if q is None:
             if self.db is not None:
@@ -70,7 +54,7 @@ class Catalog:
         return state['revision'], {x['item_id']:x for x in q.fetchall()}
 
     @staticmethod
-    def annotate(row, overrides, limits=None, creature_types=None):
+    def annotate(row, overrides, creature_types=None):
         item = dict(row)
         path = item.get('source_path', '').lower()
         equipment = item['category'] == 'equipment' or path.startswith('equipment/')
@@ -82,27 +66,17 @@ class Catalog:
         if mail_kind == 'creature':
             item['creature_type'] = (creature_types or {}).get(str(item['id']), 1)
         item['indexed_stack_limit'] = item['stack_limit']
-        # Every indexed item is available. Missing PVF caps allow one per
-        # attachment; explicit maintenance caps remain available for stacks.
-        item['stack_limit'] = 1 if equipment else max(1, min(item['stack_limit'], 1000000))
-        if not equipment and item['indexed_stack_limit'] <= 0:
-            item['quantity_limit_source'] = 'missing-cap-single'
-        limit = (limits or {}).get(item['id'])
-        if limit:
-            item.update(stack_limit=limit['stack_limit'] or MAIL_ITEM_QUANTITY_MAX,
-                        quantity_limit_source='maintenance-trial', quantity_unlimited=limit['stack_limit'] is None)
+        # PVF stack sizes are metadata, not GM issuance limits. Unknown,
+        # zero and known caps all use the native postal quantity field range.
+        item.update(stack_limit=MAIL_ITEM_QUANTITY_MAX, quantity_unlimited=True,
+                    quantity_limit_source='storage-only')
         item['durability'] = max(0, min(item['durability'], 65535))
         supported = True
         override = overrides.get(item['id'])
         enabled = bool(override['enabled']) if override else True
-        evidence = override.get('verification_evidence','') if override and not limit else ''
+        evidence = override.get('verification_evidence','') if override else ''
         state = ('verified' if evidence else 'trial') if enabled else 'blocked'
         why = override['reason'] if override else '索引物品默认可发放；尚无逐项客户端验证记录'
-        if item.get('quantity_limit_source') == 'missing-cap-single':
-            why += '；PVF未声明堆叠上限，每条附件限1个'
-        if limit:
-            cap_label = '无策略上限（数据库数量字段最大2147483647）' if item['quantity_unlimited'] else str(limit['stack_limit'])
-            why += f"；PVF未声明堆叠上限，维护试发数量{cap_label}：{limit['reason']}；客户端未验证"
         return {**item, 'allowed':int(enabled), 'supported':supported, 'policy_state':state,
                 'policy_reason':why, 'verification_evidence':evidence,
                 'sendable':bool(enabled), 'metadata_reviewed':bool(item['reviewed'])}
@@ -114,11 +88,10 @@ class Catalog:
         # Literal name substring, not user supplied SQL/LIKE wildcards. Iterate,
         # never materialize the entire PVF catalogue in application memory.
         q, category = filters.get('q',''), filters.get('category','')
-        limits = self.quantity_limits(c)
         creature_types = self.creature_types(c)
         rows = c.execute("SELECT * FROM items WHERE (?='' OR instr(name,?)>0 OR CAST(id AS TEXT)=?) AND (?='' OR category=?) ORDER BY id", (q,q,q,category,category))
         for row in rows:
-            item = self.annotate(row,overrides,limits,creature_types)
+            item = self.annotate(row,overrides,creature_types)
             if filters.get('allowed_only') and not item['sendable']:
                 continue
             if filters.get('state') and item['policy_state'] != filters['state']:
@@ -135,7 +108,6 @@ class Catalog:
         with closing(self.connect()) as c:
             m = self.meta(c)
             revision, overrides = self.policy(cursor,m.get('pvf_sha256'))
-            limits = self.quantity_limits(c)
             # Count/page in SQLite C code. Only decorate the displayed 50 rows;
             # Python scans of 66k rows per page exceed the 25%-CPU slice budget.
             where = ["(?='' OR instr(name,?)>0 OR CAST(id AS TEXT)=?)", "(?='' OR category=?)"]
@@ -146,7 +118,7 @@ class Catalog:
                     return '1' if negate else '0', []
                 return 'id '+('NOT IN' if negate else 'IN')+' ('+','.join('?' for _ in ids)+')', list(ids)
             disabled_ids = [i for i,p in overrides.items() if not p['enabled']]
-            verified_ids = [i for i,p in overrides.items() if p['enabled'] and p['verification_evidence'] and i not in limits]
+            verified_ids = [i for i,p in overrides.items() if p['enabled'] and p['verification_evidence']]
             default_sql, default_args = in_set(disabled_ids,True)
             sendable = default_sql
             sendable_args = default_args
@@ -169,7 +141,7 @@ class Catalog:
             rows = c.execute('SELECT * FROM items WHERE '+clause+' ORDER BY id LIMIT 50 OFFSET ?',args+[(page-1)*50])
             result = []
             for row in rows:
-                item = self.annotate(row,overrides,limits,creature_types)
+                item = self.annotate(row,overrides,creature_types)
                 item.pop('source_path',None)
                 result.append(item)
             return {'items':result,'page':page,'total':total,'metadata':{**m,'policy_revision':revision}}
@@ -222,12 +194,11 @@ class Catalog:
         """Read-only labels for saved templates; never activates an item for delivery."""
         with closing(self.connect()) as c:
             _, overrides = self.policy(q,self.meta(c).get('pvf_sha256'),ids=[a['id'] for a in requests])
-            limits = self.quantity_limits(c)
             creature_types = self.creature_types(c)
             result = []
             for a in requests:
                 row = c.execute('SELECT * FROM items WHERE id=?', (a['id'],)).fetchone()
-                result.append({**(self.annotate(row,overrides,limits,creature_types) if row else {'id':a['id'],'name':'索引中已不存在','allowed':0,'sendable':False}), 'quantity':a['quantity']})
+                result.append({**(self.annotate(row,overrides,creature_types) if row else {'id':a['id'],'name':'索引中已不存在','allowed':0,'sendable':False}), 'quantity':a['quantity']})
             return result
 
     def items(self, requests, active=True, q=None, allow_empty=False):
@@ -240,16 +211,15 @@ class Catalog:
                 if not s.get('fresh') or s.get('pvf_sha256') != m.get('pvf_sha256') or m.get('pvf_sha256') != self.settings.pvf_sha256:
                     raise HTTPException(409, 'PVF版本不匹配或状态未知，禁止发放')
             revision, overrides = self.policy(q,m.get('pvf_sha256'),ids=[a['id'] for a in requests])
-            limits = self.quantity_limits(c)
             creature_types = self.creature_types(c)
             result = []
             for a in requests:
                 row = c.execute('SELECT * FROM items WHERE id=?', (a['id'],)).fetchone()
-                row = self.annotate(row,overrides,limits,creature_types) if row else None
+                row = self.annotate(row,overrides,creature_types) if row else None
                 if row is None or not row['sendable']:
                     raise HTTPException(422, '未知或策略已禁止的物品不能发放')
                 n = a['quantity']
-                if type(n) is not int or n < 1 or n > row['stack_limit'] or (row['single_item'] and n != 1):
-                    raise HTTPException(422, '物品数量或堆叠上限不合法')
+                if type(n) is not int or n < 1 or n > MAIL_ITEM_QUANTITY_MAX:
+                    raise HTTPException(422, '物品数量必须为正整数，且不能超出邮件数量字段范围（2147483647）')
                 result.append({**dict(row), 'quantity': n})
             return {'items': result, 'pvf_sha256': m['pvf_sha256'], 'policy_revision':revision}

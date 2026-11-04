@@ -1,15 +1,12 @@
 import {it,expect} from 'vitest'
 import {operationErrors,giftErrors,itemErrors,serverFieldErrors,assertValid,FormValidationError} from './validation'
-it('honors the effective maintenance trial cap without claiming client verification',()=>{
- const item={id:7,category:'material',stack_limit:1000,indexed_stack_limit:0,quantity_limit_source:'maintenance-trial',quantity:1000}
+it.each([0,1,99,1000000])('ignores indexed and maintenance caps %s in mail and gifts',(cap)=>{
+ const item={id:7,category:'material',stack_limit:cap,quantity_limit_source:'maintenance-trial',quantity_unlimited:false,quantity:2147483647}
  expect(itemErrors([item],'mail')).toEqual({})
- expect(itemErrors([{...item,quantity:1001}],'mail')['mail-quantity-0']).toContain('1–1000')
+ expect(giftErrors('test',[item])).toEqual({})
 })
-it('only an explicit unlimited maintenance trial can exceed the ordinary ceiling',()=>{
- const item={id:7,category:'material',stack_limit:2147483647,quantity_limit_source:'maintenance-trial',quantity_unlimited:true,quantity:2147483647}
- expect(itemErrors([item],'mail')).toEqual({})
- expect(itemErrors([{...item,quantity:2147483648}],'mail')['mail-quantity-0']).toBeTruthy()
- expect(itemErrors([{...item,quantity_unlimited:false,quantity:1000001}],'mail')['mail-quantity-0']).toBeTruthy()
+it.each([0,-1,1.5,2147483648,NaN])('rejects only unrepresentable quantity %s',(quantity)=>{
+ expect(itemErrors([{id:7,quantity}],'mail')['mail-quantity-0']).toBeTruthy()
 })
 it('collects every missing operation field rather than stopping at the first',()=>{
  const errors=operationErrors({action:'mail',account:null,delta:1,reason:'  ',message:'GM',roleValid:false,items:[]})
@@ -17,13 +14,13 @@ it('collects every missing operation field rather than stopping at the first',()
  expect(()=>assertValid(errors)).toThrow(FormValidationError)
 })
 it('shows role and quantity problems alongside mail fields',()=>{
- const errors=operationErrors({action:'mail',account:{uid:1},delta:1,reason:'test',message:'',roleValid:false,items:[{id:5,quantity:4,category:'material',stack_limit:3}]})
- expect(errors['mail-role']).toContain('收件角色');expect(errors['mail-quantity-0']).toContain('数量和堆叠上限')
+ const errors=operationErrors({action:'mail',account:{uid:1},delta:1,reason:'test',message:'',roleValid:false,items:[{id:5,quantity:0,category:'material',stack_limit:3}]})
+ expect(errors['mail-role']).toContain('收件角色');expect(errors['mail-quantity-0']).toContain('数量须为正整数')
  expect(errors['operation-reason']).toBeUndefined()
 })
 it('flags name and attachments for gift creation, including equipment quantity',()=>{
  expect(Object.keys(giftErrors('',[]))).toEqual(['gift-name','gift-items'])
- expect(itemErrors([{id:1,quantity:2,category:'equipment'}],'gift')['gift-quantity-0']).toContain('1–1')
+ expect(itemErrors([{id:1,quantity:2,category:'equipment',single_item:true,stack_limit:1}],'gift')).toEqual({})
  expect(itemErrors([{id:1,quantity:1,category:'equipment'}],'gift')).toEqual({})
 })
 it('maps structured server errors to fields but never guesses plain business errors',()=>{

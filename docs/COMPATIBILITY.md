@@ -10,7 +10,7 @@
 
 ## PVF 与版本绑定
 
-在维护电脑本地执行 `tools/build_catalog.py`；不提供上传完整 PVF 的 HTTP 接口。全部索引条目默认允许试发，审核标记仅保留为元数据，不作为发放开关。管理员仍可在网页预览后停用物品。缺失堆叠上限时每条附件限1个；普通材料/消耗品可使用绑定PVF的维护数量上限。`tools/enrich_catalog_creatures.py` 为旧索引补充宠物/宠物装备的类型；`tools/enrich_catalog_jobs.py` 补充职业名称，两者均要求指纹匹配并输出新文件。
+在维护电脑本地执行 `tools/build_catalog.py`；不提供上传完整 PVF 的 HTTP 接口。全部索引条目默认允许试发，审核标记仅保留为元数据，不作为发放开关。管理员仍可在网页预览后停用物品。全部物品发放数量不受PVF堆叠上限限制，未知上限不再按1处理；原始上限保存在`indexed_stack_limit`仅供参考，`quantity_unlimited=true`、`quantity_limit_source=storage-only`表示仅有原生数量字段范围。旧`mail_stack_limits`配置兼容读取但已不生效。`tools/enrich_catalog_creatures.py` 为旧索引补充宠物/宠物装备的类型；`tools/enrich_catalog_jobs.py` 补充职业名称，两者均要求指纹匹配并输出新文件。
 
 配置中的 image ID 必须与公开采集器输出一致。指纹漂移 / 状态过期将阻止业务写入。索引中的 SHA 与服务器 PVF 不匹配时仅允许查询。公开仓库不附任何实际 PVF 指纹、游戏索引或审核白名单。
 
@@ -20,7 +20,8 @@
 
 ## 邮件与金币
 
-- 物品不超过 20 条，普通装备、时装、宠物及宠物装备每条数量1；其他物品受堆叠上限约束，缺失上限时每条限1个。时装通过user_items、宠物通过creature_items记录关联postal，相关表必须为InnoDB。
+- 最多20条物品配置，每项数量为1–2,147,483,647的整数（邮件`postal.add_info`为有符号INT），不按PVF、未知上限或旧维护配置另外限量。普通道具数量写入`add_info`；装备、时装、宠物及宠物装备按数量逐件生成投递记录，不把件数写成关联ID。时装通过user_items、宠物通过creature_items记录关联postal，相关表必须为InnoDB。大批装备需要相应数量的数据库记录，不承诺无限存储或游戏客户端能领取任意数量。
+- 操作结果包含`postal_count`及邮件ID；`postal_ids`最多保存前20个真实ID，超过时明确`postal_ids_truncated=true`，不是少发或限制发放数量。操作查询的数据库领取标记相应注明仅显示前20条；完整记录保留在游戏库，未提供无限展开的HTTP查询。
 - `gold` 为严格整数，0 表示无金币，范围至 1000000000（10亿）。只在第一条 postal 附件记录写入金币，避免多附件重复附币。应用上限不代表已验证的游戏持币上限。
 - 纯金币记录使用 `item_id=add_info=endurance=0`。这通过了数据库与接口测试，**领取机制尚未在客户端验收**。不要将未经验证的大额奖励用于真实玩家。
 - 网页区分投递与数据库领取标记，不将“数据库已提交”解释成“玩家已领取”。
