@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import {nativeNames} from '../nativeStatus'
 import {ref,watch,onBeforeUnmount} from 'vue'
 import {api,uncertainMessage} from '../api'
 import MailCenter from './MailCenter.vue'
 const props=defineProps<{account:any,busy?:boolean}>()
 const emit=defineEmits<{action:[value:{action:string,uid:number,charac_no?:number}],draft:[value:any],inspect:[id:string],correction:[value:any]}>()
 const tab=ref('roles'),rows=ref<any[]>([]),page=ref(1),loading=ref(false),error=ref('')
-const names:Record<string,string>={currency:'余额变更',mail:'奖励邮件',ban:'封禁',unban:'解封','equipment-unlock':'装备提前解锁'}
+const names:Record<string,string>={...nativeNames,currency:'余额变更',mail:'奖励邮件',ban:'封禁',unban:'解封','equipment-unlock':'装备提前解锁'}
 let epoch=0
 function parse(v:string){try{return JSON.parse(v)}catch{return {}}}
 async function load(){

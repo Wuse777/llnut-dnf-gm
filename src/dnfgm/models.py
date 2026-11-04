@@ -1,6 +1,6 @@
 from typing import Literal
 from .limits import MAIL_GOLD_MAX, MAIL_ITEM_QUANTITY_MAX
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 
 class Model(BaseModel):
@@ -133,3 +133,24 @@ class CleanupPreview(Model):
 
 class CleanupConfirm(Confirm):
     confirmation: Literal['删除旧GM产物']
+
+
+class NativePreview(Model):
+    action: Literal['native-notice', 'native-kick', 'native-ban-kick']
+    uid: StrictInt | None = Field(default=None, ge=1, le=2147483647)
+    message: str = Field(default='', max_length=254)
+    reason: str = Field(min_length=1, max_length=200)
+
+    @model_validator(mode='after')
+    def valid_target(self):
+        from .native_control import notice_packet
+        self.reason = self.reason.strip()
+        if not self.reason:
+            raise ValueError('请填写操作原因')
+        if self.action == 'native-notice':
+            if self.uid is not None:
+                raise ValueError('全服公告不能指定单个账号')
+            notice_packet(self.message)
+        elif self.uid is None or self.message:
+            raise ValueError('踢人须选择账号，不能附加聊天内容')
+        return self

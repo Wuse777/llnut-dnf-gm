@@ -16,6 +16,8 @@ from .unlock_center import UnlockCenter
 from .operations_dashboard import dashboard
 from .release_cleanup import ReleaseCleanup
 from .native_monitor import NativeMonitor
+from .native_operations import NativeOperations
+from .models import NativePreview
 from .catalog import snapshot
 from .audit_export import export_audit
 
@@ -77,6 +79,7 @@ def create_app(settings=None, database=None):
     jobs = RewardJobs(db,settings,service)
     cleanup = ReleaseCleanup(db,settings)
     native_monitor = NativeMonitor(settings)
+    native_ops = NativeOperations(service, native_monitor)
     @asynccontextmanager
     async def lifespan(app):
         worker = JobWorker(jobs,settings.batch_worker_interval) if settings.batch_worker_enabled else None
@@ -87,6 +90,7 @@ def create_app(settings=None, database=None):
     app = FastAPI(title='DNF GM', docs_url=None, redoc_url=None, openapi_url=None,lifespan=lifespan)
     app.state.reward_jobs = jobs
     app.state.native_monitor = native_monitor
+    app.state.native_operations = native_ops
     app.add_middleware(Guard, settings=settings)
     app.state.db, app.state.settings, app.state.service = db,settings,service
 
@@ -108,8 +112,8 @@ def create_app(settings=None, database=None):
         with db.connect() as c, c.cursor() as q:
             q.execute('SELECT version FROM dnf_gm.schema_versions ORDER BY version DESC LIMIT 1')
             version=q.fetchone()
-            if not version or version['version']<6:
-                raise HTTPException(503,'管理库迁移未完成，需要006批量奖励迁移')
+            if not version or version['version']<7:
+                raise HTTPException(503,'管理库迁移未完成，需要完成007原生控制迁移（包含此前迁移）')
         return {'ok':True,'version':'0.3.1'}
 
     @app.get(API+'/ready')
@@ -215,6 +219,37 @@ def create_app(settings=None, database=None):
     def unlock_requests(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
         user(request)
         return service.unlock_requests(charac_no)
+
+    @app.get(API+'/native-controls')
+    def native_history(request:Request,uid:int=Query(0,ge=0,le=2147483647),page:int=Query(1,ge=1,le=10000)):
+        key=user(request)
+        limits.check('native-history:'+key,30)
+        return native_ops.history(uid,page)
+
+    @app.post(API+'/native-controls/preview')
+    def native_preview(data:NativePreview,request:Request):
+        key=user(request,True,True)
+        limits.check('native-preview:'+key,12)
+        return native_ops.preview(key,data.model_dump())
+
+    @app.get(API+'/native-controls/{op}')
+    def native_detail(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request)
+        limits.check('native-detail:'+key,30)
+        return native_ops.detail(op)
+
+    @app.post(API+'/native-controls/{op}/confirm')
+    def native_confirm(data:Confirm,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True)
+        limits.check('native-confirm:'+key,10)
+        limits.check('native-confirm-global',30)
+        return native_ops.confirm(key,op,data.idempotency_key)
+
+    @app.post(API+'/native-controls/{op}/cancel-preview')
+    def native_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True)
+        limits.check('native-cancel:'+key,12)
+        return native_ops.cancel(key,op)
 
     @app.get(API+'/release-cleanups')
     def cleanup_candidates(request:Request):
