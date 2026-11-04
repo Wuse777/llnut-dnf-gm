@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from typing import Literal
 from pathlib import Path
 import re
@@ -6,8 +7,9 @@ from fastapi import Path as PathParameter, FastAPI, Request, Response, HTTPExcep
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from .config import load_settings
 from .db import Database, Busy
-from .models import Login, Preview, Confirm, Gift, CatalogPolicyPreview, ItemFavorite, ItemSelection
+from .models import Login, Preview, Confirm, Gift, CatalogPolicyPreview, ItemFavorite, ItemSelection, RewardJob, StartRewardJob, RewardJobControl
 from .item_preferences import ItemPreferences
+from .reward_jobs import RewardJobs, JobWorker
 from .security import COOKIE, Limits, authenticate, new_session, session, digest
 from .service import Service
 from .catalog import snapshot
@@ -68,7 +70,16 @@ def create_app(settings=None, database=None):
     settings = settings or load_settings()
     db = database or Database(settings)
     service, limits = Service(db,settings), Limits()
-    app = FastAPI(title='DNF GM', docs_url=None, redoc_url=None, openapi_url=None)
+    jobs = RewardJobs(db,settings,service)
+    @asynccontextmanager
+    async def lifespan(app):
+        worker = JobWorker(jobs,settings.batch_worker_interval) if settings.batch_worker_enabled else None
+        if worker: worker.start()
+        try: yield
+        finally:
+            if worker: worker.stop()
+    app = FastAPI(title='DNF GM', docs_url=None, redoc_url=None, openapi_url=None,lifespan=lifespan)
+    app.state.reward_jobs = jobs
     app.add_middleware(Guard, settings=settings)
     app.state.db, app.state.settings, app.state.service = db,settings,service
 
@@ -90,8 +101,8 @@ def create_app(settings=None, database=None):
         with db.connect() as c, c.cursor() as q:
             q.execute('SELECT version FROM dnf_gm.schema_versions ORDER BY version DESC LIMIT 1')
             version=q.fetchone()
-            if not version or version['version']<5:
-                raise HTTPException(503,'管理库迁移未完成，需要005物品偏好迁移')
+            if not version or version['version']<6:
+                raise HTTPException(503,'管理库迁移未完成，需要006批量奖励迁移')
         return {'ok':True,'version':'0.3.1'}
 
     @app.get(API+'/ready')
@@ -232,6 +243,39 @@ def create_app(settings=None, database=None):
     def update_template(tid:int,data:Gift,request:Request):
         user(request,True,True)
         return service.save_template(tid,data.model_dump())
+
+    @app.get(API+'/reward-jobs')
+    def reward_jobs(request:Request,page:int=Query(1,ge=1,le=10000)):
+        user(request)
+        return jobs.list(page)
+
+    @app.post(API+'/reward-jobs/preview')
+    def reward_job_preview(data:RewardJob,request:Request):
+        key=user(request,True,True)
+        limits.check('job-preview:'+key,6)
+        return jobs.preview(key,data.model_dump())
+
+    @app.get(API+'/reward-jobs/{job_id}')
+    def reward_job_detail(request:Request,job_id:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        user(request)
+        return jobs.detail(job_id)
+
+    @app.get(API+'/reward-jobs/{job_id}/targets')
+    def reward_job_targets(request:Request,job_id:str=PathParameter(pattern=r'^[a-f0-9]{32}$'),after:int=Query(0,ge=0,le=4294967295)):
+        user(request)
+        return jobs.targets(job_id,after)
+
+    @app.post(API+'/reward-jobs/{job_id}/start')
+    def reward_job_start(data:StartRewardJob,request:Request,job_id:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True)
+        limits.check('job-start:'+key,10)
+        return jobs.start(key,job_id,data.model_dump())
+
+    @app.post(API+'/reward-jobs/{job_id}/control')
+    def reward_job_control(data:RewardJobControl,request:Request,job_id:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True)
+        limits.check('job-control:'+key,30)
+        return jobs.control(job_id,data.action)
 
     @app.post(API+'/operations/preview')
     def preview(data:Preview,request:Request):

@@ -29,7 +29,10 @@ def bootstrap_sql(config,ph):
     grant('SELECT(UID,accountname)','d_taiwan.accounts')
     sql += character_read_sql(user)
     sql += warehouse_read_sql(user)
+    sql += (Path(__file__).resolve().parents[1]/'migrations/005-item-preferences.sql').read_text()
     sql += item_preferences_sql(user)
+    sql += (Path(__file__).resolve().parents[1]/'migrations/006-reward-jobs.sql').read_text()
+    sql += reward_jobs_sql(user)
     sql += catalog_policy_sql(user)
     sql += mail_gold_sql(user)
     sql += equipment_unlock_sql(user)
@@ -95,3 +98,8 @@ def warehouse_read_sql(user="'dnf_gm_app'@'127.0.0.1'"):
 def item_preferences_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     return (f'GRANT SELECT,INSERT(pvf_sha256,item_id,favorite,favorited_at,selected_at),'
             f'UPDATE(favorite,favorited_at,selected_at) ON dnf_gm.item_preferences TO {user};\n')
+
+
+def reward_jobs_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return ''.join(f'GRANT SELECT,INSERT,UPDATE ON dnf_gm.{table} TO {user};\n'
+                   for table in ('reward_jobs','reward_targets','reward_account_credits'))

@@ -18,5 +18,7 @@
   "static_dir": "/opt/dnf-gm/current/web/dist",
   "image_digest": "",
   "pvf_sha256": "",
-  "write_approvals": {}
+  "write_approvals": {},
+  "batch_worker_enabled": false,
+  "batch_worker_interval": 1
 }

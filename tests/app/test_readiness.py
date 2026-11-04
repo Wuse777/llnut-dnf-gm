@@ -35,4 +35,4 @@ def test_health_requires_preferences_migration(env):
     with db.connect() as c,c.cursor() as q:
         q.execute('DELETE FROM dnf_gm.schema_versions WHERE version>=5');c.commit()
     response=client.get(P+'/health')
-    assert response.status_code==503 and '005' in response.text
+    assert response.status_code==503 and '006' in response.text

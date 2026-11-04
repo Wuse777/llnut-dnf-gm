@@ -8,8 +8,8 @@ const versions=ref<any[]>([]),left=ref(0),right=ref(0),page=ref(1),more=ref(fals
 let generation=0
 async function load(){const g=++generation;loading.value=true;error.value='';versions.value=[];try{const d=await api('/gift-templates/'+props.templateId+'/versions?page='+page.value);if(g!==generation)return;versions.value=d.items;more.value=d.has_more;left.value=d.items[0]?.version??0;right.value=d.items[1]?.version??left.value}catch(e){if(g===generation)error.value=uncertainMessage(e)}finally{if(g===generation)loading.value=false}}
 const a=computed(()=>versions.value.find(v=>v.version===left.value)?.payload),b=computed(()=>versions.value.find(v=>v.version===right.value)?.payload)
-const fields=[['name','模板名称'],['enabled','状态'],['category','分类'],['message','邮件文字'],['gold','金币附件'],['items','物品附件']]
-function value(p:any,k:string){if(!p)return '—';if(k==='items')return (p.items||[]).map((i:any)=>'#'+i.id+' × '+i.quantity).join('\n')||'无物品附件';if(k==='enabled')return p[k]===undefined?'旧版本未记录':p[k]?'启用':'停用';return p[k]===undefined?'旧版本未记录':String(p[k])}
+const fields=[['name','模板名称'],['enabled','状态'],['category','分类'],['message','邮件文字'],['gold','金币附件'],['currency_rewards','账号货币'],['items','物品附件']]
+function value(p:any,k:string){if(!p)return '—';if(k==='currency_rewards')return Object.entries(p.currency_rewards||{}).filter(([,v])=>v).map(([key,v])=>({cera:'点券',cera_point:'代币券',mileage:'商城积分'}[key]||key)+' × '+v).join('\n')||'无账号货币';if(k==='items')return (p.items||[]).map((i:any)=>'#'+i.id+' × '+i.quantity).join('\n')||'无物品附件';if(k==='enabled')return p[k]===undefined?'旧版本未记录':p[k]?'启用':'停用';return p[k]===undefined?'旧版本未记录':String(p[k])}
 watch(()=>props.templateId,()=>{page.value=1;void load()},{immediate:true})
 onBeforeUnmount(()=>generation++)
 </script>

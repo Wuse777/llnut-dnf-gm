@@ -42,3 +42,12 @@ it('item plus gold keeps real items separate, and using template resets suppleme
 it('unknown commit prevents retry and disables gold editing',async()=>{
  const {w,calls}=setup();await target(w);await w.find('#mail-gold').setValue(10);await click(w,'生成预览 →');const mock=vi.mocked(fetch),original=mock.getMockImplementation()!;mock.mockImplementation(async(url,opts)=>{if(url.toString().endsWith('/confirm'))throw new Error('lost reply');return original(url,opts)});await click(w,'确认执行一次');expect(w.find('#mail-gold').attributes('disabled')).toBeDefined();await click(w,'返回修改');await click(w,'生成预览 →');expect(calls.filter(c=>c.path==='/operations/preview')).toHaveLength(1);w.unmount()
 })
+it('combined reward submits currencies with mail, and clearing currencies returns to ordinary mail',async()=>{
+ const {w,calls}=setup();await target(w);await w.find('#mail-gold').setValue(5);await w.find('#mail-reward-cera').setValue(100);await click(w,'生成预览 →');expect(calls.find(c=>c.path==='/operations/preview').body).toMatchObject({action:'reward',gold:5,currency_rewards:{cera:100}});await click(w,'返回修改');await w.find('#mail-reward-cera').setValue(0);await click(w,'生成预览 →');expect(calls.filter(c=>c.path==='/operations/preview')[1].body.action).toBe('mail');w.unmount()
+})
+it('pure currency reward needs no fake attachment and errors clear beside currency field',async()=>{
+ const {w,calls}=setup();await target(w);await click(w,'生成预览 →');expect(w.find('#mail-items-error').exists()).toBe(true);await w.find('#mail-reward-cera').setValue(100);expect(w.find('#mail-items-error').exists()).toBe(false);await w.find('#mail-reward-cera').setValue(-1);await click(w,'生成预览 →');expect(w.find('#mail-reward-cera-error').text()).toContain('整数');await w.find('#mail-reward-cera').setValue(100);expect(w.find('#mail-reward-cera-error').exists()).toBe(false);await click(w,'生成预览 →');expect(calls.find(c=>c.path==='/operations/preview').body).toMatchObject({action:'reward',items:[],gold:0,currency_rewards:{cera:100}});w.unmount()
+})
+it('currency-only draft copies to template editor and preserves amount when saving',async()=>{
+ const {w,calls}=setup();await target(w);await w.find('#mail-reward-cera_point').setValue(456);await click(w,'另存为礼包模板');expect((w.find('#gift-reward-cera_point').element as HTMLInputElement).value).toBe('456');await w.find('#gift-name').setValue('Currency');await click(w,'创建礼包模板');expect(calls.find(c=>c.path==='/gift-templates'&&c.body)?.body).toMatchObject({items:[],currency_rewards:{cera_point:456}});w.unmount()
+})

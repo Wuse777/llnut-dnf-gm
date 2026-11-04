@@ -18,8 +18,14 @@ class Attachment(Model):
     quantity: StrictInt = Field(ge=1, le=MAIL_ITEM_QUANTITY_MAX)
 
 
+class CurrencyRewards(Model):
+    cera: StrictInt = Field(default=0,ge=0,le=1000000000)
+    cera_point: StrictInt = Field(default=0,ge=0,le=1000000000)
+    mileage: StrictInt = Field(default=0,ge=0,le=1000000000)
+
+
 class Preview(Model):
-    action: Literal['currency', 'mail', 'ban', 'unban', 'equipment-unlock']
+    action: Literal['currency', 'mail', 'ban', 'unban', 'equipment-unlock', 'reward']
     uid: StrictInt = Field(ge=1, le=2147483647)
     charac_no: StrictInt | None = Field(default=None, ge=1, le=2147483647)
     currency: Literal['cera', 'cera_point', 'mileage'] | None = None
@@ -31,6 +37,7 @@ class Preview(Model):
     message: str = Field(default='GM rewards', max_length=60)
     template_id: StrictInt | None = Field(default=None, ge=1)
     template_version: StrictInt | None = Field(default=None, ge=1)
+    currency_rewards: CurrencyRewards = Field(default_factory=CurrencyRewards)
 
 
 class Confirm(Model):
@@ -45,6 +52,7 @@ class Gift(Model):
     gold: StrictInt | None = Field(default=None, ge=0, le=MAIL_GOLD_MAX)
     message: str | None = Field(default=None, max_length=60)
     category: str = Field(default='', max_length=32)
+    currency_rewards: CurrencyRewards = Field(default_factory=CurrencyRewards)
 
 
 class CatalogFilters(Model):
@@ -67,3 +75,41 @@ class ItemSelection(Model):
 
 class ItemFavorite(ItemSelection):
     favorite: bool
+
+
+class RewardDefinition(Model):
+    items: list[Attachment] = Field(default_factory=list,max_length=20)
+    gold: StrictInt = Field(default=0,ge=0,le=MAIL_GOLD_MAX)
+    message: str = Field(default='GM rewards',max_length=60)
+    currency_rewards: CurrencyRewards = Field(default_factory=CurrencyRewards)
+    template_id: StrictInt | None = Field(default=None,ge=1)
+    template_version: StrictInt | None = Field(default=None,ge=1)
+
+
+class RewardTargets(Model):
+    mode: Literal['selected','filtered','online','all'] = 'selected'
+    charac_nos: list[StrictInt] = Field(default_factory=list,max_length=5000)
+    uid: StrictInt = Field(default=0,ge=0,le=2147483647)
+    job: StrictInt | None = Field(default=None,ge=0,le=255)
+    min_level: StrictInt = Field(default=0,ge=0,le=255)
+    max_level: StrictInt = Field(default=255,ge=0,le=255)
+    q: str = Field(default='',max_length=80)
+
+
+class RewardJob(Model):
+    targets: RewardTargets
+    reward: RewardDefinition
+    account_reward_mode: Literal['once_per_account','per_character'] = 'once_per_account'
+    reason: str = Field(min_length=1,max_length=200)
+
+
+class StartRewardJob(Confirm):
+    fingerprint: str = Field(pattern=r'^[a-f0-9]{64}$')
+    target_count: StrictInt = Field(ge=1)
+    account_count: StrictInt = Field(ge=1)
+    all_server_confirmation: str = Field(default='',max_length=20)
+    acknowledge_repeat: bool = False
+
+
+class RewardJobControl(Model):
+    action: Literal['pause','resume','retry-failed','cancel','reconcile']

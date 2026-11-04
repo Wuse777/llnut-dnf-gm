@@ -24,6 +24,8 @@ class Settings:
     pvf_sha256: str = ''
     write_approvals: dict = field(default_factory=dict)
     mail_stack_limits: dict = field(default_factory=dict)
+    batch_worker_enabled: bool = False
+    batch_worker_interval: int = 1
 
     def check(self):
         if len(self.secret) < 32 or not self.db_password:
@@ -34,7 +36,7 @@ class Settings:
             raise ValueError('Origins must be exact scheme://host[:port]')
         if self.public and any(not o.startswith('https://') for o in self.origins):
             raise ValueError('Public mode requires HTTPS origins')
-        if not set(self.writes) <= {'currency', 'mail', 'ban', 'unban', 'equipment-unlock'}:
+        if not set(self.writes) <= {'currency', 'mail', 'ban', 'unban', 'equipment-unlock', 'reward', 'batch-reward'}:
             raise ValueError('Unknown write capability')
         if self.writes and not self.image_digest:
             raise ValueError('Explicit server image fingerprint required for writes')
@@ -45,6 +47,12 @@ class Settings:
         for action in self.writes:
             if self.write_approvals.get(action) is not True:
                 raise ValueError('Write capability has no explicit activation record')
+        if type(self.batch_worker_enabled) is not bool:
+            raise ValueError('Batch worker enabled must be a boolean')
+        if type(self.batch_worker_interval) is not int or not 1 <= self.batch_worker_interval <= 60:
+            raise ValueError('Batch worker interval must be 1..60 seconds')
+        if self.batch_worker_enabled and 'batch-reward' not in self.writes:
+            raise ValueError('Batch worker requires explicit batch-reward activation')
         # Deprecated compatibility key: old per-item caps no longer affect
         # startup, previews or issuance. No PVF-bound quantity overrides needed.
         return self
