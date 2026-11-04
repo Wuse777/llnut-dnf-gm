@@ -193,3 +193,26 @@ class ActivateSchedule(Confirm):
 class ScheduleControl(Model):
     action: Literal['pause', 'resume', 'cancel']
     acknowledge_attention: bool = False
+
+
+class InventoryPreview(Model):
+    action: Literal['item-edit','item-reclaim','item-restore']
+    uid: StrictInt = Field(ge=1,le=2147483647)
+    charac_no: StrictInt = Field(ge=1,le=2147483647)
+    container: Literal['inventory','equipment','warehouse','account_warehouse']
+    slot: StrictInt = Field(ge=0,le=1023)
+    reference: str = Field(pattern=r'^[a-f0-9]{64}$')
+    changes: dict[str,StrictInt] = Field(default_factory=dict,max_length=8)
+    source_operation_id: str | None = Field(default=None,pattern=r'^[a-f0-9]{32}$')
+    reason: str = Field(min_length=1,max_length=200)
+
+    @model_validator(mode='after')
+    def consistent(self):
+        from .inventory_codec import FIELDS
+        if not self.reason.strip():raise ValueError('请填写操作原因')
+        if set(self.changes)-FIELDS:raise ValueError('不支持的装备字段')
+        if self.action=='item-edit':
+            if not self.changes or self.source_operation_id:raise ValueError('编辑须提供修改字段，不能混用历史恢复')
+        elif self.changes:raise ValueError('回收或恢复不能混入属性修改')
+        if (self.action=='item-restore') != bool(self.source_operation_id):raise ValueError('恢复必须指定原操作编号')
+        return self

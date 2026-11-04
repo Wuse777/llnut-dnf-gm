@@ -34,6 +34,7 @@ class Settings:
     batch_worker_enabled: bool = False
     batch_worker_interval: int = 1
     schedule_worker_enabled: bool = False
+    inventory_program_sha256: str = ''
 
     def check(self):
         if len(self.secret) < 32 or not self.db_password:
@@ -44,12 +45,17 @@ class Settings:
             raise ValueError('Origins must be exact scheme://host[:port]')
         if self.public and any(not o.startswith('https://') for o in self.origins):
             raise ValueError('Public mode requires HTTPS origins')
-        if not set(self.writes) <= {'currency', 'mail', 'ban', 'unban', 'equipment-unlock', 'reward', 'batch-reward'}:
+        if not set(self.writes) <= {'currency', 'mail', 'ban', 'unban', 'equipment-unlock', 'reward', 'batch-reward', 'item-edit', 'item-reclaim', 'item-restore'}:
             raise ValueError('Unknown write capability')
         if self.writes and not self.image_digest:
             raise ValueError('Explicit server image fingerprint required for writes')
         if self.writes and (len(self.pvf_sha256) != 64 or any(c not in '0123456789abcdef' for c in self.pvf_sha256)):
             raise ValueError('Explicit PVF SHA-256 required for writes')
+        if any(a.startswith('item-') for a in self.writes):
+            import re
+            if (not re.fullmatch(r'[a-f0-9]{64}', self.inventory_program_sha256)
+                    or not re.fullmatch(r'sha256:[a-f0-9]{64}', self.image_digest)):
+                raise ValueError('Inventory writes require exact game program and image fingerprints')
         if self.require_totp:
             raise ValueError('This distribution supports password-only bootstrap; TOTP enrollment is not implemented')
         for action in self.writes:

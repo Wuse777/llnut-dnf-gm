@@ -16,7 +16,7 @@ import GiftVersions from './components/GiftVersions.vue'
 import PlayerCenter from './components/PlayerCenter.vue'
 import LiveSession from './components/LiveSession.vue'
 import NativeControls from './components/NativeControls.vue'
-import {nativeNames,operationStatus} from './nativeStatus'
+import {inventoryNames,nativeNames,operationStatus} from './nativeStatus'
 const detailSection=ref('basic')
 const giftHistory=ref(0)
 import CharacterDetails from './components/CharacterDetails.vue'
@@ -60,7 +60,7 @@ icons['operations-dashboard']='M3 12h4l3-8 4 16 3-8h4'
 const tabs=[['overview','服务器概览'],['operations-dashboard','运维诊断'],['accounts','账号与角色'],['online','在线账号'],['native-controls','游戏内控制'],['mail','邮件发放'],['mail-center','邮件中心'],['reward-jobs','批量奖励'],['schedules','定时运营'],['unlock-center','装备解锁'],['catalog','物品索引'],['gifts','礼包模板'],['audit','操作审计']]
 const cleanupStates:Record<string,string>={executing:'执行中',completed:'所选旧GM目录已删除',rejected:'执行端拒绝，未开始删除',needs_review:'可能部分完成，需要人工核对'}
 const cleanupFileStates:Record<string,string>={prepared:'未执行',deleting:'执行中',removed:'已删除',interrupted_unknown:'中断，结果未知',partial_or_unknown:'可能部分删除，需核对'}
-const actionNames:Record<string,string>={...nativeNames,'cleanup-release':'旧GM产物清理','unlock-batch':'批量提前解锁',reward:'组合奖励',currency:'余额变更',mail:'奖励邮件',ban:'封禁后续登录',unban:'解除封禁','equipment-unlock':'装备提前解锁','catalog-policy':'物品发放策略','gift-template':'礼包模板','role-soft-delete':'维护：角色软删除','test-fixture-cleanup':'维护：测试夹具归档'}
+const actionNames:Record<string,string>={...nativeNames,...inventoryNames,'cleanup-release':'旧GM产物清理','unlock-batch':'批量提前解锁',reward:'组合奖励',currency:'余额变更',mail:'奖励邮件',ban:'封禁后续登录',unban:'解除封禁','equipment-unlock':'装备提前解锁','catalog-policy':'物品发放策略','gift-template':'礼包模板','role-soft-delete':'维护：角色软删除','test-fixture-cleanup':'维护：测试夹具归档'}
 const currencyNames:Record<string,string>={cera:'点券',cera_point:'代币券',mileage:'积分'}
 const categoryNames:Record<string,string>={equipment:'装备',material:'材料',consumable:'消耗品',special:'特殊'}
 function sendable(i:any){return i.sendable??!!i.allowed}

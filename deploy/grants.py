@@ -36,6 +36,8 @@ def bootstrap_sql(config,ph):
     sql += native_controls_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/008-schedules.sql').read_text()
     sql += schedules_sql(user)
+    sql += (Path(__file__).resolve().parents[1]/'migrations/009-inventory-operations.sql').read_text()
+    sql += inventory_management_sql(user)
     sql += reward_jobs_sql(user)
     sql += catalog_policy_sql(user)
     sql += mail_gold_sql(user)
@@ -116,3 +118,14 @@ def native_controls_sql(user="'dnf_gm_app'@'127.0.0.1'"):
 def schedules_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     return ''.join(f'GRANT SELECT,INSERT,UPDATE ON dnf_gm.{table} TO {user};\n'
                    for table in ('schedules','schedule_runs'))
+
+
+def inventory_management_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return ''.join(f'GRANT SELECT,INSERT ON dnf_gm.{table} TO {user};\n' for table in ('inventory_operations','inventory_snapshots'))
+
+
+def inventory_storage_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    # Deliberately NOT part of bootstrap. Explicit maintenance activation only.
+    return (f'GRANT UPDATE(inventory,equipslot) ON taiwan_cain_2nd.inventory TO {user};\n'
+            f'GRANT UPDATE(cargo) ON taiwan_cain_2nd.charac_inven_expand TO {user};\n'
+            f'GRANT UPDATE(cargo) ON taiwan_cain.account_cargo TO {user};\n')

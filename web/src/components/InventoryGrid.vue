@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import {computed,ref,watch,nextTick} from 'vue'
 import GameImage from './GameImage.vue'
-const props=defineProps<{items:any[],slotCount:number,equipment?:boolean,filtered?:boolean}>()
+const emit=defineEmits<{manage:[item:any]}>()
+const props=defineProps<{items:any[],slotCount:number,equipment?:boolean,filtered?:boolean,manageable?:boolean}>()
 const page=ref(1),showEmpty=ref(true),selected=ref<any>(null),detail=ref<HTMLElement|null>(null)
 let trigger:HTMLElement|null=null
 const names=['武器','称号','上衣','头肩','下装','鞋','腰带','项链','手镯','戒指','辅助装备','魔法石']
@@ -36,7 +37,7 @@ function number(v:unknown){return v===null||v===undefined?'未知':Number(v).toL
     <GameImage :image="selected.image" :label="selected.name"/><p class="field-hint">{{selected.image?.note??'未安装图片包'}} · 物品 #{{selected.id}}</p>
     <dl class="character-facts"><div><dt>位置</dt><dd>{{selected.slot_label}} / #{{selected.slot}}</dd></div><div><dt>类型</dt><dd>{{selected.type_name}}</dd></div><div><dt>数量</dt><dd>{{number(selected.quantity)}}</dd></div><div><dt>等级</dt><dd>{{number(selected.level)}}</dd></div>
      <template v-if="selected.enhancement!==null&&selected.enhancement!==undefined"><div><dt>强化 / 锻造</dt><dd>+{{selected.enhancement}} / +{{selected.forge}}</dd></div><div><dt>耐久</dt><dd>{{selected.durability}}</dd></div><div><dt>增幅类型 / 数值</dt><dd>{{selected.amplify_type}} / {{selected.amplify_value}}</dd></div><div><dt>附魔 ID</dt><dd>{{selected.orb_id}}</dd></div><div><dt>封装原始标记</dt><dd>{{selected.sealed_raw}}</dd></div></template>
-    </dl><p class="field-hint">数据库只读存档；不代表实时战斗属性、实际已开放格数或可发放状态。</p>
+    </dl><button v-if="manageable" type="button" @click="emit('manage',selected)">维护此物品</button><p class="field-hint">数据库只读存档；不代表实时战斗属性、实际已开放格数或可发放状态。</p>
    </section>
   </div>
  </div>

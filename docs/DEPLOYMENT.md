@@ -133,7 +133,7 @@ PYTHONPATH=/opt/dnf-gm/current/src /opt/dnf-gm/venv/bin/python \
 
 ## 开发版管理扩展（未发布，不是0.3.1的必需升级）
 
-当前源码在0.3.1之后加入004邮件流水、005物品偏好、006持久奖励任务、007原生控制历史索引、008定时运营及仓库只读。发布前先在隔离环境演练并按当前实例逐项核验权限，不可重新运行`provision.py`。在完整备份和升级窗口中，仅停止GM应用，保留游戏、数据库、共享Docker及核心代理服务。
+当前源码在0.3.1之后加入004邮件流水、005物品偏好、006持久奖励任务、007原生控制历史索引、008定时运营、009装备快照及仓库只读。发布前先在隔离环境演练并按当前实例逐项核验权限，不可重新运行`provision.py`。在完整备份和升级窗口中，仅停止GM应用，保留游戏、数据库、共享Docker及核心代理服务。
 
 在新的版本目录、root维护身份下依次执行（参数必须替换为已核实的现有容器和数据库用户精确来源）：
 
@@ -144,11 +144,12 @@ python3 deploy/upgrade-item-preferences.py --container <现有容器> --mysql-po
 python3 deploy/upgrade-reward-jobs.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
 python3 deploy/upgrade-native-controls.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
 python3 deploy/upgrade-schedules.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
+python3 deploy/upgrade-inventory.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
 ```
 
-这些工具只执行管理库DDL或专用账号增量授权，不修改游戏表结构、不发奖励、不重启服务。当前合并版`health`要求管理库001至008全部存在；它不替代实际运行账号的列权限核验。安装应用后用管理员认证分别检查角色详情中的两类仓库、物品收藏/最近选择、邮件中心和原业务；历史邮件导入步骤仍见第一批阶段说明。
+这些工具只执行管理库DDL或专用账号增量授权，不修改游戏表结构、不发奖励、不重启服务。当前合并版`health`要求管理库001至009全部存在；它不替代实际运行账号的列权限核验。安装应用后用管理员认证分别检查角色详情中的两类仓库、物品收藏/最近选择、邮件中心和原业务；历史邮件导入步骤仍见第一批阶段说明。
 
-回滚旧应用时保留004/005/006/007/008表、邮件流水、偏好、审计及操作编号，不删除玩家数据或执行降级DDL。新增账号仓库金币只是只读存档，与金币邮件上限无关。
+回滚旧应用时保留004/005/006/007/008/009表、邮件流水、偏好、审计及操作编号，不删除玩家数据或执行降级DDL。新增账号仓库金币只是只读存档，与金币邮件上限无关。
 
 
 ### 组合奖励与批量执行器（开发版，默认关闭）
@@ -213,7 +214,7 @@ python3 deploy/upgrade-schedules.py --container <现有容器> --mysql-port <数
 python3 deploy/upgrade-native-controls.py --container YOUR_DNF_CONTAINER --mysql-port 4000 --db-account-host YOUR_EXISTING_APP_HOST
 ```
 
-只新增007管理索引表和SELECT/INSERT权限，幂等执行，不修改游戏表结构或数据，不激活任何动作。占位参数必须来自当前实例；勿照抄。第十批单独版本 `/health` 要求007；包含定时运营的当前合并版要求001至008全部存在。新版本仅重启GM，不触碰mihomo、cliproxyapi或共享Docker。回滚保留管理表与审计，恢复旧版兼容配置；不要删除不确定操作以“修复”重试。
+只新增007管理索引表和SELECT/INSERT权限，幂等执行，不修改游戏表结构或数据，不激活任何动作。占位参数必须来自当前实例；勿照抄。第十批单独版本 `/health` 要求007；第十一批定时版本要求001至008，包含装备维护的当前合并版要求001至009全部存在。新版本仅重启GM，不触碰mihomo、cliproxyapi或共享Docker。回滚保留管理表与审计，恢复旧版兼容配置；不要删除不确定操作以“修复”重试。
 
 `native_control_actions`默认空；公告/踢人需要逐项明确激活与`write_approvals`，封禁联动另需原有ban能力。测试限制下不允许广播。真实客户端显示、生产沙箱、资源与游戏效果仍待验证；未验收项不得宣称通过。
 
@@ -226,17 +227,29 @@ python3 deploy/upgrade-native-controls.py --container YOUR_DNF_CONTAINER --mysql
 python deploy/upgrade-schedules.py --container '<实际游戏容器>' --mysql-port '<实际容器内端口>' --db-account-host '<现有专用数据库用户host>'
 ```
 
-仅新增008管理表及SELECT/INSERT/UPDATE权限，不修改游戏数据、不发送公告或重启服务。新版本 `/health` 要求001至008全部存在；新安装bootstrap包含008。不得重复provision现有实例。
+仅新增008管理表及SELECT/INSERT/UPDATE权限，不修改游戏数据、不发送公告或重启服务。第十一批版本 `/health` 要求001至008；包含装备维护的当前合并版要求001至009，新安装bootstrap包含009。不得重复provision现有实例。
 
 配置 `schedule_worker_enabled: false` 为默认。只有明确启用后才可激活和执行计划；奖励及公告各自仍需原有适配、权限、资源和测试范围条件。定时扫描与奖励逐目标处理共用一个线程，不新增systemd服务或扩大内存/CPU预算。实际名单在触发时确定，超过5分钟错过期次聚合记为跳过，公告不确定时只读核对、不重发。
 
 回滚前暂停计划并核对原子任务，仅停止GM；保留008表、历史、审计和防重记录。旧版本不认识新配置键时恢复兼容配置，不删除期次或重置原生占位。具体操作及状态见[定时运营说明](SCHEDULES.md)。生产迁移、资源占用与回滚验证仍待完成。
 
 
-## 开发版装备维护基础（默认关闭，尚不能部署为装备编辑功能）
+## 开发版装备维护（默认关闭，未完成生产适配）
 
-第十二批新增独立存档编码/校验和root维护窗口协议，见[维护说明](INVENTORY-MAINTENANCE.md)。`monitor.json`的新字段`inventory_maintenance_enabled`默认false；不启用则不加载新流程。不新增迁移或游戏UPDATE授权，也没有装备写API/网页；不得自行扩大数据库权限。
+第十二批提供编解码/维护协议，第十三批接入009管理迁移、不可变快照、事务API及网页，见[维护说明](INVENTORY-MAINTENANCE.md)。合并版健康检查要求001–009；不要重复provision现有实例。
 
-维护者配置`/etc/dnf-gm/inventory-maintenance.json`必须保存在root私有维护范围，示例的指纹/进程策略故意留空，不能直接启用。新工具只做固定只读探测和许可管理，不停止/重启服务；禁止用停止`dnf.service`替代保留MySQL的维护流程。实际进程链与资源测试未完成，不在生产试签窗口。
+仅安装管理表、索引及权限，不授予游戏存档UPDATE：
 
-若未来启用了窗口，应先用同一版本工具close并确认成功、保留相关审计，再回滚监控/应用；不能在有未结束的装备事务时切换到不认识该协议的版本。当前默认未启用的环境无需新回滚动作。
+```bash
+python3 deploy/upgrade-inventory.py --container '<实际游戏容器>' --mysql-port '<实际容器内端口>' --db-account-host '<现有专用数据库用户host>'
+```
+
+`inventory_program_sha256` 默认空；`writes` 与 `write_approvals` 中的 `item-edit`、`item-reclaim`、`item-restore` 默认不激活。`monitor.json` 的 `inventory_maintenance_enabled` 默认false。不新增常驻工作进程，不提高192MiB/25%配额。
+
+只有在真实镜像适配、隔离恢复和维护窗口验证通过后，才安排单独授权：同一升级命令追加 `--enable-storage-writes --acknowledge-maintenance-protocol`。这只授予四类存档字段UPDATE，不修改存档、不激活应用动作、不签发维护窗口。不要因为看到网页按钮就提前执行生产授权。
+
+维护者配置 `/etc/dnf-gm/inventory-maintenance.json` 必须root拥有，示例指纹/进程策略故意留空，不能直接启用。禁止用停止 `dnf.service` 替代保留MySQL的维护流程；网页/脚本都没有停服接口。关闭窗口现在需连接固定管理库核对未决事务：独占文件锁、撤销许可、等待数据库操作行锁，然后才能返回 `safe_to_resume:true`。失败时不能恢复游戏；用原ID重试，不能把“许可不存在”当成成功。
+
+维护期间不切换数据库目标/部署配置、不回滚应用，不运行外部游戏写入工具。先由同版工具close并确认完成，再恢复游戏、核对状态，最后才可回滚应用/监控。回滚保留009快照、执行意向、审计和幂等键；不删除表，也不自动撤销已提交的物品修改。旧版不识别新配置键时恢复兼容配置。
+
+生产进程规则、维护探测成本、真实属性语义及游戏效果仍待验证；本批未授予生产存档写权限、未安排真实停服、未修改mihomo/cliproxyapi/共享Docker。

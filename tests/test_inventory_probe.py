@@ -181,7 +181,7 @@ def manager(scene,tmp_path):
     cfg,probe,_,_,clock,_=scene
     root=tmp_path/'maint';root.parent.chmod(0o700)
     def sleep(seconds):clock[0]+=seconds
-    manager=WindowManager(root,probe,owner=os.geteuid(),clock=lambda:clock[0],sleep=sleep,monotonic=lambda:clock[0])
+    manager=WindowManager(root,probe,owner=os.geteuid(),clock=lambda:clock[0],sleep=sleep,monotonic=lambda:clock[0],reconcile=lambda _: {'resolved_aborted':[],'game_writes':False})
     manager.initialize()
     fence=MaintenanceFence(root,**{k:cfg[k] for k in ('image_digest','pvf_sha256','program_sha256')},
                              owner=os.geteuid(),clock=lambda:clock[0],boot=lambda:BOOT,monotonic=lambda:clock[0])
@@ -201,7 +201,7 @@ def test_operator_lifecycle_serializes_close_and_never_changes_services(manager)
         with pytest.raises(Refused,match='busy'):m.refresh()
         assert lease.check()['id']==result['id']
     clock[0]+=15;m.refresh();assert fence.check()['id']==result['id']
-    assert m.close(result['id'])=={'state':'closed','id':result['id'],'services_changed':False}
+    assert m.close(result['id'])=={'state':'closed','id':result['id'],'services_changed':False,'safe_to_resume':True,'resolved_aborted':[],'game_writes':False}
     with pytest.raises(FileNotFoundError):fence.check()
     assert m.close(result['id'])['state']=='already_closed'
     m.initialize();assert (m.root/'fence.lock').stat().st_ino==inode
@@ -328,3 +328,17 @@ def test_mysql_service_pid_cannot_point_at_init(scene):
         value=original();value['mysql']=(True,True,True,False,1);return value
     probe.components=components
     with pytest.raises(Refused,match='mysql_unproven'):probe()
+
+
+def test_status_distinguishes_revoked_unresolved_and_successful_close(manager,monkeypatch):
+    monkeypatch.setattr("dnfgm.inventory_fence.boot_id",lambda:BOOT)
+    m,_,_=manager
+    with pytest.raises(FileNotFoundError):m.status()
+    issued=issue(m);assert m.status()['id']==issued['id']
+    original=m.reconcile
+    m.reconcile=lambda _:(_ for _ in ()).throw(RuntimeError('isolated DB unavailable'))
+    with pytest.raises(RuntimeError):m.close(issued['id'])
+    receipt=m.status();assert receipt['state']=='reconciliation_required' and receipt['safe_to_resume'] is False
+    with pytest.raises(Refused,match='previous_close_unresolved'):issue(m)
+    m.reconcile=original;m.close(issued['id'])
+    assert m.status()['state']=='closed' and m.status()['safe_to_resume'] is True

@@ -59,3 +59,17 @@ it('shows warehouse decode failure separately from known stored gold',async()=>{
 it('resets filters when switching between warehouses',async()=>{
  const d:any=fixture();d.warehouse={state:'ok',slot_count:152,items:[item(8388,'角色材料',3)]};d.account_warehouse={state:'ok',slot_count:56,items:[item(10000,'共享装备',1)]};const {w}=setup(d);await flushPromises();await tab(w,'角色仓库');await w.find('[aria-label="筛选角色物品"]').setValue('找不到');expect(w.text()).toContain('没有匹配的物品');await tab(w,'账号仓库');expect(w.text()).toContain('共享装备');expect(w.findAll('tbody tr')).toHaveLength(1);w.unmount()
 })
+it('keeps maintenance inside its tabpanel and marks old snapshots instead of silently reloading',async()=>{
+ const d=fixture();vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(d))))
+ const w=mount(CharacterDetails,{props:{characNo:4},global:{stubs:{InventoryEditor:{name:'InventoryEditor',emits:['pending','changed'],template:'<div>维护测试入口</div>'}}},attachTo:document.body})
+ await flushPromises();await tab(w,'穿戴装备');await w.find('.character-items button').trigger('click');await flushPromises()
+ const editor=w.findComponent({name:'InventoryEditor'});expect(editor.exists()).toBe(true);expect(editor.element.closest('[role=tabpanel]')?.id).toBe('character-section-manage')
+ editor.vm.$emit('pending',true);await flushPromises();await tab(w,'基本信息');expect(w.findAll('button').find(b=>b.text()==='刷新角色存档')!.attributes('disabled')).toBeDefined()
+ editor.vm.$emit('changed');editor.vm.$emit('pending',false);await flushPromises();expect(w.text()).toContain('下方角色资料仍是旧快照');expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1)
+ await w.findAll('button').find(b=>b.text()==='刷新角色存档')!.trigger('click');await flushPromises();expect(w.text()).not.toContain('下方角色资料仍是旧快照');w.unmount()
+})
+it('opens a directly requested maintenance tab on first mount',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(fixture()))))
+ const w=mount(CharacterDetails,{props:{characNo:4,initialSection:'manage'},global:{stubs:{InventoryEditor:{template:'<div>初始维护入口</div>'}}}})
+ await flushPromises();expect(w.find('#character-section-manage').text()).toContain('初始维护入口');expect(w.find('[role=tab][aria-selected=true]').text()).toBe('装备维护');w.unmount()
+})

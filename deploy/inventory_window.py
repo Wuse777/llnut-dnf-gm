@@ -23,8 +23,8 @@ CONFIG = Path('/etc/dnf-gm/inventory-maintenance.json')
 
 
 class WindowManager:
-    def __init__(self,root,probe, *, owner=0,clock=time.time,sleep=time.sleep,monotonic=time.monotonic):
-        self.root=Path(root);self.probe=probe;self.owner=owner;self.clock=clock;self.sleep=sleep;self.monotonic=monotonic
+    def __init__(self,root,probe, *, owner=0,clock=time.time,sleep=time.sleep,monotonic=time.monotonic,reconcile=None):
+        self.root=Path(root);self.probe=probe;self.owner=owner;self.clock=clock;self.sleep=sleep;self.monotonic=monotonic;self.reconcile=reconcile
 
     def initialize(self):
         directory(self.root.parent,self.owner)
@@ -80,6 +80,10 @@ class WindowManager:
         with self.locked(True):
             # Even expired permits must be closed deliberately before a new one.
             if os.path.lexists(self.root/'permit.json'):raise Refused('maintenance_already_open')
+            if os.path.lexists(self.root/'closed.json'):
+                previous=_read(self.root,'closed.json',self.owner,4096)
+                if not isinstance(previous,dict) or previous.get('safe_to_resume') is not True:
+                    raise Refused('maintenance_previous_close_unresolved')
             first=self.checked_snapshot();self.sleep(2);second=self.checked_snapshot()
             if any(first.get(k)!=second.get(k) for k in (*BOUND_FIELDS,'process_set_sha256')):
                 raise Refused('maintenance_probe_changed')
@@ -113,22 +117,60 @@ class WindowManager:
                     'collected_at':self.clock(),'reason':'maintenance_refresh_failed'})
                 raise
 
+    def status(self):
+        # A missing permit is never a successful closure. Inspect the durable
+        # receipt under the same lock so concurrent close cannot look half-done.
+        with self.locked(False):
+            if os.path.lexists(self.root/'permit.json'):
+                p=read_permit(self.root,self.owner,self.clock(),self.monotonic())
+                fence=MaintenanceFence(self.root,owner=self.owner,clock=self.clock,monotonic=self.monotonic,
+                    **{k:p[k] for k in ('image_digest','pvf_sha256','program_sha256')})
+                return {'state':'verified',**fence.check()}
+            receipt=_read(self.root,'closed.json',self.owner,4096)
+            if (not isinstance(receipt,dict) or not isinstance(receipt.get('id'),str)
+                    or not re.fullmatch(r'[a-f0-9]{32}',receipt['id'])
+                    or type(receipt.get('safe_to_resume')) is not bool):
+                raise Refused('maintenance_close_receipt_invalid')
+            return {**receipt,'state':'closed' if receipt['safe_to_resume'] else 'reconciliation_required'}
+
     def close(self,expected_id):
-        if not isinstance(expected_id,str) or len(expected_id)!=32:
+        if not isinstance(expected_id,str) or not re.fullmatch(r'[a-f0-9]{32}',expected_id):
             raise Refused('maintenance_id_required')
         with self.locked(True):
             try:p=_read(self.root,'permit.json',self.owner,4096)
             except FileNotFoundError:
-                return {'state':'already_closed'}
+                try:p=_read(self.root,'closed.json',self.owner,4096)
+                except FileNotFoundError:raise Refused('maintenance_close_receipt_missing') from None
+                if p.get('id')!=expected_id:raise Refused('maintenance_window_changed')
+                if p.get('safe_to_resume') is True:return {'state':'already_closed',**p}
             if not isinstance(p,dict) or p.get('id')!=expected_id:raise Refused('maintenance_window_changed')
-            # No expiry check: closing an expired permit is always necessary.
+            # Revoke authority even if the DB is unavailable. Resume permission
+            # remains false until fixed management-only settlement succeeds.
+            atomic_json(self.root/'closed.json',{'id':expected_id,'safe_to_resume':False})
             atomic_json(self.root/'evidence.json',{'safe':False,'permit_id':expected_id,
                 'collected_at':self.clock(),'reason':'maintenance_closed'})
-            (self.root/'permit.json').unlink()
+            try:(self.root/'permit.json').unlink()
+            except FileNotFoundError:pass
             fd=os.open(self.root,os.O_RDONLY|os.O_DIRECTORY)
             try:os.fsync(fd)
             finally:os.close(fd)
-            return {'state':'closed','id':expected_id,'services_changed':False}
+            if self.reconcile is None:raise Refused('maintenance_database_reconciliation_required')
+            summary=self.reconcile(expected_id)
+            receipt={'id':expected_id,'safe_to_resume':True,'services_changed':False,**summary}
+            atomic_json(self.root/'closed.json',receipt)
+            return {'state':'closed',**receipt}
+
+
+def reconcile_database(window_id):
+    # Fixed app database target and least-privilege credentials; never root SQL
+    # credentials or arguments from the browser. Keep config unchanged in a window.
+    from dnfgm.config import Settings
+    from dnfgm.db import Database
+    from dnfgm.inventory_reconcile import settle_window
+    config=Path('/etc/dnf-gm/config.json')
+    directory(config.parent,0)
+    settings=Settings(**read_json(config,owner=0,limit=65536)).check()
+    return settle_window(Database(settings),window_id)
 
 
 def main():
@@ -143,15 +185,14 @@ def main():
     if os.geteuid()!=0:parser.exit(1,'必须由服务器维护管理员在本机执行。\n')
     import json
     try:
-        # Closing must not depend on a valid current config, live Docker, MySQL,
-        # PVF or healthy proxies. It removes authority, never changes services.
+        # Revocation does not depend on game/probe health. Safe resume DOES
+        # require fixed-config management DB reconciliation; never change services.
         manager=WindowManager(ROOT,None)
         if args.action=='init':manager.initialize();result={'state':'initialized'}
-        elif args.action=='close':result=manager.close(args.id)
-        elif args.action=='status':
-            p=read_permit(ROOT,now=time.time())
-            fence=MaintenanceFence(ROOT,**{k:p[k] for k in ('image_digest','pvf_sha256','program_sha256')})
-            result={'state':'verified',**fence.check()}
+        elif args.action=='close':
+            manager.reconcile=reconcile_database
+            result=manager.close(args.id)
+        elif args.action=='status':result=manager.status()
         else:
             directory(CONFIG.parent,0)
             manager.probe=LinuxProbe(read_json(CONFIG,owner=0,limit=65536))
@@ -161,7 +202,7 @@ def main():
         print(json.dumps(result,ensure_ascii=False))
     except Exception as error:
         # Process arguments/file contents may contain credentials. No tracebacks.
-        code=str(error) if isinstance(error,Refused) else 'maintenance_probe_failed'
+        code=str(error) if isinstance(error,Refused) else ('maintenance_database_reconciliation_failed' if args.action=='close' else 'maintenance_state_unavailable' if args.action=='status' else 'maintenance_probe_failed')
         print(json.dumps({'state':'refused','reason':code}))
         raise SystemExit(1) from None
 

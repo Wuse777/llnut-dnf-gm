@@ -17,6 +17,8 @@ from .operations_dashboard import dashboard
 from .release_cleanup import ReleaseCleanup
 from .native_monitor import NativeMonitor
 from .native_operations import NativeOperations
+from .inventory_operations import InventoryOperations
+from .models import InventoryPreview
 from .models import NativePreview, SchedulePreview, ActivateSchedule, ScheduleControl
 from .schedules import Schedules, OperationsWorker
 from .catalog import snapshot
@@ -81,6 +83,7 @@ def create_app(settings=None, database=None):
     cleanup = ReleaseCleanup(db,settings)
     native_monitor = NativeMonitor(settings)
     native_ops = NativeOperations(service, native_monitor)
+    inventory_ops = InventoryOperations(service)
     schedules = Schedules(db, settings, jobs, native_ops)
     @asynccontextmanager
     async def lifespan(app):
@@ -94,6 +97,7 @@ def create_app(settings=None, database=None):
     app.state.reward_jobs = jobs
     app.state.native_monitor = native_monitor
     app.state.native_operations = native_ops
+    app.state.inventory_operations = inventory_ops
     app.add_middleware(Guard, settings=settings)
     app.state.db, app.state.settings, app.state.service = db,settings,service
 
@@ -113,10 +117,10 @@ def create_app(settings=None, database=None):
     @app.get(API+'/health')
     def health():
         with db.connect() as c, c.cursor() as q:
-            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 8')
+            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 9')
             versions={row['version'] for row in q.fetchall()}
-            if versions != set(range(1,9)):
-                raise HTTPException(503,'管理库迁移未完成，需要完成008定时运营迁移（包含此前迁移）')
+            if versions != set(range(1,10)):
+                raise HTTPException(503,'管理库迁移未完成，需要完成009装备快照迁移（包含此前迁移）')
         return {'ok':True,'version':'0.3.1'}
 
     @app.get(API+'/ready')
@@ -253,6 +257,37 @@ def create_app(settings=None, database=None):
         key=user(request,True,True)
         limits.check('native-cancel:'+key,12)
         return native_ops.cancel(key,op)
+
+    @app.get(API+'/inventory/characters/{charac_no}/{container}/{slot}')
+    def inventory_item(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647),
+                       container:Literal['inventory','equipment','warehouse','account_warehouse']='inventory',slot:int=PathParameter(ge=0,le=1023)):
+        key=user(request);limits.check('inventory-read:'+key,30)
+        return inventory_ops.item(charac_no,container,slot)
+
+    @app.get(API+'/inventory/operations')
+    def inventory_history(request:Request,uid:int=Query(0,ge=0,le=2147483647),charac_no:int=Query(0,ge=0,le=2147483647),page:int=Query(1,ge=1,le=10000)):
+        key=user(request);limits.check('inventory-history:'+key,30)
+        return inventory_ops.history(uid,charac_no,page)
+
+    @app.post(API+'/inventory/preview')
+    def inventory_preview(data:InventoryPreview,request:Request):
+        key=user(request,True,True);limits.check('inventory-preview:'+key,12)
+        return inventory_ops.preview(key,data.model_dump())
+
+    @app.get(API+'/inventory/operations/{op}')
+    def inventory_detail(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request);limits.check('inventory-detail:'+key,30)
+        return inventory_ops.detail(op)
+
+    @app.post(API+'/inventory/operations/{op}/confirm')
+    def inventory_confirm(data:Confirm,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('inventory-confirm:'+key,10)
+        return inventory_ops.confirm(key,op,data.idempotency_key)
+
+    @app.post(API+'/inventory/operations/{op}/cancel-preview')
+    def inventory_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('inventory-cancel:'+key,12)
+        return inventory_ops.cancel(op)
 
     @app.get(API+'/release-cleanups')
     def cleanup_candidates(request:Request):
