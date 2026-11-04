@@ -24,5 +24,8 @@
   "batch_worker_interval": 1,
   "assets_dir": "",
   "native_monitor_enabled": false,
-  "native_control_actions": []
+  "native_control_actions": [],
+  "upgrade_catalog_file": "",
+  "upgrade_assets_dir": "",
+  "upgrade_image_digest": ""
 }

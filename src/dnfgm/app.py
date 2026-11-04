@@ -26,6 +26,7 @@ from .schedules import Schedules, OperationsWorker
 from .catalog import snapshot
 from .audit_export import export_audit
 from .report_stream import ReportStream
+from .upgrade_check import UpgradeCheck
 
 BASE = '/dnf-gm'
 API = BASE + '/api/v1'
@@ -260,6 +261,21 @@ def create_app(settings=None, database=None):
         key=user(request,True,True)
         limits.check('native-cancel:'+key,12)
         return native_ops.cancel(key,op)
+
+    @app.get(API+'/compatibility')
+    def compatibility_overview(request:Request):
+        key=user(request);limits.check('upgrade-overview:'+key,15)
+        return UpgradeCheck(settings,db).overview()
+
+    @app.get(API+'/compatibility/references')
+    def compatibility_references(request:Request,kind:Literal['templates','preferences','policies','schedules','jobs','previews','images','portraits'],fingerprint:str=Query(pattern=r'^[a-f0-9]{64}$'),cursor:str=Query('',max_length=1024)):
+        key=user(request);limits.check('upgrade-references:'+key,60)
+        return UpgradeCheck(settings,db).references(kind,fingerprint,cursor)
+
+    @app.get(API+'/compatibility/export')
+    def compatibility_export(request:Request,fingerprint:str=Query(pattern=r'^[a-f0-9]{64}$')):
+        key=user(request);limits.check('upgrade-export:'+key,5)
+        return ReportStream(UpgradeCheck(settings,db).export(fingerprint),media_type='application/x-ndjson',headers={'Content-Disposition':'attachment; filename="gm-upgrade-check.ndjson"'})
 
     @app.get(API+'/economy/summary')
     def economy_summary(request:Request,start:date,end:date,uid:int=Query(0,ge=0,le=2147483647)):

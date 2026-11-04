@@ -25,6 +25,9 @@ class Settings:
     catalog_file: str = '/var/lib/dnf-gm/catalog.sqlite'
     static_dir: str = ''
     assets_dir: str = ''
+    upgrade_catalog_file: str = ''
+    upgrade_assets_dir: str = ''
+    upgrade_image_digest: str = ''
     image_digest: str = ''
     pvf_sha256: str = ''
     write_approvals: dict = field(default_factory=dict)
@@ -87,6 +90,11 @@ class Settings:
             raise ValueError('Batch worker requires explicit batch-reward activation')
         if not isinstance(self.assets_dir,str) or (self.assets_dir and not Path(self.assets_dir).is_absolute()):
             raise ValueError('Assets directory must be empty or an absolute private path')
+        for path in (self.upgrade_catalog_file, self.upgrade_assets_dir):
+            if not isinstance(path, str) or (path and not Path(path).is_absolute()):
+                raise ValueError('Upgrade inputs must be absolute maintenance paths')
+        if not isinstance(self.upgrade_image_digest, str) or (self.upgrade_image_digest and (not self.upgrade_image_digest.startswith('sha256:') or len(self.upgrade_image_digest)!=71 or any(c not in '0123456789abcdef' for c in self.upgrade_image_digest[7:]))):
+            raise ValueError('Candidate image must be an OCI sha256 digest, not a mutable tag')
         if not isinstance(self.telemetry_file, str) or not Path(self.telemetry_file).is_absolute():
             raise ValueError('Telemetry file must be an absolute maintenance path')
         if type(self.cleanup_enabled) is not bool:

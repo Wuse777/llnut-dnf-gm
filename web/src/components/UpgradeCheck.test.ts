@@ -1,0 +1,29 @@
+// @vitest-environment happy-dom
+import {mount,flushPromises} from '@vue/test-utils'
+import {beforeEach,afterEach,it,expect,vi} from 'vitest'
+import UpgradeCheck from './UpgradeCheck.vue'
+import {api} from '../api'
+vi.mock('../api',()=>({api:vi.fn(),ApiError:class extends Error{},uncertainMessage:(e:any)=>e.message}))
+let wrappers:any[]=[],overview:any,rows:any
+const fp='a'.repeat(64),op='b'.repeat(32)
+function render(){const w=mount(UpgradeCheck);wrappers.push(w);return w}
+async function click(w:any,label:string){const b=w.findAll('button').find((x:any)=>x.text()===label);expect(b).toBeTruthy();await b.trigger('click');await flushPromises()}
+beforeEach(()=>{
+ overview={state:'ready',fingerprint:fp,note:'只读检查，不自动激活',current:{pvf_sha256:'c'.repeat(64),configured_image:'current-image',live_aligned:true},candidate:{pvf_sha256:'d'.repeat(64),declared_image:null,image_verified:false},assets:{current:{state:'not_installed'},candidate:{state:'not_installed'}},recheck:[{capability:'mail',reason:'需要复验'}],sources:['templates','preferences','policies','schedules','jobs','previews','images'],scope:'引用级静态检查，不保证完整PVF内容',can_deploy:false}
+ rows={items:[{id:'1:1',label:'合成礼包',status:'active',needs_review:true,issues:['pvf_bound_reference'],items:[{id:990002,before:{name:'旧材料',stack_limit:99},after:{name:'新材料',stack_limit:0},changes:['name_changed','stack_limit_changed'],candidate_image_state:'missing'}],note:'元数据不限制发放数量'}],next_cursor:null,scope_note:'跨页不是同一数据库快照'}
+ vi.mocked(api).mockReset().mockImplementation(async(p)=>p==='/compatibility'?structuredClone(overview):structuredClone(rows))
+})
+afterEach(()=>{wrappers.forEach(w=>w.unmount());wrappers=[];vi.restoreAllMocks()})
+it('compares candidates read-only without offering activation',async()=>{const w=render();await flushPromises();expect(w.text()).toContain('候选版本（未激活）');expect(w.text()).toContain('声明的镜像');expect(w.text()).toContain('堆叠元数据变化（不限制发放数量）');expect(vi.mocked(api).mock.calls.every(c=>c.length===1)).toBe(true);expect(w.find('input[type=file]').exists()).toBe(false)})
+it('not-configured is explicit and does not fetch empty reference data',async()=>{overview={state:'not_configured',message:'维护人员尚未配置候选索引'};const w=render();await flushPromises();expect(w.text()).toContain('尚未配置候选索引');expect(api).toHaveBeenCalledTimes(1);expect(w.find('a[download]').exists()).toBe(false)})
+it('unknown current baseline never appears as verified',async()=>{overview.current.live_aligned=false;const w=render();await flushPromises();expect(w.get('[role="alert"]').text()).toContain('运行指纹未确认一致')})
+it('overview failure clears the old candidate and export link',async()=>{const w=render();await flushPromises();vi.mocked(api).mockRejectedValue(new Error('候选索引不可读'));await click(w,'重新检查基线');expect(w.text()).toContain('候选索引不可读');expect(w.text()).not.toContain('合成礼包');expect(w.find('a[download]').exists()).toBe(false)})
+it('reference failures clear stale rows and display a nearby retry',async()=>{const w=render();await flushPromises();vi.mocked(api).mockRejectedValue(new Error('检查目标已变化'));await click(w,'收藏与最近物品');expect(w.text()).toContain('检查目标已变化');expect(w.text()).not.toContain('合成礼包');expect(w.text()).toContain('重试本页')})
+it('keyset pages preserve fingerprint and return to the first cursor',async()=>{rows.next_cursor='signed.cursor';const w=render();await flushPromises();await click(w,'下一页引用');expect(api).toHaveBeenLastCalledWith(expect.stringContaining('fingerprint='+fp+'&cursor=signed.cursor'));await click(w,'上一页引用');expect(api).toHaveBeenLastCalledWith(expect.stringContaining('fingerprint='+fp+'&cursor='));expect(w.text()).toContain('第 1 页')})
+it('changing section resets pagination instead of carrying a foreign cursor',async()=>{rows.next_cursor='signed.cursor';const w=render();await flushPromises();await click(w,'下一页引用');await click(w,'定时运营');expect(api).toHaveBeenLastCalledWith('/compatibility/references?kind=schedules&fingerprint='+fp+'&cursor=');expect(w.text()).toContain('第 1 页')})
+it('export includes exact current check binding, not arbitrary paths',async()=>{const w=render();await flushPromises();expect(w.get('a[download]').attributes('href')).toBe('/dnf-gm/api/v1/compatibility/export?fingerprint='+fp);expect(w.text()).toContain('末行必须有 complete')})
+it('navigation is explicit and pending operation lookup does not execute',async()=>{rows.items[0].id=op;const w=render();await flushPromises();await click(w,'未提交预览');await click(w,'查询原操作，不执行');expect(w.emitted('inspect')?.[0]).toEqual([op]);await click(w,'前往对应管理页面');expect(w.emitted('navigate')?.[0]).toEqual(['audit']);expect(vi.mocked(api).mock.calls.every(c=>c.length===1)).toBe(true)})
+it('reference names and evidence are escaped',async()=>{rows.items[0].label='<img src=x onerror=alert(1)>';const w=render();await flushPromises();expect(w.text()).toContain('<img');expect(w.find('img').exists()).toBe(false)})
+it('empty records do not claim full compatibility',async()=>{rows.items=[];const w=render();await flushPromises();expect(w.text()).toContain('不代表素材已验证');expect(w.text()).toContain('仍不代表可以直接部署')})
+it('saved binding failures are shown even without item differences',async()=>{rows.items[0].items=[];rows.items[0].issues=['saved_pvf_mismatch','saved_image_mismatch','saved_binding_unknown'];const w=render();await flushPromises();expect(w.text()).toContain('原操作保存的PVF指纹与候选版本不一致');expect(w.text()).toContain('原计划保存的镜像绑定与候选声明不同');expect(w.text()).toContain('原操作未保存可核对的PVF绑定')})
+it('portrait differences do not imply a verified replacement image',async()=>{overview.sources.push('portraits');rows.items[0].items=[];rows.items[0].issues=['portrait_mapping_missing'];const w=render();await flushPromises();await click(w,'职业头像映射');expect(w.text()).toContain('未把通配映射视为相同');await click(w,'前往对应管理页面');expect(w.emitted('navigate')?.[0]).toEqual(['accounts'])})

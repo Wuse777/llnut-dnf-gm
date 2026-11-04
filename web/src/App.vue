@@ -11,6 +11,7 @@ import RewardJobs from './components/RewardJobs.vue'
 import Schedules from './components/Schedules.vue'
 import SupportDesk from './components/SupportDesk.vue'
 import EconomyReports from './components/EconomyReports.vue'
+import UpgradeCheck from './components/UpgradeCheck.vue'
 const supportDesk=ref<InstanceType<typeof SupportDesk>|null>(null)
 const supportUid=ref(0),supportCase=ref<any>(null),mailCenterUid=ref(0)
 import CurrencyRewardInputs from './components/CurrencyRewardInputs.vue'
@@ -59,11 +60,12 @@ icons['schedules']='M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20 M12 6v6l4 3'
 icons['reward-jobs']='M3 3h18v18H3z M7 8h10 M7 12h10 M7 16h6'
 icons.mail='M3 5h18v14H3z M3 5l9 7 9-7'
 icons['unlock-center']='M5 10h14v11H5z M8 10V6a4 4 0 0 1 8 0 M12 14v3'
+icons.compatibility='M5 4h14v16H5z M8 8h8 M8 12h5 M8 16h3'
 icons.economy='M4 20V12h3v8 M10 20V7h3v13 M16 20V3h3v17'
 icons.support='M4 3h16v14H9l-5 4V3z M8 7h8 M8 11h5'
 icons['native-controls']='M3 11h4l10-6v14L7 13H3z M7 13v7h4'
 icons['operations-dashboard']='M3 12h4l3-8 4 16 3-8h4'
-const tabs=[['overview','服务器概览'],['operations-dashboard','运维诊断'],['accounts','账号与角色'],['support','玩家问题'],['economy','发放统计'],['online','在线账号'],['native-controls','游戏内控制'],['mail','邮件发放'],['mail-center','邮件中心'],['reward-jobs','批量奖励'],['schedules','定时运营'],['unlock-center','装备解锁'],['catalog','物品索引'],['gifts','礼包模板'],['audit','操作审计']]
+const tabs=[['overview','服务器概览'],['operations-dashboard','运维诊断'],['accounts','账号与角色'],['support','玩家问题'],['economy','发放统计'],['compatibility','升级检查'],['online','在线账号'],['native-controls','游戏内控制'],['mail','邮件发放'],['mail-center','邮件中心'],['reward-jobs','批量奖励'],['schedules','定时运营'],['unlock-center','装备解锁'],['catalog','物品索引'],['gifts','礼包模板'],['audit','操作审计']]
 const cleanupStates:Record<string,string>={executing:'执行中',completed:'所选旧GM目录已删除',rejected:'执行端拒绝，未开始删除',needs_review:'可能部分完成，需要人工核对'}
 const cleanupFileStates:Record<string,string>={prepared:'未执行',deleting:'执行中',removed:'已删除',interrupted_unknown:'中断，结果未知',partial_or_unknown:'可能部分删除，需核对'}
 const actionNames:Record<string,string>={...nativeNames,...inventoryNames,...supportNames,'cleanup-release':'旧GM产物清理','unlock-batch':'批量提前解锁',reward:'组合奖励',currency:'余额变更',mail:'奖励邮件',ban:'封禁后续登录',unban:'解除封禁','equipment-unlock':'装备提前解锁','catalog-policy':'物品发放策略','gift-template':'礼包模板','role-soft-delete':'维护：角色软删除','test-fixture-cleanup':'维护：测试夹具归档'}
@@ -225,7 +227,7 @@ function openScheduledChild(kind:string,id:string){
  if(kind==='reward'){sessionStorage.setItem('dnfgm.pending-reward-job',JSON.stringify({id,uncertain:false}));go('reward-jobs')}
  else{sessionStorage.setItem('dnfgm-native-operation',id);go('native-controls')}
 }
-const descriptions:Record<string,string>={economy:'GM发放与扣减、邮件积压和补偿线索；不是全服经济流水。',support:'玩家备注、问题处理与补偿追踪；不把记录保存当成游戏操作。','schedules':'北京时间定时奖励与公告，按期冻结名单；错过不补发，异常不重放。','native-controls':'预览确认后发送公告或账号控制；不把传输成功当成游戏生效。','operations-dashboard':'资源历史、占用分类、保护原因与发布信息；不把过期数据当成正常。','unlock-center':'查找保存的申请、关联物品与倒计时，明确选择后整批设为到期。','reward-jobs':'固定名单、账号奖励去重与持久任务；异常时核对原任务，不重复发奖。','mail-center':'查找每一笔投递和全部附件；从历史记录生成新草稿。',overview:'服务健康与玩家数据，一眼掌握。',accounts:'先选账号，再管理余额、角色与登录权限。',online:'按游戏登录状态查看在线账号。',mail:'选定收件角色，组合奖励，核对后投递。',catalog:'搜索当前 PVF，管理物品的发放策略。',gifts:'把常用奖励保存成礼包，版本与历史发放可追溯。',audit:'追踪每一笔操作；查询历史结果不会重复执行。'}
+const descriptions:Record<string,string>={compatibility:'升级前对照候选索引检查保存引用；只读核对，不自动切换版本。',economy:'GM发放与扣减、邮件积压和补偿线索；不是全服经济流水。',support:'玩家备注、问题处理与补偿追踪；不把记录保存当成游戏操作。','schedules':'北京时间定时奖励与公告，按期冻结名单；错过不补发，异常不重放。','native-controls':'预览确认后发送公告或账号控制；不把传输成功当成游戏生效。','operations-dashboard':'资源历史、占用分类、保护原因与发布信息；不把过期数据当成正常。','unlock-center':'查找保存的申请、关联物品与倒计时，明确选择后整批设为到期。','reward-jobs':'固定名单、账号奖励去重与持久任务；异常时核对原任务，不重复发奖。','mail-center':'查找每一笔投递和全部附件；从历史记录生成新草稿。',overview:'服务健康与玩家数据，一眼掌握。',accounts:'先选账号，再管理余额、角色与登录权限。',online:'按游戏登录状态查看在线账号。',mail:'选定收件角色，组合奖励，核对后投递。',catalog:'搜索当前 PVF，管理物品的发放策略。',gifts:'把常用奖励保存成礼包，版本与历史发放可追溯。',audit:'追踪每一笔操作；查询历史结果不会重复执行。'}
 const feedbackMessage=computed(()=>{const fields=Object.values(fieldErrors.value);return error.value?(fields.length?fields[0]+(fields.length>1?' 另有 '+(fields.length-1)+' 项需检查。':''):error.value):notice.value})
 watch([error,notice],()=>{toastDismissed.value=false})
 const shownResult=computed(()=>operationResult.value?.result??operationResult.value)
@@ -313,6 +315,7 @@ onUnmounted(()=>clearInterval(timer))
   <p v-if="supportCase&&['accounts','mail'].includes(tab)" class="notice" role="status">关联问题：{{supportCase.title}} · #{{supportCase.case_id}}。已关联补偿 {{supportCase.compensation_count}} 笔，请先核对历史。提交成功后会在同一事务内记录关联，不自动解决问题。<button :disabled="busy||!!pendingId" @click="supportCase=null">解除此草稿关联</button></p>
   <div class="page-body" :key="tab">
   <GiftVersions v-if="giftHistory" :template-id="giftHistory" @close="giftHistory=0" @copy="copyGiftVersion" />
+  <UpgradeCheck v-if="tab==='compatibility'" @expired="clearSession" @navigate="go($event)" @inspect="inspectOperation"/>
   <EconomyReports v-if="tab==='economy'" @expired="clearSession" @inspect="inspectOperation" @player="playerAction({action:'currency',uid:$event})" @support="playerAction({action:'support',uid:$event})"/>
   <SupportDesk ref="supportDesk" v-if="tab==='support'" :uid="supportUid" @reauth="reauthOpen=true" @expired="clearSession" @action="playerAction" @inspect="inspectOperation" @compensate="supportCompensation"/>
   <NativeControls v-if="tab==='native-controls'" :account="account" @reauth="reauthOpen=true" @expired="clearSession" @select-player="go('accounts')"/>
