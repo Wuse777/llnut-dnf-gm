@@ -41,6 +41,7 @@ def bootstrap_sql(config,ph):
     sql += character_maintenance_sql(user)
     sql += character_rename_sql(user)
     sql += character_rescue_sql(user)
+    sql += character_quests_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/010-support-desk.sql').read_text()
     sql += support_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/011-economy-ledger.sql').read_text()
@@ -191,3 +192,8 @@ def character_rename_sql(user="'dnf_gm_app'@'127.0.0.1'"):
 def character_rescue_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     return (f'GRANT SELECT(village),UPDATE(village) ON taiwan_cain.charac_info TO {user};\n'
             f'GRANT SELECT(village,village_prev),UPDATE(village,village_prev) ON taiwan_cain.charac_stat TO {user};\n')
+
+
+def character_quests_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    from dnfgm.character_quests import QUEST_COLUMNS
+    return f'GRANT SELECT({",".join("`"+k+"`" for k in QUEST_COLUMNS)}) ON taiwan_cain.new_charac_quest TO {user};\n'

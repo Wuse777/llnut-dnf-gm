@@ -47,7 +47,8 @@ FEATURES = (
  ('compatibility','升级引用检查','记录与维护','compatibility',None,'只读核对候选资源，不自动激活PVF或暂停任务。'),
  ('assets','物品图标与职业头像','展示与素材','catalog','assets','图片包匹配不代表像素或客户端一致性已验收。'),
  ('private-message','指定玩家系统消息','待适配',None,'unimplemented','尚未接入当前镜像可靠的私信通道。'),
- ('character-advanced','等级／职业／任务维护','待适配',None,'unimplemented','位置救援、疲劳与改名已有独立入口；等级、职业合法组合及任务异常查询仍待适配。'),
+ ('character-quests','任务存档与异常线索','角色维护','accounts',None,'读取20个任务槽和已完成标记，显示重复任务及PVF缺失等线索，不自动完成或重置。'),
+ ('character-advanced','等级／职业维护','待适配',None,'unimplemented','位置救援、疲劳与改名已有独立入口；等级与职业合法组合仍待适配；任务异常查询已有只读入口。'),
 )
 REASONS = {
  'maintenance_executor_missing':'完整维护执行与恢复执行器尚未安装或状态过期，可在维护中心核对；不是管理员权限限制。',

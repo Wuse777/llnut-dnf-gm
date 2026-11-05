@@ -22,6 +22,7 @@ from .inventory_operations import InventoryOperations
 from .character_maintenance import CharacterMaintenance, CharacterMaintenancePreview
 from .character_rename import CharacterRename, RenamePreview
 from .character_rescue import CharacterRescue, RescuePreview
+from .character_quests import CharacterQuests
 from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm, MaintenanceClose, MaintenanceRecover
 from .models import InventoryPreview
 from .support_models import ProfileSave, CaseCreate, CaseUpdate, CaseEntry, CaseLink, CaseStatus, Category
@@ -99,6 +100,7 @@ def create_app(settings=None, database=None):
     character_ops = CharacterMaintenance(service)
     rename_ops = CharacterRename(service)
     rescue_ops = CharacterRescue(service)
+    quest_reader = CharacterQuests(service)
     maintenance = MaintenanceRequests(db,settings)
     schedules = Schedules(db, settings, jobs, native_ops)
     from .task_health import TaskHealth, WorkerPulse
@@ -270,6 +272,11 @@ def create_app(settings=None, database=None):
     def character_detail(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
         user(request)
         return service.character_detail(charac_no)
+
+    @app.get(API+'/characters/{charac_no}/quests')
+    def character_quests(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647),page:int=Query(1,ge=1,le=600),quest_id:int=Query(0,ge=0,le=65535)):
+        key=user(request);limits.check('character-quests:'+key,30)
+        return quest_reader.read(charac_no,page,quest_id)
 
     @app.get(API+'/characters/{charac_no}/activity')
     def character_activity(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647),

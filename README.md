@@ -104,3 +104,5 @@ DNFGM_CONFIG=/absolute/private/config.json PYTHONPATH=src \
 ## 许可证
 
 自有代码采用 MIT，见 [LICENSE](LICENSE)。CPAMC 主题变量等来源保留其 MIT 版权声明，见 `licenses/CPAMC-MIT.txt` 和前端第三方声明文件。许可证不授予第三方游戏程序、数据、品牌或素材的使用权。
+
+新增[角色任务存档排查](docs/CHARACTER-QUESTS.md)：只读进行中槽位、完成标记、任务条件和异常线索。
