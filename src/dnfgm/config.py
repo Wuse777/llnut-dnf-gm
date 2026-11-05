@@ -12,6 +12,7 @@ class Settings:
     db_port: int = 4000
     db_user: str = 'dnf_gm_app'
     db_password: str = ''
+    db_connection_limit: int = 3
     secret: str = ''
     origins: tuple = ('http://127.0.0.1:8765',)
     public: bool = False
@@ -47,6 +48,8 @@ class Settings:
     inventory_program_sha256: str = ''
 
     def check(self):
+        if type(self.db_connection_limit) is not int or not 1<=self.db_connection_limit<=3:
+            raise ValueError('Database connection limit must be between 1 and 3')
         from .task_probe import valid_token
         if self.task_probe_token != '' and not valid_token(self.task_probe_token):
             raise ValueError('Task probe needs a dedicated 64-hex token or an empty disabled value')

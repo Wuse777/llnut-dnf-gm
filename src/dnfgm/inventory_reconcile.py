@@ -4,9 +4,15 @@ Never call while an application transaction could still acquire/shared-hold that
 fence. The caller revokes the permit first. FOR UPDATE waits for any DB-side
 commit still running after a disconnected/crashed app; timeout means NOT safe.
 """
+import json
 import re
-from .service import dump
+
 from .inventory_fence import Refused
+
+
+def dump(value):
+    # Keep the root worker lightweight; importing the HTTP service loads FastAPI.
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), default=str)
 
 
 def settle_window(db,window_id, *, expected_server_uuid=None):

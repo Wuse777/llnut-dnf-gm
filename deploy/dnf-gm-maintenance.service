@@ -1,0 +1,27 @@
+[Unit]
+Description=DNF GM fixed maintenance outbox executor
+After=network.target dnf-gm-monitor.service
+ConditionPathExists=/etc/dnf-gm/inventory-maintenance.json
+[Service]
+Type=simple
+User=root
+Slice=dnf-gm.slice
+Environment=PYTHONPATH=/opt/dnf-gm/current/src
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/dnf-gm/venv/bin/python /opt/dnf-gm/current/deploy/maintenance_worker.py
+Restart=on-failure
+RestartSec=15
+# Finish the current durable stage rather than interrupting a normal shutdown.
+TimeoutStopSec=1200
+KillMode=mixed
+UMask=0022
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ReadWritePaths=/run/dnf-gm /var/lib/dnf-gm/maintenance-requests /var/lib/dnf-gm/maintenance-drain /var/lib/dnf-gm/write-gate /var/lib/dnf-gm/maintenance.lock
+[Install]
+WantedBy=multi-user.target

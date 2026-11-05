@@ -34,7 +34,7 @@ if [[ ! -e /var/lib/dnf-gm/no-auto-recover ]]; then
  touch /var/lib/dnf-gm/no-auto-recover
  RECOVERY_INHIBIT_OWNED=true
 fi
-for UNIT in dnf-gm-monitor.service dnf-gm.service; do
+for UNIT in dnf-gm-maintenance.service dnf-gm-monitor.service dnf-gm.service; do
  if systemctl cat "$UNIT" >/dev/null 2>&1; then systemctl stop "$UNIT"; fi
 done
 "$PYTHON" -m venv /opt/dnf-gm/venv
@@ -54,6 +54,7 @@ PY
 # as a manual SSH feature switch. The helper verifies migration 013 first and
 # preserves existing freezes, credentials and web capability choices.
 /opt/dnf-gm/venv/bin/python "$BASE/deploy/configure_write_gate.py"
+/opt/dnf-gm/venv/bin/python "$BASE/deploy/configure_maintenance.py"
 if [[ -L /opt/dnf-gm/current && "$(readlink -f /opt/dnf-gm/current)" != "$BASE" ]]; then
  ln -sfn "$(readlink -f /opt/dnf-gm/current)" /opt/dnf-gm/previous
 fi
@@ -61,10 +62,10 @@ ln -sfn "$BASE" /opt/dnf-gm/.current-next
 mv -Tf /opt/dnf-gm/.current-next /opt/dnf-gm/current
 install -d -m 755 /var/lib/dnf-gm /etc/systemd/system/dnf-gm.service.d
 if [[ -f "$BASE/catalog.sqlite" ]]; then install -m 444 "$BASE/catalog.sqlite" /var/lib/dnf-gm/catalog.sqlite; fi
-install -m 644 "$BASE/deploy/dnf-gm.slice" "$BASE/deploy/dnf-gm.service" "$BASE/deploy/dnf-gm-monitor.service" /etc/systemd/system/
+install -m 644 "$BASE/deploy/dnf-gm.slice" "$BASE/deploy/dnf-gm.service" "$BASE/deploy/dnf-gm-monitor.service" "$BASE/deploy/dnf-gm-maintenance.service" /etc/systemd/system/
 printf '[Service]\nIPAddressAllow=%s/32\n' "$DB_IP" > /etc/systemd/system/dnf-gm.service.d/database.conf
 systemctl daemon-reload
-systemctl enable dnf-gm-monitor.service dnf-gm.service
+systemctl enable dnf-gm-monitor.service dnf-gm.service dnf-gm-maintenance.service
 rm -f /run/dnf-gm/status.json
 systemctl start dnf-gm-monitor.service
 READY=false
@@ -83,6 +84,9 @@ PY
  sleep 2
 done
 [[ "$READY" == true ]] || { echo 'Monitor not healthy; application remains stopped' >&2; exit 1; }
+if [[ -f /etc/dnf-gm/inventory-maintenance.json ]]; then
+ /opt/dnf-gm/venv/bin/python "$BASE/deploy/maintenance_worker.py" --check
+fi
 systemctl start dnf-gm.service
 HOST=$(/opt/dnf-gm/venv/bin/python - <<'PY'
 import json
@@ -98,6 +102,9 @@ for _ in $(seq 1 20); do
    systemctl daemon-reload
    systemctl start dnf-gm-cleanup.timer
   fi
+  # The daemon owns this same lock; release it only after installation is ready.
+  flock -u 9
+  if [[ -f /etc/dnf-gm/inventory-maintenance.json ]]; then systemctl start dnf-gm-maintenance.service; fi
   echo 'GM loopback ready. Nginx was not changed.'
   exit 0
  fi

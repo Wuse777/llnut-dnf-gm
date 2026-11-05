@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 
-from dnfgm.inventory_fence import MAX_CLOSE_BYTES, _read
+from dnfgm.inventory_fence import BOUND_FIELDS, MAX_CLOSE_BYTES, _read, validate_permit
 from dnfgm.release_files import Refused
 from maintenance_gate import WriteGateManager
 from maintenance_session_state import bound_to_plan, load
@@ -42,6 +42,52 @@ class SessionMonitor:
             result.append({'service':name,'state':state})
         if h.identity()!=plan['identity'] or h.services()!=states:raise Refused('maintenance_restore_observation_changed')
         return result
+
+    def recovery(self, window):
+        """Keep explicit restoration reachable after expiry; never renew write authority."""
+        c=self.c; request_id=c._active()
+        if request_id is None:raise Refused('maintenance_recovery_not_open')
+        raw=c._load(request_id);plan=raw['plan']
+        session=load(c.root,c.owner,request_id,plan)
+        if raw['version']!=3 or raw['state']!='writers_stopped' or session['state']!='maintenance_open':
+            raise Refused('maintenance_recovery_not_open')
+        permit=_read(self.runtime,'permit.json',c.owner,4096)
+        # Validate original shape and lifetime, NOT permission at the current time.
+        validate_permit(permit,permit.get('created_at'),permit.get('created_monotonic'))
+        now,mono=c._now()
+        if (now<permit['created_at'] or mono<permit['created_monotonic'] or
+                (now<permit['expires_at'] and mono<permit['expires_monotonic'])):
+            raise Refused('maintenance_recovery_not_expired')
+        issued=next(e['data'] for e in session['events'] if e['phase']=='window-issued')
+        binding={k:permit[k] for k in BOUND_FIELDS}
+        if (permit['id']!=request_id or issued['id']!=request_id or
+                issued['expires_at']!=permit['expires_at'] or not bound_to_plan(binding,plan)):
+            raise Refused('maintenance_original_window_changed')
+        original=plan['services_before'];games=set(plan['service_cycle']['games'])
+        if any(name not in original or (name not in games and
+                (original[name][:3]!=[True,True,True] or original[name][4]<1)) for name in self.required_components):
+            raise Refused('maintenance_preexisting_component_failure')
+        gate=c.admission.gate if c.admission else WriteGateManager('/var/lib/dnf-gm/write-gate',owner=c.owner)
+        expected=raw['events'][1]['data']
+        with gate.locked(False):
+            if gate.read()!=expected:raise Refused('maintenance_restore_gate_changed')
+        sample=window.checked_snapshot()
+        if any(sample.get(k)!=v for k,v in binding.items()):raise Refused('maintenance_restore_target_changed')
+        services=self.observe(plan,session)
+        if any(row['state']!='down_waiting_restore' for row in services):
+            raise Refused('maintenance_restore_unexpected_state')
+        if (c._active()!=request_id or c._load(request_id)!=raw or
+                load(c.root,c.owner,request_id,plan)!=session or
+                _read(self.runtime,'permit.json',c.owner,4096)!=permit):
+            raise Refused('maintenance_restore_journal_changed')
+        with gate.locked(False):
+            if gate.read()!=expected:raise Refused('maintenance_restore_gate_changed')
+        after,after_mono=c._now()
+        if not (0<=after-now<=20 and 0<=after_mono-mono<=20):
+            raise Refused('maintenance_evidence_stale')
+        return {'active':True,'verified':True,'authority':'recovery-only',
+                'request_id':request_id,'phase':'maintenance_open','maintenance_permit':False,
+                'write_window_expired':True,'collected_at':now,'expires_at':now+30,'services':services}
 
     def status(self):
         c=self.c

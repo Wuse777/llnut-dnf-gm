@@ -182,3 +182,29 @@ def test_restore_does_not_waive_original_core_component_failure(session,required
     s,c,h,plan=session;interrupted(session)
     result=SessionMonitor(c,s.window.root,required_components=(required,)).status()
     assert not result['verified'] and result['reason']=='maintenance_preexisting_component_failure'
+
+
+def test_expired_window_keeps_recovery_available_without_renewing_writes(session):
+    s,c,h,plan=session;s.open(RID)
+    permit=json.loads((s.window.root/'permit.json').read_text())
+    before={p.name:p.read_bytes() for p in s.window.root.iterdir() if p.is_file()}
+    c.clock=lambda:permit['expires_at']+1
+    c.monotonic=lambda:permit['expires_monotonic']+1
+    s.window.clock=c.clock;s.window.monotonic=c.monotonic
+    commands=copy.deepcopy(h.calls)
+    status=SessionMonitor(c,s.window.root).recovery(s.window)
+    assert status['verified'] and status['authority']=='recovery-only'
+    assert status['write_window_expired'] and status['maintenance_permit'] is False
+    assert before=={p.name:p.read_bytes() for p in s.window.root.iterdir() if p.is_file()}
+    assert commands==h.calls
+    from dnfgm.inventory_fence import validate_permit
+    with pytest.raises(Refused,match='maintenance_permit_expired'):
+        validate_permit(permit,c.clock(),c.monotonic())
+    h.rows['mysql']=(False,False,False,True,-1)
+    with pytest.raises(Refused):SessionMonitor(c,s.window.root).recovery(s.window)
+
+
+def test_live_window_cannot_claim_expired_recovery(session):
+    s,c,h,plan=session;s.open(RID)
+    with pytest.raises(Refused,match='maintenance_recovery_not_expired'):
+        SessionMonitor(c,s.window.root).recovery(s.window)

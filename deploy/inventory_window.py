@@ -281,6 +281,16 @@ class MonitorWindow:
             self.manager.refresh()
             return {'active':True,'verified':True,**self.fence.check()}
         except Exception as error:
+            if isinstance(error,Refused) and str(error)=='maintenance_permit_expired':
+                try:
+                    from service_lifecycle import ServiceHost
+                    from maintenance_drain import DrainCoordinator, STATE, GLOBAL_LOCK
+                    from maintenance_session_monitor import SessionMonitor
+                    coordinator=DrainCoordinator(STATE,ServiceHost(self.manager.probe),lock_path=GLOBAL_LOCK)
+                    return SessionMonitor(coordinator,self.manager.root,
+                        required_components=self.monitored_components).recovery(self.manager)
+                except Exception:
+                    return {'active':True,'verified':False,'reason':'maintenance_recovery_unavailable'}
             return {'active':True,'verified':False,
                     'reason':str(error) if isinstance(error,Refused) else 'maintenance_probe_failed'}
 

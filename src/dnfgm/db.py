@@ -11,7 +11,7 @@ class Database:
     """No more than 3 concurrent connections, including audit/auth traffic."""
     def __init__(self, settings, factory=None):
         self.settings = settings
-        self.slots = BoundedSemaphore(3)
+        self.slots = BoundedSemaphore(getattr(settings,'db_connection_limit',3))
         self.factory = factory
 
     @contextmanager

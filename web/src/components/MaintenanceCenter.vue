@@ -97,7 +97,7 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
   <template v-if="detail"><p>{{detail.reason}}</p><p v-if="!detail.worker_fresh" class="warning">执行器状态过期或不可读；仅展示已有记录。</p><p v-if="detail.receipt_error" class="submit-error">{{detail.receipt_error}}</p>
    <p v-if="detail.result?.games?.length">本计划涉及：{{detail.result.games.join('、')}}</p><p v-if="detail.result?.expires_at">计划有效期至 {{date(detail.result.expires_at)}}</p>
    <p v-if="detail.status==='cancelled'&&!terminal" class="notice">取消已保存，正在等待执行器释放原计划；这不是停服后的恢复。</p>
-   <p v-if="detail.result?.window_requires_live_check" class="notice">窗口签发记录不代表现在仍然有效；装备提交前会重新核对实时许可。</p>
+   <p v-if="detail.result?.window_requires_live_check" class="notice">窗口签发记录不代表现在仍然有效；装备提交前会重新核对实时许可。窗口到期后停止装备写入，不会自动续期；请点击“结束维护并恢复服务”。</p>
    <p v-if="detail.result?.error" class="submit-error">执行记录：{{detail.result.error}}。不要换编号重复执行。</p>
    <p v-if="restored" class="field-hint">从历史或刷新恢复后，不会自动执行。尚未确认的计划可以取消；已经开启的维护窗口可以核对后明确结束维护并恢复服务。</p>
    <section v-if="detail.result?.ordinary_outcomes" class="maintenance-observation" aria-label="维护前结果核对">
