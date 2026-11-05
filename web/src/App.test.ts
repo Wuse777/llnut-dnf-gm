@@ -269,3 +269,7 @@ it('mail title is inline validated and carried into the preview request',async()
  await w.find('#mail-title').setValue('Welcome');await w.find('#mail-message').setValue('Body');await click(w,'生成预览 →');
  expect(calls.find(c=>c.path==='/operations/preview')?.body).toMatchObject({mail_title:'Welcome',message:'Body'});w.unmount()
 })
+
+it('opens a character shortcut as a target-bound reward draft without submitting',async()=>{
+ const {w,calls}=testApp();try{await target(w);await click(w,'查看详情');await w.get('.character-shortcuts').findAll('button').find(b=>b.text()==='给此角色发奖励')!.trigger('click');await flushPromises();expect(w.find('[data-testid=character-detail]').exists()).toBe(false);expect((w.get('#mail-role').element as HTMLSelectElement).value).toBe('4');expect(w.text()).toContain('UID 3');expect(calls.some(c=>c.method==='POST'&&c.path.includes('operations'))).toBe(false)}finally{w.unmount()}
+})

@@ -2,7 +2,7 @@
 import {ref,watch,onBeforeUnmount} from 'vue'
 import {api,uncertainMessage} from '../api'
 import Modal from './Modal.vue'
-const props=withDefaults(defineProps<{uid?:number,characNo?:number}>(),{uid:0,characNo:0})
+const props=withDefaults(defineProps<{uid?:number,characNo?:number,lockedTarget?:boolean}>(),{uid:0,characNo:0,lockedTarget:false})
 const emit=defineEmits<{draft:[request:any]}>()
 const uid=ref(''),role=ref(''),op=ref(''),rows=ref<any[]>([]),page=ref(1),more=ref(false)
 const error=ref(''),loading=ref(false),detailError=ref(''),detailLoading=ref(false),selected=ref(''),detail=ref<any>(null),after=ref(0),previous=ref<number[]>([])
@@ -35,9 +35,10 @@ onBeforeUnmount(()=>{listEpoch++;detailEpoch++})
 <template>
  <section class="panel mail-center">
   <div class="section-title"><h2>邮件投递记录</h2><span class="pill">完整附件分页 · 只读追踪</span></div>
+  <p v-if="lockedTarget" class="field-hint">收件范围固定为当前角色；如需搜索其他玩家，请使用独立邮件中心。</p>
   <form class="toolbar" @submit.prevent="load(true)">
-   <label>账号 UID<input v-model="uid" inputmode="numeric" aria-label="邮件账号UID" placeholder="全部账号"></label>
-   <label>角色编号<input v-model="role" inputmode="numeric" aria-label="邮件角色编号" placeholder="全部角色"></label>
+   <label>账号 UID<input v-model="uid" :disabled="lockedTarget" inputmode="numeric" aria-label="邮件账号UID" placeholder="全部账号"></label>
+   <label>角色编号<input v-model="role" :disabled="lockedTarget" inputmode="numeric" aria-label="邮件角色编号" placeholder="全部角色"></label>
    <label>操作编号<input v-model="op" aria-label="邮件操作编号" placeholder="精确操作编号"></label>
    <button :disabled="loading">查询邮件</button>
   </form>

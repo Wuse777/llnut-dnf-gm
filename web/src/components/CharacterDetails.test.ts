@@ -73,3 +73,9 @@ it('opens a directly requested maintenance tab on first mount',async()=>{
  const w=mount(CharacterDetails,{props:{characNo:4,initialSection:'manage'},global:{stubs:{InventoryEditor:{template:'<div>初始维护入口</div>'}}}})
  await flushPromises();expect(w.find('#character-section-manage').text()).toContain('初始维护入口');expect(w.find('[role=tab][aria-selected=true]').text()).toBe('装备维护');w.unmount()
 })
+
+it('keeps role shortcuts and mail/activity queries bound to the current identity',async()=>{
+ const calls:string[]=[];vi.stubGlobal('fetch',vi.fn(async(url:string)=>{calls.push(url);const result=url.includes('/mail-center?')?{items:[],has_more:false}:url.includes('/activity?')?{items:[],next_before:null,note:'按角色关联'}:fixture();return new Response(JSON.stringify(result))}))
+ const w=mount(CharacterDetails,{props:{characNo:4},attachTo:document.body})
+ try{await flushPromises();await w.findAll('button').find(b=>b.text()==='给此角色发奖励')!.trigger('click');expect(w.emitted('action')?.[0]).toEqual([{action:'mail',uid:3,charac_no:4}]);await tab(w,'角色邮件');expect(calls.at(-1)).toContain('/mail-center?uid=3&charac_no=4');expect(w.get('[aria-label="邮件角色编号"]').attributes('disabled')).toBeDefined();await tab(w,'管理记录');expect(calls.at(-1)).toContain('/characters/4/activity?before=0');expect(w.text()).toContain('已到记录末尾')}finally{w.unmount()}
+})

@@ -265,6 +265,13 @@ def create_app(settings=None, database=None):
         user(request)
         return service.character_detail(charac_no)
 
+    @app.get(API+'/characters/{charac_no}/activity')
+    def character_activity(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647),
+                           before:int=Query(0,ge=0,le=9223372036854775807),include_account:bool=True):
+        key=user(request);limits.check('character-activity:'+key,30)
+        from .character_activity import activity
+        return activity(db,charac_no,before,include_account)
+
     @app.get(API+'/characters/{charac_no}/unlock-requests')
     def unlock_requests(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
         user(request)
