@@ -2,17 +2,19 @@
 import {ref,computed,onMounted,onBeforeUnmount,watch} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
 import ItemQueue from './ItemQueue.vue'
+import {mailTextErrors} from '../validation'
 const props=defineProps<{scheduleDraft?:boolean,initialDraft?:any,initialJob?:string}>()
 const emit=defineEmits<{reauth:[],inspect:[id:string],schedule:[draft:any],opened:[]}>()
 const accountKind=ref('uid'),accountList=ref(''),importNotice=ref('')
 const mode=ref('selected'),ids=ref(''),uid=ref(''),jobFilter=ref(''),minimum=ref(0),maximum=ref(255),name=ref('')
 watch([accountKind,mode],()=>{importNotice.value=''})
 const rewardMode=ref('once_per_account'),reason=ref(''),gold=ref(0),message=ref('GM rewards'),amounts=ref<Record<string,number>>({cera:0,cera_point:0,mileage:0})
+const mailTitle=ref('')
 const currencyNames:Record<string,string>={cera:'点券',cera_point:'代币券',mileage:'商城积分'}
 const items=ref<any[]>([]),query=ref(''),found=ref<any[]>([]),templateQuery=ref(''),templates=ref<any[]>([]),template=ref<any>(null)
 const adjusted=ref(false)
 function selectTemplate(g:any){template.value=g;adjustTemplate();adjusted.value=false}
-function adjustTemplate(){const r=template.value.rewards;if(!r)return;items.value=r.items.map((i:any)=>({...i}));gold.value=r.gold||0;message.value=r.message??'GM rewards';amounts.value={cera:0,cera_point:0,mileage:0,...r.currency_rewards};adjusted.value=true}
+function adjustTemplate(){const r=template.value.rewards;if(!r)return;items.value=r.items.map((i:any)=>({...i}));gold.value=r.gold||0;message.value=r.message??'GM rewards';mailTitle.value=r.mail_title??'';amounts.value={cera:0,cera_point:0,mileage:0,...r.currency_rewards};adjusted.value=true}
 const selected=ref<any>(null),targets=ref<any[]>([]),next=ref<number|null>(null),cursor=ref(0),previous=ref<number[]>([])
 const jobs=ref<any[]>([]),page=ref(1),more=ref(false),busy=ref(false),error=ref(''),lookupError=ref(''),searchError=ref(''),notice=ref('')
 const fieldErrors=ref<Record<string,string>>({}),confirmation=ref(''),repeat=ref(false),uncertain=ref(false),pendingId=ref(''),key=ref('')
@@ -50,6 +52,7 @@ function payload(){
   if(mode.value==='filtered'&&!uid.value&&!jobFilter.value&&!name.value.trim()&&minimum.value===0&&maximum.value===255)errors.filters='请填写筛选条件，或明确选择全服角色。'
  }
  if(!template.value||adjusted.value){
+  Object.assign(errors,mailTextErrors(mailTitle.value,message.value,'batch'))
   for(const [k,v] of Object.entries(amounts.value))if(!integer(v,0,1000000000))errors.reward=currencyNames[k]+'须为0至10亿的整数。'
   if(!integer(gold.value,0,1000000000))errors.reward='金币附件须为0至10亿的整数。'
   items.value.forEach((item,n)=>{if(!integer(item.quantity,1,2147483647))errors['batch-quantity-'+n]='数量须为1至2,147,483,647的整数。'})
@@ -57,7 +60,7 @@ function payload(){
  }
  fieldErrors.value=errors;if(Object.keys(errors).length)throw new Error('请修正对应输入项旁的提示。')
  const filters=mode.value==='accounts'?{mode:'accounts',[accountKind.value==='uid'?'account_uids':'account_names']:accounts}:mode.value==='selected'?{mode:mode.value,charac_nos:list}:mode.value==='all'?{mode:'all'}:{mode:mode.value,uid:Number(uid.value)||0,job:jobFilter.value===''?null:Number(jobFilter.value),min_level:minimum.value,max_level:maximum.value,q:name.value.trim()}
- const contents={items:items.value.map(({id,quantity})=>({id,quantity})),gold:gold.value,message:message.value,currency_rewards:amounts.value}
+ const contents={items:items.value.map(({id,quantity})=>({id,quantity})),gold:gold.value,message:message.value,mail_title:mailTitle.value,currency_rewards:amounts.value}
  const reward=template.value?{template_id:template.value.id,template_version:template.value.current_version,...(adjusted.value?{template_overrides:contents}:{})}:contents
  return {targets:filters,reward,account_reward_mode:rewardMode.value,reason:reason.value.trim()}
 }
@@ -99,7 +102,7 @@ watch(()=>props.initialDraft,d=>{
  adjusted.value=!!d.reward.template_overrides
  accountKind.value=t.account_names?.length?'name':'uid';accountList.value=(t.account_names?.length?t.account_names:(t.account_uids||[])).join('\n')
  mode.value=t.mode;ids.value=(t.charac_nos||[]).join(', ');uid.value=t.uid?String(t.uid):'';jobFilter.value=t.job==null?'':String(t.job);minimum.value=t.min_level??0;maximum.value=t.max_level??255;name.value=t.q||''
- rewardMode.value=d.account_reward_mode;reason.value=d.reason;gold.value=r.gold||0;message.value=r.message||'GM rewards';amounts.value={cera:0,cera_point:0,mileage:0,...r.currency_rewards}
+ rewardMode.value=d.account_reward_mode;reason.value=d.reason;gold.value=r.gold||0;message.value=r.message??'GM rewards';mailTitle.value=r.mail_title??'';amounts.value={cera:0,cera_point:0,mileage:0,...r.currency_rewards}
  items.value=(r.items||[]).map((i:any)=>({...i,name:i.name||'#'+i.id}));template.value=d.reward.template_id?{id:d.reward.template_id,current_version:d.reward.template_version,name:'原计划礼包 #'+d.reward.template_id}:null
 },{immediate:true})
 onMounted(async()=>{if(props.scheduleDraft)return;try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(saved&&/^[a-f0-9]{32}$/.test(saved.id)){pendingId.value=saved.id;key.value=saved.key||'';uncertain.value=!!saved.uncertain;queryId.value=saved.id;await inspect(saved.id)}}catch(e){lookupError.value=uncertainMessage(e)}try{if(props.initialJob){if(uncertain.value&&pendingId.value!==props.initialJob){lookupError.value='已优先恢复结果待确认的任务；请先核对，再查看异常中心选择的任务 '+props.initialJob}else{await inspect(props.initialJob);draftVisible.value=false}emit('opened')}}catch(e){lookupError.value=uncertainMessage(e)}await list();if(!alive)return;timer=setInterval(()=>{if(!busy.value&&!document.hidden&&selected.value){busy.value=true;void inspect(selected.value.id,false).catch(e=>{lookupError.value=uncertainMessage(e)}).finally(()=>{busy.value=false})}},30000)})
@@ -130,6 +133,7 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
       <div class="toolbar"><label>搜索物品<input v-model="query" aria-label="批量物品搜索" placeholder="物品名称或编号" @keydown.enter.prevent="findItems"></label><button type="button" @click="findItems">搜索物品</button></div>
       <div class="reward-results"><button v-for="item in found" :key="item.id" type="button" :disabled="item.sendable===false" @click="add(item)">＋ {{item.name}} #{{item.id}}</button></div>
       <ItemQueue :items="items" :busy="busy" prefix="batch" :errors="fieldErrors" @remove="items.splice($event,1)" @quantity="(n,q)=>items[n].quantity=q"/>
+      <label>邮件标题（作为正文首行）<input v-model="mailTitle" maxlength="40" aria-label="批量邮件标题" :aria-invalid="!!fieldErrors['batch-title']"></label><p v-if="fieldErrors['batch-title']" class="submit-error" role="alert">{{fieldErrors['batch-title']}}</p>
       <label>邮件文字<input v-model="message" maxlength="60" aria-label="批量邮件文字"></label>
      </template>
      <p v-if="searchError" class="submit-error" role="alert">{{searchError}}</p><p v-if="fieldErrors.reward" class="submit-error" role="alert">{{fieldErrors.reward}}</p>
@@ -150,6 +154,8 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
    <p v-if="selected.request.reward.template_id">来源礼包 #{{selected.request.reward.template_id}} / v{{selected.request.reward.template_version}} · {{selected.request.reward.template_overrides?'临时调整（原模板未修改）':'模板原内容'}}</p>
    <p>账号货币：{{selected.request.account_reward_mode==='once_per_account'?'同账号只发一次':'逐角色重复发到所属账号'}}</p>
    <ul><li v-for="(item,n) in selected.preview.rewards.items" :key="n">每角色 {{item.name||'#'+item.id}} #{{item.id}} × {{item.quantity}}</li></ul>
+   <p v-if="selected.preview.mail_title" style="white-space:pre-wrap">邮件正文预览：
+{{selected.preview.mail_text}}</p>
    <p class="field-hint">{{selected.preview.note}}</p>
    <div class="toolbar"><span v-for="(count,state) in selected.counts" :key="state" class="pill">{{labels[state]||state}} {{count}}</span></div>
    <template v-if="selected.status==='preview'">

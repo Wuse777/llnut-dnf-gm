@@ -55,7 +55,7 @@ onBeforeUnmount(()=>{listEpoch++;detailEpoch++})
   <template v-if="detail">
    <p><b>{{detail.batch.character_name}}</b> · {{detail.batch.account_name}} · 角色 #{{detail.batch.charac_no}}</p>
    <p>操作编号 {{selected}} · 信件 #{{detail.batch.letter_id}}</p>
-   <p>{{detail.batch.message}}</p>
+   <p style="white-space:pre-wrap">{{detail.batch.message}}</p>
    <p v-if="detail.batch.request.template_id">来源礼包 #{{detail.batch.request.template_id}} / v{{detail.batch.request.template_version}}{{detail.batch.request.template_overrides?' · 已临时调整（原模板未修改）':''}}</p>
    <p v-if="!detail.batch.history_complete" class="submit-error">历史附件信息不完整。找回 {{detail.batch.recorded_count}} / {{detail.batch.postal_count}} 条，未找回记录不能视为已领取。</p>
    <div class="table-wrap mail-receipts"><table><thead><tr><th>序号 / 邮件附件ID</th><th>物品编号</th><th>数量</th><th>金币</th><th>状态</th></tr></thead><tbody><tr v-for="r in detail.items" :key="r.ordinal"><td data-label="序号 / 邮件附件ID">{{r.ordinal}} / {{r.postal_id}}</td><td data-label="物品编号">{{r.item_id||'纯金币'}}</td><td data-label="数量">{{r.quantity}}</td><td data-label="金币">{{Number(r.gold).toLocaleString()}}</td><td data-label="领取状态">{{labels[r.receipt_state]||'未知'}}<small v-if="r.receipt_state==='claimed_marker'" class="cell-note">{{time(r.receive_time)}}</small></td></tr></tbody></table></div>

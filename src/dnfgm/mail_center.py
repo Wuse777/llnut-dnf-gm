@@ -4,6 +4,7 @@ A missing game row is unknown, not evidence of successful receipt. Pagination
 uses ledger ordinals so deletions by the game cannot hide historic deliveries.
 """
 import json
+from .mail_content import mail_text
 from fastapi import HTTPException
 
 
@@ -105,7 +106,7 @@ class MailCenter:
                     expected = max(expected,ordinal+1)
                 request['items'] = [{'id':i['id'],'quantity':i['quantity']} for i in rewards]
                 q.execute('INSERT INTO dnf_gm.mail_batches(operation_id,target_uid,charac_no,account_name,character_name,letter_id,postal_count,recorded_count,history_complete,message,request_json,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
-                          (op,request['uid'],request['charac_no'],target.get('accountname','历史名称未知'),target.get('character',{}).get('charac_name','历史名称未知'),result['letter_id'],expected,ordinal,int(expected==ordinal),request.get('message',''),json.dumps(request,ensure_ascii=False),audit['created_at']))
+                          (op,request['uid'],request['charac_no'],target.get('accountname','历史名称未知'),target.get('character',{}).get('charac_name','历史名称未知'),result['letter_id'],expected,ordinal,int(expected==ordinal),mail_text({**request,'message':request.get('message','')}),json.dumps(request,ensure_ascii=False),audit['created_at']))
                 c.commit()
                 imported += 1
         return {'imported':imported,'after_id':audits[-1]['id'] if audits else after_id,'has_more':len(audits)==limit}

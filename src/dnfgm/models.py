@@ -28,6 +28,7 @@ class RewardOverrides(Model):
     """Complete one-off reward contents; never updates the source gift version."""
     items: list[Attachment] = Field(max_length=20)
     gold: StrictInt = Field(ge=0, le=MAIL_GOLD_MAX)
+    mail_title: str = Field(default='', max_length=40)
     message: str = Field(max_length=60)
     currency_rewards: CurrencyRewards
 
@@ -43,6 +44,7 @@ class Preview(Model):
     items: list[Attachment] = Field(default_factory=list, max_length=20)
     gold: StrictInt = Field(default=0, ge=0, le=MAIL_GOLD_MAX)
     lock_keys: list[StrictInt] = Field(default_factory=list, max_length=100)
+    mail_title: str = Field(default='', max_length=40)
     message: str = Field(default='GM rewards', max_length=60)
     template_id: StrictInt | None = Field(default=None, ge=1)
     template_version: StrictInt | None = Field(default=None, ge=1)
@@ -60,6 +62,7 @@ class Gift(Model):
     expected_version: StrictInt = Field(ge=0)
     items: list[Attachment] = Field(default_factory=list, max_length=20)
     gold: StrictInt | None = Field(default=None, ge=0, le=MAIL_GOLD_MAX)
+    mail_title: str = Field(default='', max_length=40)
     message: str | None = Field(default=None, max_length=60)
     category: str = Field(default='', max_length=32)
     currency_rewards: CurrencyRewards = Field(default_factory=CurrencyRewards)
@@ -90,6 +93,7 @@ class ItemFavorite(ItemSelection):
 class RewardDefinition(Model):
     items: list[Attachment] = Field(default_factory=list,max_length=20)
     gold: StrictInt = Field(default=0,ge=0,le=MAIL_GOLD_MAX)
+    mail_title: str = Field(default='', max_length=40)
     message: str = Field(default='GM rewards',max_length=60)
     currency_rewards: CurrencyRewards = Field(default_factory=CurrencyRewards)
     template_id: StrictInt | None = Field(default=None,ge=1)

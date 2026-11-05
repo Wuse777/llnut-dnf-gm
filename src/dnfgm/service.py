@@ -1,4 +1,5 @@
 from contextlib import ExitStack
+from .mail_content import mail_text
 import hashlib
 import json
 import time
@@ -218,6 +219,8 @@ class Service:
         if not data['reason'].strip():
             raise HTTPException(422, '必须填写原因')
         gold = data.get('gold', 0)
+        if data.get('mail_title') and action not in ('mail','reward'):
+            raise HTTPException(422,'邮件标题仅用于邮件或组合奖励')
         if data.get('template_overrides') is not None and action not in ('mail','reward'):
             raise HTTPException(422,'临时奖励仅用于模板邮件或组合奖励')
         if type(gold) is not int or not 0 <= gold <= MAIL_GOLD_MAX or (action not in ('mail','reward') and gold):
@@ -441,8 +444,7 @@ class Service:
         with self.db.connect() as c, c.cursor() as q:
             gold = data.get('gold') or 0
             self.catalog.items(data['items'], active=False, q=q, allow_empty=bool(gold or self.currency_rewards(data)))
-            if data.get('message') is not None:
-                wire_name(data['message'])
+            wire_name(mail_text(data))
             if template_id:
                 old = one(q, 'SELECT current_version FROM dnf_gm.gift_templates WHERE id=%s FOR UPDATE', (template_id,))
                 if not old or old['current_version'] != data['expected_version']:
@@ -455,7 +457,7 @@ class Service:
                 version = 1
                 q.execute('INSERT INTO dnf_gm.gift_templates(name,current_version,enabled) VALUES(%s,1,%s)', (data['name'],int(data['enabled'])))
                 template_id = q.lastrowid
-            q.execute('INSERT INTO dnf_gm.gift_versions(template_id,version,payload_json) VALUES(%s,%s,%s)', (template_id,version,dump({k:data[k] for k in ('items','gold','message','category','name','enabled','currency_rewards') if k in data and data[k] is not None})))
+            q.execute('INSERT INTO dnf_gm.gift_versions(template_id,version,payload_json) VALUES(%s,%s,%s)', (template_id,version,dump({k:data[k] for k in ('items','gold','mail_title','message','category','name','enabled','currency_rewards') if k in data and data[k] is not None})))
             result = {'id':template_id,'version':version,'enabled':data['enabled']}
             q.execute('INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) VALUES(%s,\'owner\',\'gift-template\',\'模板版本变更\',%s,%s)', (uuid.uuid4().hex,dump(data),dump(result)))
             c.commit()
@@ -535,7 +537,7 @@ class Service:
             t = one(q, 'SELECT current_version,enabled FROM dnf_gm.gift_templates WHERE id=%s FOR UPDATE', (data['template_id'],))
             if not t or not t['enabled'] or t['current_version'] != data['template_version']:
                 raise HTTPException(409, '礼包已更改或停用')
-        q.execute('INSERT INTO taiwan_cain_2nd.letter(charac_no,send_charac_name,letter_text,reg_date,stat) VALUES(%s,\'GM\',%s,UTC_TIMESTAMP(),0)', (data['charac_no'],wire_name(data['message'])))
+        q.execute('INSERT INTO taiwan_cain_2nd.letter(charac_no,send_charac_name,letter_text,reg_date,stat) VALUES(%s,\'GM\',%s,UTC_TIMESTAMP(),0)', (data['charac_no'],wire_name(mail_text(data))))
         letter_id, postal_ids, postal_count = q.lastrowid, [], 0
         # Gold belongs to the letter, carried ONCE by its first postal row.
         # A gold-only letter uses item_id/add_info/endurance=0, not a PVF coin item.
@@ -571,7 +573,7 @@ class Service:
                 q.execute('INSERT INTO dnf_gm.mail_deliveries(operation_id,ordinal,postal_id,item_id,quantity,gold) VALUES(%s,%s,%s,%s,%s,%s)',
                           (op,postal_count,postal_id,item['id'],1 if kind in ('equipment','avatar','creature') else item['quantity'],gold if postal_count == 1 else 0))
         q.execute('INSERT INTO dnf_gm.mail_batches(operation_id,target_uid,charac_no,account_name,character_name,letter_id,postal_count,recorded_count,message,request_json) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
-                  (op,data['uid'],data['charac_no'],account['accountname'],account['character']['charac_name'],letter_id,postal_count,postal_count,data['message'],dump({**data,'items':[{'id':i['id'],'quantity':i['quantity']} for i in rewards['items']]})))
+                  (op,data['uid'],data['charac_no'],account['accountname'],account['character']['charac_name'],letter_id,postal_count,postal_count,mail_text(data),dump({**data,'items':[{'id':i['id'],'quantity':i['quantity']} for i in rewards['items']]})))
         result.update(letter_id=letter_id,postal_ids=postal_ids,postal_count=postal_count,postal_ids_truncated=postal_count>len(postal_ids),items=rewards,gold=gold,template_id=data.get('template_id'),template_version=data.get('template_version'),state='database_delivered_not_claimed')
         return result
 
@@ -632,11 +634,12 @@ class Service:
                 data['template_overrides']=overrides
                 payload=overrides
             attachments=payload['items']
-            for key,default in (('gold',0),('message','GM rewards')):
-                if key in payload:
-                    if data.get(key,default) not in (default,payload[key]):
+            for key,default in (('gold',0),('message','GM rewards'),('mail_title','')):
+                if key in payload or key=='mail_title':
+                    value=payload.get(key,default)
+                    if data.get(key,default) not in (default,value):
                         raise HTTPException(409,'奖励内容冲突，请重新预览')
-                    data[key]=payload[key]
+                    data[key]=value
             gold=data.get('gold',0)
             bound=self.currency_rewards(payload)
             if amounts and amounts!=bound:
@@ -647,13 +650,14 @@ class Service:
         if not attachments and not gold and not amounts:
             raise HTTPException(422,'奖励至少包含物品、金币或账号币种一项')
         has_mail=bool(attachments or gold)
-        if has_mail:wire_name(data['message'])
+        if has_mail:wire_name(mail_text(data))
         # Same PVF/policy contract as mail, even for a currency-only versioned gift.
         rewards=self.catalog.items(attachments,q=q,allow_empty=bool(gold or amounts))
         if data['action']=='reward':data['currency_rewards']=amounts
         # Legacy schedules bind this exact shape. Their saved requests lack the
         # new field: do not add display metadata that invalidates that binding.
         return {'gold':gold,'rewards':rewards,'has_mail':has_mail,
+                **({'mail_title':data['mail_title'],'mail_text':mail_text(data)} if has_mail and data.get('mail_title') else {}),
                 **({'template_source':{'id':data['template_id'],'version':data['template_version'],
                                       'adjusted':overrides is not None}} if data.get('template_id') and 'template_overrides' in data else {})}
 

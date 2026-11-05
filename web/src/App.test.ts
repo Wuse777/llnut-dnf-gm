@@ -259,3 +259,13 @@ it('keeps template source when a single mail reward is adjusted',async()=>{
  await w.find('[aria-label="收件角色"]').setValue('4');await w.find('input[placeholder="必填，写入不可删除审计"]').setValue('调整测试');await click(w,'生成预览 →');
  expect(calls.find(c=>c.path==='/operations/preview')?.body).toMatchObject({template_id:9,template_version:1,items:[],template_overrides:{items:[{id:1000,quantity:8}]}});w.unmount()
 })
+
+it('mail title is inline validated and carried into the preview request',async()=>{
+ const {w,calls}=testApp();await flushPromises();await click(w,'邮件发放');
+ await w.find('[aria-label="查找收件账号"]').setValue('gm');await click(w,'查找账号');await click(w,'gm · UID 3');await w.find('[aria-label="收件角色"]').setValue('4');
+ await click(w,'加入清单');await w.find('input[placeholder="必填，写入不可删除审计"]').setValue('title test');
+ await w.find('#mail-title').setValue('a'.repeat(40));await w.find('#mail-message').setValue('😀'.repeat(60));await click(w,'生成预览 →');
+ expect(w.find('#mail-title-error').text()).toContain('255');expect(calls.some(c=>c.path==='/operations/preview')).toBe(false);
+ await w.find('#mail-title').setValue('Welcome');await w.find('#mail-message').setValue('Body');await click(w,'生成预览 →');
+ expect(calls.find(c=>c.path==='/operations/preview')?.body).toMatchObject({mail_title:'Welcome',message:'Body'});w.unmount()
+})

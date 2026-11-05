@@ -106,3 +106,9 @@ it('keeps template provenance while editing only this batch reward',async()=>{
  expect(body.reward).toMatchObject({template_id:9,template_version:1,template_overrides:{gold:50,items:[{id:99,quantity:200}],currency_rewards:{cera:10}}});
  expect(w.text()).toContain('临时调整，不修改原模板');expect(fetcher.mock.calls.some(([,o])=>o?.method==='PUT')).toBe(false)
 })
+
+it('batch mail title is retained in the frozen request',async()=>{
+ const {w,fetcher}=setup();await flushPromises();await fill(w);await w.find('[aria-label="批量金币附件"]').setValue(5);await w.find('[aria-label="批量邮件标题"]').setValue('Event rewards');await preview(w);
+ const data=JSON.parse(fetcher.mock.calls.find(([u])=>String(u).endsWith('/preview'))![1].body);
+ expect(data.reward.mail_title).toBe('Event rewards');expect(data.reward.message).toBe('GM rewards')
+})
