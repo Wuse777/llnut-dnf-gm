@@ -53,6 +53,12 @@ try{
  record={...record,observation_pending:false,result:{...record.result,observation:{state:'observed',collected_at:Date.now()/1000,games:[{service:'game_fixture',state:'down_normal'}]}}};
  await page.getByRole('button',{name:'只查询原申请',exact:true}).click();await page.getByText('game_fixture：进程正常退出（不是存档验收凭据）',{exact:true}).waitFor();
  await page.locator('.maintenance-request-result').scrollIntoViewIfNeeded();await page.screenshot({path:output+'/mobile-result.png'});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ record={...record,result:{...record.result,state:'writers_stopped',events:[...record.result.events,{sequence:5,phase:'writer-stopped',at:Date.now()/1000,service:'auction'}],observation:{state:'observed',collected_at:Date.now()/1000,games:[{service:'game_fixture',state:'down_normal'}],services:[{service:'game_fixture',state:'down_normal'},{service:'auction',state:'down_normal'},{service:'llnut_gate',state:'down_terminated'}]}}};
+ await page.getByRole('button',{name:'只查询原申请',exact:true}).click();
+ await page.getByText('llnut_gate：组件已按计划由TERM退出（不代表维护完成）',{exact:true}).waitFor();
+ assert.equal(await page.getByRole('button',{name:'核对并确认维护',exact:true}).count(),0);
+ await page.locator('.maintenance-observation').scrollIntoViewIfNeeded();await page.screenshot({path:output+'/mobile-writers.png'});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  failLookup=true;await page.getByRole('button',{name:'只查询原申请',exact:true}).click();await page.getByText('当前查询尚未确认；下方仅显示上次记录，不代表执行器仍在运行。',{exact:true}).waitFor();
  assert.equal(await page.getByRole('button',{name:'核对并确认维护',exact:true}).count(),0);assert.equal(calls.filter(c=>c.method==='POST').length,3);
  failLookup=false;ready.write_gate={state:'frozen',operation_id:id};await page.reload();await page.getByRole('button',{name:'打开导航',exact:true}).click();await page.locator('nav').getByRole('button',{name:'维护中心',exact:true}).click();await page.getByText('从历史或刷新恢复的申请只做查询，不自动恢复确认按钮。尚未确认的计划可以取消后重新申请。',{exact:true}).waitFor();
@@ -60,5 +66,5 @@ try{
  await page.locator('.maintenance-write-gate').scrollIntoViewIfNeeded();await page.screenshot({path:output+'/mobile-write-freeze.png'});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  assert.equal(await page.locator('.maintenance-write-gate button').count(),0);
  assert.equal(calls.filter(c=>c.method==='POST').length,3);assert.equal(errors.length,0,JSON.stringify(errors));
- console.log(JSON.stringify({passed:true,desktop:true,mobile:true,reloadGetOnly:true,databaseAdmissionStages:true,postPaths:calls.filter(c=>c.method==='POST').map(c=>c.path),screenshots:output}));
+ console.log(JSON.stringify({passed:true,desktop:true,mobile:true,reloadGetOnly:true,databaseAdmissionStages:true,auxiliaryWriterObservation:true,postPaths:calls.filter(c=>c.method==='POST').map(c=>c.path),screenshots:output}));
 }finally{await browser.close();await new Promise(r=>fixture.close(r))}

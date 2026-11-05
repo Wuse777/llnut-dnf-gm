@@ -102,7 +102,7 @@ class GameDrain:
     def prepare(self):
         h=self.host;identity=h.identity();states=h.services();dependencies=self.dependencies(states)
         if identity['program_sha256'] not in PROGRAMS:raise Refused('maintenance_shutdown_protocol_unadapted')
-        games=[n for n in h.cfg['components'] if n.startswith('game_') and n!='game_template']
+        games=[n for n in h.cfg['components'] if n.startswith('game_') and n!='game_template' and not n.endswith('-log')]
         if not 1<=len(games)<=16 or any(not re.fullmatch(r'game_[a-zA-Z0-9_]{1,48}',n) for n in games):
             raise Refused('maintenance_game_set_unadapted')
         active=[]
@@ -126,11 +126,11 @@ class GameDrain:
         """
         expected=copy.deepcopy(plan)
         core=copy.deepcopy(expected)
-        if 'admission' in core:
+        if 'admission' in core or 'service_cycle' in core:
             # Root coordinator has already journaled/verified this precondition.
             # Compare the game snapshot independently; all events retain the
             # fingerprint of the complete reviewed plan.
-            core.pop('admission');core.pop('fingerprint')
+            core.pop('admission',None);core.pop('service_cycle',None);core.pop('fingerprint')
             core['fingerprint']=hashlib.sha256(canonical(core)).hexdigest()
         if self.prepare()!=core:raise Refused('maintenance_drain_preview_changed')
         if not callable(record):raise Refused('maintenance_durable_recorder_required')

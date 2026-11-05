@@ -9,8 +9,8 @@ const reason=ref(''),reasonError=ref(''),error=ref(''),busy=ref(false),historyBu
 const fresh=ref(false),attempted=ref(false),restored=ref(false),dialog=ref(false),ack=ref(false),ackError=ref(''),key=ref('')
 const storage='dnf-gm.maintenance-pending'
 let alive=true,timer:ReturnType<typeof setInterval>|undefined
-const names:Record<string,string>={cancelling:'取消已保存 · 等待释放原计划',preparing:'等待只读计划',prepared:'计划已生成 · 尚未执行',queued:'确认已入队 · 未证明开始',running:'已记录执行开始 · 需核对进度',needs_review:'执行结果待核对',game_drained:'游戏退出阶段完成 · 尚非完整维护窗口',maintenance_open:'维护窗口已建立',resuming:'正在核对并恢复服务',completed:'维护流程已结束',cancelled:'预览已取消',expired:'计划已过期',rejected:'执行器已拒绝'}
-const phases:Record<string,string>={'freeze-intent':'已记录冻结新写入意向','write-gate-frozen':'普通游戏写入已冻结','database-drained':'已核对原数据库普通写事务结束','drain-started':'开始游戏退出阶段','inhibit-intent':'已记录禁止自动重启意向','inhibit-applied':'禁止自动重启命令已返回','marker-intent':'已记录停止标记意向','marker-applied':'停止标记命令已返回','signal-intent':'已记录退出信号意向','signal-sent':'退出信号命令已返回','game-drained':'游戏进程已正常退出','drain-finished':'游戏退出阶段记录完成'}
+const names:Record<string,string>={cancelling:'取消已保存 · 等待释放原计划',preparing:'等待只读计划',prepared:'计划已生成 · 尚未执行',queued:'确认已入队 · 未证明开始',running:'已记录执行开始 · 需核对进度',needs_review:'执行结果待核对',writers_stopped:'游戏写入组件已退出 · 尚未签发维护窗口',game_drained:'游戏退出阶段完成 · 尚非完整维护窗口',maintenance_open:'维护窗口已建立',resuming:'正在核对并恢复服务',completed:'维护流程已结束',cancelled:'预览已取消',expired:'计划已过期',rejected:'执行器已拒绝'}
+const phases:Record<string,string>={'writers-stop-started':'开始退出其余游戏写入组件','writer-inhibit-intent':'已记录组件禁止自动重启意向','writer-inhibit-applied':'组件禁止重启命令已返回','writer-marker-intent':'已记录组件停止标记意向','writer-marker-applied':'组件停止标记命令已返回','writer-signal-intent':'已记录组件退出信号意向','writer-signal-sent':'组件退出信号命令已返回','writer-stopped':'组件已按计划退出','writers-stopped':'游戏写入组件退出阶段完成','freeze-intent':'已记录冻结新写入意向','write-gate-frozen':'普通游戏写入已冻结','database-drained':'已核对原数据库普通写事务结束','drain-started':'开始游戏退出阶段','inhibit-intent':'已记录禁止自动重启意向','inhibit-applied':'禁止自动重启命令已返回','marker-intent':'已记录停止标记意向','marker-applied':'停止标记命令已返回','signal-intent':'已记录退出信号意向','signal-sent':'退出信号命令已返回','game-drained':'游戏进程已正常退出','drain-finished':'游戏退出阶段记录完成'}
 const terminal=computed(()=>['cancelled','expired','rejected','completed'].includes(detail.value?.result?.state))
 const canConfirm=computed(()=>fresh.value&&detail.value?.can_confirm&&state.value?.write_gate?.state==='open'&&!attempted.value&&!restored.value&&!busy.value)
 const displayedState=computed(()=>{const result=detail.value?.result?.state,status=detail.value?.status;
@@ -18,7 +18,7 @@ const displayedState=computed(()=>{const result=detail.value?.result?.state,stat
  if(status==='cancelled'&&!['cancelled','expired','rejected','completed'].includes(result))return 'cancelling';
  return result||status})
 const gateNames:Record<string,string>={open:'普通写入已开放',frozen:'维护冻结中',unknown:'状态未知 · 普通写入已保护',not_configured:'尚未安装维护写入屏障'}
-const observationNames:Record<string,string>={original:'与计划前状态一致',restart_inhibited:'进程仍在运行，自动重启已禁止',restart_inhibited_marker_missing:'进程仍在运行，停止标记待核对',down_normal:'进程正常退出（不是存档验收凭据）',down_abnormal:'进程异常退出',changed:'与原计划不一致'}
+const observationNames:Record<string,string>={down_terminated:'组件已按计划由TERM退出（不代表维护完成）',original:'与计划前状态一致',restart_inhibited:'进程仍在运行，自动重启已禁止',restart_inhibited_marker_missing:'进程仍在运行，停止标记待核对',down_normal:'进程正常退出（不是存档验收凭据）',down_abnormal:'进程异常退出',changed:'与原计划不一致'}
 const active=computed(()=>!!id.value&&!terminal.value)
 function date(value:any){return typeof value==='number'?new Date(value*1000).toLocaleString('zh-CN',{hour12:false}):'未知'}
 function fail(e:unknown){error.value=uncertainMessage(e);if(e instanceof ApiError){if(e.status===401)emit('expired');if(e.status===403&&e.message.includes('重新认证'))emit('reauth')}}
@@ -89,7 +89,7 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
     <h4>实际状态核对（只读）</h4><p v-if="detail.observation_pending" role="status">核对请求已排队；下方如有记录，仅代表上次核对。</p>
     <template v-if="detail.result?.observation"><p>采集时间：{{date(detail.result.observation.collected_at)}} · {{detail.result.observation.state==='observed'?'已取得状态快照':'状态未知 / 无法完成核对'}}</p>
      <p v-if="detail.result.observation.error" class="notice">{{detail.result.observation.error}}</p>
-     <ul><li v-for="game in detail.result.observation.games" :key="game.service">{{game.service}}：{{observationNames[game.state]||'未知'}}</li></ul>
+     <ul><li v-for="game in (detail.result.observation.services||detail.result.observation.games)" :key="game.service">{{game.service}}：{{observationNames[game.state]||'未知'}}</li></ul>
      <small>这是采集时的进程状态，不证明游戏存档完整，不开放装备写入，也不会重发退出命令或恢复服务。</small>
     </template>
    </section>

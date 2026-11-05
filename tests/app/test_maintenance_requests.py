@@ -343,3 +343,21 @@ def test_prepared_request_cannot_offer_confirmation_without_open_gate(setup,stat
     result=confirm(c,op,detail);assert result.status_code==409,result.text
     assert not list((root/'inbox').glob('*.confirm.json'))
     assert not host.calls
+
+
+def test_writers_stopped_receipt_is_readable_but_not_a_window_or_resume_authority(setup):
+    c,s,db,app,worker,coordinator,host,root=setup
+    op,_=start(setup);worker.tick();path=root/'results'/(op+'.json')
+    receipt=json.loads(path.read_text())
+    receipt.update(state='writers_stopped',can_confirm=False,can_cancel=False,
+                   maintenance_permit=False,can_resume=False,can_replay=False)
+    atomic_json(path,receipt)
+    response=c.get(BASE+'/requests/'+op)
+    assert response.status_code==200
+    result=response.json()
+    assert not result.get('receipt_error')
+    assert result['result']['state']=='writers_stopped'
+    assert not result['can_confirm']
+    assert not result['result']['maintenance_permit']
+    assert not result['result']['can_resume']
+    assert not host.calls

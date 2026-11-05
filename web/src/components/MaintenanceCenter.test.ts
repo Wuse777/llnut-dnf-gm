@@ -67,3 +67,15 @@ it('renders database-admission stages without presenting transaction drain as a 
  expect(w.text()).not.toContain('确认执行一次')
  expect(posts()).toHaveLength(0)
 })
+
+it('shows auxiliary writer progress without implying a maintenance permit',async()=>{
+ const w=setup();await prepare(w)
+ record={...initial(),status:'running',result:{state:'writers_stopped',events:[{sequence:1,phase:'writer-stopped',at:1001,service:'auction'}],observation:{state:'observed',collected_at:1002,games:[],services:[{service:'auction',state:'down_normal'},{service:'llnut_gate',state:'down_terminated'}]}}}
+ await click(w,'只查询原申请')
+ expect(w.text()).toContain('auction')
+ expect(w.text()).toContain('llnut_gate')
+ expect(w.text()).toContain('TERM退出')
+ expect(w.text()).toContain('不开放装备写入')
+ expect(w.text()).not.toContain('核对并确认维护')
+ expect(posts()).toHaveLength(1)
+})

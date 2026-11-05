@@ -22,15 +22,16 @@ from dnfgm.inventory_fence import _read, directory
 from dnfgm.release_files import Refused, atomic_json, canonical, maintenance_lock, OP, HEX
 from game_drain import GameDrain, TIMEOUT
 from maintenance_admission import validate_plan as validate_admission_plan
-from maintenance_gate import binding_hash
+from maintenance_gate import binding_hash, WriteGateManager
+from service_lifecycle import validate_cycle, stop_steps, ServiceLifecycle, STOP_TIMEOUT
 
 STATE = Path('/var/lib/dnf-gm/maintenance-drain')
 GLOBAL_LOCK = Path('/var/lib/dnf-gm/maintenance.lock')
 PREVIEW_TTL = 300
 MAX_BYTES = 256 * 1024
-STATES = {'prepared', 'running', 'needs_review', 'game_drained', 'cancelled', 'expired'}
+STATES = {'prepared', 'running', 'needs_review', 'game_drained', 'writers_stopped', 'cancelled', 'expired'}
 TERMINAL_NO_EFFECT = {'cancelled', 'expired'}
-COMMAND_INTENTS = {'inhibit-intent', 'marker-intent', 'signal-intent'}
+COMMAND_INTENTS = {'inhibit-intent', 'marker-intent', 'signal-intent', 'writer-inhibit-intent', 'writer-marker-intent', 'writer-signal-intent'}
 
 
 def error_code(error):
@@ -47,9 +48,10 @@ def digest(value):
 
 class DrainCoordinator:
     def __init__(self, root, host, *, lock_path=None, owner=0,
-                 clock=time.time, monotonic=time.monotonic, writer=atomic_json, admission=None):
+                 clock=time.time, monotonic=time.monotonic, writer=atomic_json, admission=None, lifecycle=None):
         self.root = Path(root)
         self.admission = admission
+        self.lifecycle = lifecycle
         self.host = host
         self.owner = owner
         self.clock, self.monotonic, self.writer = clock, monotonic, writer
@@ -133,22 +135,27 @@ class DrainCoordinator:
         self._id(request_id)
         doc = _read(self.root, request_id + '.json', self.owner, MAX_BYTES)
         try:
-            if (not isinstance(doc, dict) or type(doc['version']) is not int or doc['version'] not in (1, 2) or doc['request_id'] != request_id
+            if (not isinstance(doc, dict) or type(doc['version']) is not int or doc['version'] not in (1, 2, 3) or doc['request_id'] != request_id
                     or doc['state'] not in STATES or doc['reason'] != self._reason(doc['reason'])
-                    or not isinstance(doc['events'], list) or len(doc['events']) > 160):
+                    or not isinstance(doc['events'], list) or len(doc['events']) > 512):
                 raise ValueError()
             for field in ('created_at', 'created_monotonic', 'updated_at'):
                 value = doc[field]
                 if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
                     raise ValueError()
-            if doc['state'] in {'running', 'needs_review', 'game_drained'}:
+            if doc['state'] in {'running', 'needs_review', 'game_drained', 'writers_stopped'}:
                 for field in ('started_at', 'started_monotonic'):
                     value = doc[field]
                     if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
                         raise ValueError()
-            if doc['version'] == 2:
+            if doc['version'] >= 2:
                 validate_admission_plan(doc['plan']['admission'])
             elif 'admission' in doc['plan']:
+                raise ValueError()
+            if doc['version'] == 3:
+                validate_cycle(doc['plan'])
+                if doc['state']=='game_drained':raise ValueError()
+            elif 'service_cycle' in doc['plan'] or doc['state']=='writers_stopped':
                 raise ValueError()
             plan = copy.deepcopy(doc['plan'])
             fingerprint = plan.pop('fingerprint')
@@ -173,7 +180,7 @@ class DrainCoordinator:
                     raise ValueError()
             if doc['state'] in {'prepared', *TERMINAL_NO_EFFECT} and doc['events']:
                 raise ValueError()
-            if doc['state'] == 'game_drained' and len(doc['events']) != len(expected):
+            if doc['state'] in ('game_drained','writers_stopped') and len(doc['events']) != len(expected):
                 raise ValueError()
             return doc
         except (KeyError, TypeError, ValueError, AttributeError):
@@ -201,6 +208,7 @@ class DrainCoordinator:
         steps.append(('drain-finished', {'state': 'game_drained', 'fingerprint': plan['fingerprint'],
                       'services': [g['service'] for g in plan['games']],
                       'maintenance_permit': False, 'client_verified': False}))
+        if 'service_cycle' in plan:steps.extend(stop_steps(plan))
         return steps
 
     @staticmethod
@@ -210,6 +218,11 @@ class DrainCoordinator:
             return (isinstance(data, dict) and set(data) == set(expected) | {time_field}
                     and all(type(data[k]) is type(v) and data[k] == v for k, v in expected.items())
                     and type(data[time_field]) in (int, float) and math.isfinite(data[time_field]) and data[time_field] >= 0)
+        if phase == 'writer-stopped':
+            return (isinstance(data,dict) and set(data)=={'service','exit_code','signum'}
+                    and data['service']==expected['service'] and type(data['exit_code']) is int and type(data['signum']) is int
+                    and (data['exit_code']==0 and data['signum'] in (0,-1)
+                         or expected['signal']=='SIGTERM' and data['exit_code']==256 and data['signum']==15))
         if phase == 'game-drained':
             return (isinstance(data, dict) and set(data) == {'service', 'exit_code', 'signum'}
                     and data['service'] == expected['service'] and type(data['exit_code']) is int
@@ -230,7 +243,7 @@ class DrainCoordinator:
                             'service': e['data'].get('service')} for e in events],
                 'command_may_have_run': any(e['phase'] in COMMAND_INTENTS for e in events),
                 'error': doc.get('error'), 'maintenance_permit': False,
-                'can_confirm': doc['version'] == 2 and doc['state'] == 'prepared' and current,
+                'can_confirm': doc['version'] >= 2 and doc['state'] == 'prepared' and current,
                 'preview_expired': doc['state'] == 'prepared' and not current,
                 'can_cancel': doc['state'] == 'prepared', 'can_replay': False,
                 'can_resume': False, 'client_verified': False}
@@ -258,12 +271,16 @@ class DrainCoordinator:
             validate_admission_plan(admission_plan)
             plan = GameDrain(self.host).prepare()
             binding_hash(plan['identity'])
+            if self.lifecycle is not None:
+                if self.lifecycle.host is not self.host:raise Refused('maintenance_service_host_mismatch')
+                plan['service_cycle']=self.lifecycle.prepare(plan)
+                validate_cycle(plan)
             self.admission.verify_plan(admission_plan)
             plan.pop('fingerprint')
             plan['admission'] = admission_plan
             plan['fingerprint'] = digest(plan)
             now, mono = self._now()
-            doc = {'version': 2, 'request_id': request_id, 'reason': reason, 'plan': plan,
+            doc = {'version': 3 if self.lifecycle is not None else 2, 'request_id': request_id, 'reason': reason, 'plan': plan,
                    'created_at': now, 'created_monotonic': mono, 'updated_at': now,
                    'state': 'prepared', 'events': []}
             doc['binding'] = digest({k: doc[k] for k in ('request_id', 'reason', 'plan', 'created_at', 'created_monotonic')})
@@ -297,8 +314,10 @@ class DrainCoordinator:
             # only return its durable record. Never call the adapter a second time.
             if doc['state'] != 'prepared':
                 return self.view(doc)
-            if doc['version'] != 2 or self.admission is None:
+            if doc['version'] < 2 or self.admission is None:
                 raise Refused('maintenance_admission_required')
+            if doc['version']==3 and (self.lifecycle is None or self.lifecycle.host is not self.host):
+                raise Refused('maintenance_service_adapter_required')
             self._claim(request_id)
             now, mono = self._now()
             if not (0 <= now - doc['created_at'] < PREVIEW_TTL and 0 <= mono - doc['created_monotonic'] < PREVIEW_TTL):
@@ -323,8 +342,10 @@ class DrainCoordinator:
                 next_doc = copy.deepcopy(doc)
                 next_doc['events'].append(event)
                 next_doc['updated_at'] = at
-                if phase == 'drain-finished':
+                if phase == 'drain-finished' and doc['version']<3:
                     next_doc['state'] = 'game_drained'
+                elif phase == 'writers-stopped':
+                    next_doc['state'] = 'writers_stopped'
                 self._write(request_id + '.json', next_doc)
                 doc.clear()
                 doc.update(next_doc)
@@ -336,11 +357,12 @@ class DrainCoordinator:
                 proof = self.admission.drain(doc['plan']['admission'], token)
                 record('database-drained', proof)
                 GameDrain(self.host).execute(doc['plan'], record)
+                if doc['version']==3:self.lifecycle.stop(doc['plan'],record)
             except Exception as error:
                 # Read back after uncertain fsync/replace. A failed receipt write
                 # must not overwrite a successful final receipt or lose an intent.
                 prior = self._load(request_id)
-                if prior['state'] != 'game_drained':
+                if prior['state'] not in ('game_drained','writers_stopped'):
                     prior.update(state='needs_review', error=error_code(error), updated_at=self._now()[0])
                     self._write(request_id + '.json', prior)
                 return self.view(prior)
@@ -358,6 +380,10 @@ class DrainCoordinator:
                   'maintenance_permit': False, 'can_replay': False, 'can_resume': False}
         try:
             plan = doc['plan']
+            if doc['version']==3:
+                observed=ServiceLifecycle(self.host).observe(plan,doc['events'])
+                result.update(state='observed',services=observed,games=[x for x in observed if x['service'] in plan['service_cycle']['games']])
+                return result
             if self.host.identity() != plan['identity']:
                 raise Refused('maintenance_drain_target_changed')
             states = self.host.services()
@@ -420,6 +446,7 @@ class DrainMonitor:
             # Allow fixed waits for each planned game plus probe/receipt overhead.
             # Neither a restart nor a read renews this absolute interval.
             duration = max(1, len(doc['plan']['games'])) * (TIMEOUT + 5) + 60
+            if doc['version']==3:duration += len(doc['plan']['service_cycle']['stop_order'])*(STOP_TIMEOUT+10)
             result = {'active': True, 'verified': False, 'authority': 'drain-transition',
                       'request_id': request_id, 'phase': doc['state'],
                       'collected_at': now, 'expires_at': doc['started_at'] + duration,
@@ -436,12 +463,21 @@ class DrainMonitor:
                    for name in self.required_components):
                 result['reason'] = 'maintenance_preexisting_component_failure'
                 return result
+            # The collector has no application DB credentials. Re-read only the
+            # root-owned gate token; an old journal alone cannot waive protection.
+            gate = c.admission.gate if c.admission is not None else WriteGateManager(
+                '/var/lib/dnf-gm/write-gate', owner=c.owner)
+            tokens = [e['data'] for e in doc['events'] if e['phase'] == 'write-gate-frozen']
+            if len(tokens) != 1:
+                result['reason'] = 'maintenance_freeze_not_proven'
+                return result
+            gate.check_frozen(tokens[0])
             observation = c.observe(request_id)
             if observation['state'] != 'observed':
                 result['reason'] = observation.get('error', 'maintenance_observation_unknown')
                 return result
-            known = {'original', 'restart_inhibited', 'restart_inhibited_marker_missing', 'down_normal'}
-            if any(g['state'] not in known for g in observation['games']):
+            known = {'original', 'restart_inhibited', 'restart_inhibited_marker_missing', 'down_normal','down_terminated'}
+            if any(g['state'] not in known for g in observation.get('services',observation['games'])):
                 result['reason'] = 'maintenance_drain_unexpected_state'
                 return result
             # Do not race over a cancellation/state update; observation alone is
@@ -453,7 +489,9 @@ class DrainMonitor:
             if not (0 <= after - doc['started_at'] < duration and 0 <= after_mono - doc['started_monotonic'] < duration):
                 result['reason'] = 'maintenance_drain_observation_expired'
                 return result
+            gate.check_frozen(tokens[0])
             result.update(verified=True, games=observation['games'])
+            if 'services' in observation:result['services']=observation['services']
             return result
         except Exception as error:
             return {'active': True, 'verified': False, 'authority': 'drain-transition',

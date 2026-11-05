@@ -23,7 +23,7 @@ ROOT_UID = 0
 ID = re.compile(r'^[a-f0-9]{32}$')
 SHA = re.compile(r'^[a-f0-9]{64}$')
 PHASES = ('prepare', 'confirm', 'cancel', 'observe')
-STATES = {'prepared','running','needs_review','game_drained','cancelled','expired','rejected',
+STATES = {'prepared','running','needs_review','game_drained','writers_stopped','cancelled','expired','rejected',
           'maintenance_open','resuming','completed'}
 PUBLIC_FIELDS = {'state','fingerprint','created_at','expires_at','updated_at','revision','phase',
                  'games','events','command_may_have_run','error','maintenance_permit',

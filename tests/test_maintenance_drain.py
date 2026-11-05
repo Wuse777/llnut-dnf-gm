@@ -528,13 +528,13 @@ def test_live_dependency_or_unplanned_service_changes_before_confirmation_refuse
 def test_existing_monitor_window_reads_transition_only_when_no_permit(rig, monkeypatch, tmp_path):
     import inventory_window
     import maintenance_drain
-    import game_drain
+    import service_lifecycle
     from types import SimpleNamespace
     broker, host, _ = rig
     interrupted(broker, host)
     monkeypatch.setattr(maintenance_drain, 'STATE', broker.root)
     monkeypatch.setattr(maintenance_drain, 'DrainCoordinator', lambda *a, **kw: broker)
-    monkeypatch.setattr(game_drain, 'Host', lambda probe: host)
+    monkeypatch.setattr(service_lifecycle, 'ServiceHost', lambda probe: host)
     adapter = object.__new__(inventory_window.MonitorWindow)
     root = tmp_path / 'runtime';root.mkdir()
     adapter.manager = SimpleNamespace(root=root, probe=None)
@@ -550,11 +550,11 @@ def test_existing_monitor_window_reads_transition_only_when_no_permit(rig, monke
 def test_existing_transition_loading_failure_stays_unverified(rig, monkeypatch, tmp_path):
     import inventory_window
     import maintenance_drain
-    import game_drain
+    import service_lifecycle
     from types import SimpleNamespace
     broker, _, _ = rig
     monkeypatch.setattr(maintenance_drain, 'STATE', broker.root)
-    monkeypatch.setattr(game_drain, 'Host', lambda probe: (_ for _ in ()).throw(RuntimeError('secret path')))
+    monkeypatch.setattr(service_lifecycle, 'ServiceHost', lambda probe: (_ for _ in ()).throw(RuntimeError('secret path')))
     adapter = object.__new__(inventory_window.MonitorWindow)
     adapter.manager = SimpleNamespace(root=tmp_path/'runtime', probe=None)
     assert adapter.status() == {'active': True, 'verified': False, 'reason': 'maintenance_transition_unavailable'}

@@ -227,12 +227,12 @@ class MonitorWindow:
 
     def status(self):
         if not os.path.lexists(self.manager.root/'permit.json'):
-            from game_drain import Host
+            from service_lifecycle import ServiceHost
             from maintenance_drain import DrainCoordinator, DrainMonitor, STATE, GLOBAL_LOCK
             if not os.path.lexists(STATE):
                 return {'active':False,'verified':False}
             try:
-                return DrainMonitor(DrainCoordinator(STATE,Host(self.manager.probe),lock_path=GLOBAL_LOCK),
+                return DrainMonitor(DrainCoordinator(STATE,ServiceHost(self.manager.probe),lock_path=GLOBAL_LOCK),
                                     required_components=self.monitored_components).status()
             except Exception:
                 return {'active':True,'verified':False,'reason':'maintenance_transition_unavailable'}
