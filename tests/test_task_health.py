@@ -32,7 +32,7 @@ def test_head_needs_continuous_observation_not_creation_age():
     assert h.observe_head(('old',1))=='observing'
     now[0]=60;assert h.observe_head(('old',1))=='observing'
     now[0]=120;assert h.observe_head(('old',1))=='stalled'
-    now[0]=121;assert h.observe_head(('old',2))=='observing'
+    now[0]=121;assert h.observe_head(('old',2))=='advancing'
     now[0]=220;assert h.observe_head(('old',2))=='observing' # observation gap
     now[0]=240;assert h.observe_head(('next',2))=='observing'
     assert h.observe_head(None)=='idle'

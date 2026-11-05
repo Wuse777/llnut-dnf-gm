@@ -22,6 +22,7 @@ class Settings:
     cleanup_manifest: str = '/run/dnf-gm/cleanup.json'
     cleanup_dir: str = '/var/lib/dnf-gm/cleanup'
     backup_health_file: str = '/var/lib/dnf-gm/backup-health.json'
+    task_probe_token: str = ''
     alert_file: str = '/var/lib/dnf-gm/alerts/public.json'
     telemetry_file: str = '/var/lib/dnf-gm/telemetry.sqlite'
     catalog_file: str = '/var/lib/dnf-gm/catalog.sqlite'
@@ -42,6 +43,11 @@ class Settings:
     inventory_program_sha256: str = ''
 
     def check(self):
+        from .task_probe import valid_token
+        if self.task_probe_token != '' and not valid_token(self.task_probe_token):
+            raise ValueError('Task probe needs a dedicated 64-hex token or an empty disabled value')
+        if self.task_probe_token and self.task_probe_token in (self.secret, self.db_password):
+            raise ValueError('Task probe token must not reuse an application or database secret')
         if len(self.secret) < 32 or not self.db_password:
             raise ValueError('Private secret and dedicated database password required')
         if self.db_user.lower() in ('root', 'game'):

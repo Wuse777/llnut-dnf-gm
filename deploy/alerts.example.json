@@ -7,5 +7,7 @@
   },
   "webhook_url": "",
   "webhook_token": "",
-  "backup_health_enabled": false
+  "backup_health_enabled": false,
+  "task_health_enabled": false,
+  "task_probe_token": ""
 }

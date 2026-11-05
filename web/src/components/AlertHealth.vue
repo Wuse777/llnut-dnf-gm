@@ -12,7 +12,7 @@ onUnmounted(()=>{alive=false;if(timer)clearInterval(timer)})
 </script>
 <template><section class="panel alert-health" aria-labelledby="alert-health-title">
  <div class="section-heading"><h2 id="alert-health-title">主动健康告警</h2><button :disabled="busy" @click="load">{{busy?'正在读取告警…':'刷新告警'}}</button></div>
- <p class="field-hint">独立观察器每30秒检查；连续异常／恢复确认后记录一次。同一故障不重复刷屏，未知数据不判定为恢复。这里只读，不会重启服务。</p>
+ <p class="field-hint">独立观察器每30秒检查；连续异常／恢复确认后记录一次。同一故障不重复刷屏，未知数据不判定为恢复。这里只读，不会重启服务。任务规则需维护者单独启用；未启用不代表任务正常。</p>
  <p v-if="error" class="submit-error" role="alert">{{error}}</p>
  <template v-if="data">
   <p v-if="data.state==='unavailable'" class="warning">告警观察器未启用或报告不可读，不能据此判断服务正常。需要维护者检查独立定时器。</p>

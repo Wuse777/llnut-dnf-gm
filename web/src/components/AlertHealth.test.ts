@@ -16,3 +16,9 @@ it('clears old healthy content after read failure and puts the error next to ref
 it('escapes labels and does not render markup from reports',async()=>{const d=sample();d.rules[0].label='<img src=x onerror=alert(1)>';vi.mocked(api).mockResolvedValue(d);const w=render();await flushPromises();expect(w.find('img').exists()).toBe(false);expect(w.text()).toContain('<img src=x')})
 it('polls only visible and never after unmount',async()=>{vi.useFakeTimers({toFake:['setInterval','clearInterval']});const visible=vi.spyOn(document,'hidden','get').mockReturnValue(false);const w=render();await flushPromises();await vi.advanceTimersByTimeAsync(30000);expect(api).toHaveBeenCalledTimes(2);visible.mockReturnValue(true);await vi.advanceTimersByTimeAsync(60000);expect(api).toHaveBeenCalledTimes(2);w.unmount();wrappers=[];visible.mockReturnValue(false);await vi.advanceTimersByTimeAsync(60000);expect(api).toHaveBeenCalledTimes(2)})
 it('disabled optional evidence is not presented as a new fault',async()=>{const d=sample();d.rules[0].observed='disabled';d.rules[0].active=true;vi.mocked(api).mockResolvedValue(d);const w=render();await flushPromises();expect(w.text()).toContain('未启用此项证据告警');expect(w.find('article.warning').exists()).toBe(false)})
+it('shows task faults separately from unavailable task evidence, and never exposes token controls',async()=>{
+ const d=sample();d.rules=[{key:'tasks',label:'运营任务需要处理',active:true,observed:'bad',pending_confirmation:false},{key:'task_probe',label:'运营任务检查不可用或不完整',active:true,observed:'unknown',pending_confirmation:false}]
+ vi.mocked(api).mockResolvedValue(d);const w=render();await flushPromises()
+ expect(w.text()).toContain('任务规则需维护者单独启用');expect(w.findAll('article')).toHaveLength(2);expect(w.findAll('article')[0].text()).toContain('故障中');expect(w.findAll('article')[1].text()).toContain('故障尚未确认恢复')
+ expect(w.findAll('input')).toHaveLength(0);expect(w.findAll('button')).toHaveLength(1)
+})

@@ -418,6 +418,22 @@ def create_app(settings=None, database=None):
         limits.check('cleanup-dispatch:'+key,10)
         return cleanup.dispatch(op)
 
+    @app.get(API+'/internal/task-health')
+    def task_health_probe(request:Request):
+        import hmac
+        from .task_probe import valid_token, summary
+        # Uvicorn is deployed with --no-proxy-headers. Never trust forwarded IPs;
+        # the nginx internal-prefix deny is an additional, not sole, barrier.
+        token = settings.task_probe_token
+        if (not valid_token(token) or not request.client or request.client.host not in ('127.0.0.1','::1')
+                or request.query_params or any(h in request.headers for h in ('origin','forwarded','x-forwarded-for'))):
+            raise HTTPException(404,'Not found')
+        limits.check('task-probe:global',30)
+        authorization = request.headers.get('authorization','')
+        if not hmac.compare_digest(authorization.encode(),('Bearer '+token).encode()):
+            raise HTTPException(404,'Not found')
+        return summary(task_monitor.read())
+
     @app.get(API+'/task-health')
     def task_health(request:Request):
         key=user(request)

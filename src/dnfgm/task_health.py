@@ -57,17 +57,21 @@ class TaskHealth:
         self.clock, self.wall = clock, wall
         self.lock = threading.Lock()
         self.head = None
+        self.progress_seen = False
         self.since = self.last = None
 
     def observe_head(self, signature):
         now = self.clock()
         if signature is None:
             self.head = self.since = self.last = None
+            self.progress_seen = False
             return 'idle'
-        if signature != self.head or self.last is None or now - self.last > 90:
-            self.head, self.since = signature, now
+        if self.head is None or signature[0] != self.head[0] or self.last is None or now-self.last > 90:
+            self.head, self.since, self.progress_seen = signature, now, False
+        elif signature != self.head:
+            self.head, self.since, self.progress_seen = signature, now, True
         self.last = now
-        return 'stalled' if now - self.since >= 120 else 'observing'
+        return 'stalled' if now - self.since >= 120 else 'advancing' if self.progress_seen else 'observing'
 
     def read(self):
         # No parallel snapshot queries from multiple tabs; no cached all-clear.
@@ -140,7 +144,7 @@ class TaskHealth:
             if schedule_id and workers['schedules']['state'] in ('disabled','stopped','failing','stalled'):
                 issue('schedule', schedule_id, 'worker_' + workers['schedules']['state'])
             c.rollback()
-        return {'state': 'attention' if issues else 'unknown' if truncated else 'observing' if head or (schedule_id and workers['schedules']['state']=='observing') else 'clear',
+        return {'state': 'attention' if issues else 'unknown' if truncated else 'observing' if (head and (progress!='advancing' or workers['rewards']['state']=='observing')) or (schedule_id and workers['schedules']['state']=='observing') else 'clear',
                 'checked_at': now, 'issues': issues, 'truncated': truncated, 'workers': workers,
                 'progress': progress, 'head_job_id': head[0]['id'] if head else None,
                 'note': '管理任务状态，不代表游戏内效果；无自动重发。停滞判断需要连续观察120秒，超过90秒观察间隔重新计时。'}

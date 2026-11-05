@@ -13,7 +13,8 @@ import uuid
 
 LABELS = {'collector': '状态采集失效', 'gm': 'GM接口不可用', 'core': '游戏或核心服务异常',
           'memory': '可用内存不足', 'swap': 'Swap剩余不足', 'disk': '磁盘剩余不足',
-          'backup': '管理库备份证据异常', 'restore': '当前备份缺少有效恢复核验'}
+          'backup': '管理库备份证据异常', 'restore': '当前备份缺少有效恢复核验',
+          'tasks': '运营任务需要处理', 'task_probe': '运营任务检查不可用或不完整'}
 MAX_BYTES = 256 * 1024
 
 
@@ -63,7 +64,7 @@ def atomic(path, value, mode=0o600):
             os.unlink(name)
 
 
-def observations(status, gm_ok, now, thresholds, backup=None):
+def observations(status, gm_ok, now, thresholds, backup=None, tasks=None):
     fresh = isinstance(status, dict) and recent(status.get('collected_at'), now)
     result = {key: {'bad': None, 'sample': None} for key in LABELS}
     result['collector'] = {'bad': not fresh or status.get('state') == 'unknown' or type(status.get('core_ok')) is not bool, 'sample': now}
@@ -74,6 +75,18 @@ def observations(status, gm_ok, now, thresholds, backup=None):
         result['backup'] = {'bad': backup.get('state')!='ok' or (backup.get('backup') or {}).get('state')!='recent', 'sample': now}
         if backup.get('state')=='ok':
             result['restore'] = {'bad': (backup.get('restore') or {}).get('state')!='recent', 'sample': now}
+    if tasks is None:
+        for key in ('tasks','task_probe'):result[key]['disabled']=True
+    else:
+        from .task_probe import validate_summary
+        try:
+            task = validate_summary(tasks, now)
+        except (ValueError, TypeError, KeyError):
+            result['task_probe']={'bad':True,'sample':now}
+        else:
+            result['task_probe']={'bad':task['state']=='unknown' or task['truncated'],'sample':now}
+            result['tasks']={'bad':True if task['state']=='attention' else False if task['state']=='clear' else None,
+                             'sample':task['checked_at']}
     if not fresh:
         return result
     sample = status['collected_at']

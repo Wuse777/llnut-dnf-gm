@@ -11,6 +11,7 @@ import time
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, ProxyHandler, HTTPRedirectHandler
 
+from dnfgm.task_probe import PROBE_PATH, valid_token
 from dnfgm.alerts import atomic, delivery, new_state, observations, observe, public_view, read_json, validate_state
 
 CONFIG = Path('/etc/dnf-gm-alerts.json')
@@ -24,9 +25,14 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 def validate_config(cfg):
-    if set(cfg) - {'health_host', 'thresholds', 'webhook_url', 'webhook_token', 'backup_health_enabled'}:
+    if set(cfg) - {'health_host', 'thresholds', 'webhook_url', 'webhook_token', 'backup_health_enabled', 'task_health_enabled', 'task_probe_token'}:
         raise ValueError('Unknown notification configuration')
     if type(cfg.get('backup_health_enabled',False)) is not bool:raise ValueError('Explicit backup health flag required')
+    if type(cfg.get('task_health_enabled',False)) is not bool:raise ValueError('Explicit task health flag required')
+    token=cfg.get('task_probe_token','')
+    if (token != '' and not valid_token(token)) or (cfg.get('task_health_enabled',False) and not valid_token(token)):
+        raise ValueError('Task observer requires a dedicated 64-hex token')
+    if token and token == cfg.get('webhook_token'):raise ValueError('Do not reuse the webhook credential')
     host = cfg.get('health_host')
     if not isinstance(host, str) or not re.fullmatch(r'[a-zA-Z0-9.-]+(?::[0-9]{1,5})?', host):
         raise ValueError('Explicit health Host header required')
@@ -75,6 +81,20 @@ def health(cfg):
         return False
 
 
+def task_health(cfg):
+    req = Request('http://127.0.0.1:8765' + PROBE_PATH,
+                  headers={'Host': cfg['health_host'], 'Authorization': 'Bearer ' + cfg['task_probe_token']})
+    try:
+        with build_opener(ProxyHandler({}), NoRedirect()).open(req, timeout=3) as response:
+            body = response.read(4097)
+            if response.status != 200 or len(body) > 4096:
+                return {'state':'unknown'}
+            # Wall freshness is validated again in observations at processing time.
+            return json.loads(body)
+    except Exception:
+        return {'state':'unknown'}
+
+
 def notify(cfg, body):
     headers = {'Content-Type': 'application/json', 'User-Agent': 'dnf-gm-health/1'}
     if cfg.get('webhook_token'):
@@ -84,7 +104,7 @@ def notify(cfg, body):
         return 200 <= r.status < 300  # Never read/log arbitrary receiver response bodies.
 
 
-def run_once(cfg, *, root=ROOT, status_path=STATUS, clock=time.time, probe=health, send=notify):
+def run_once(cfg, *, root=ROOT, status_path=STATUS, clock=time.time, probe=health, send=notify, task_probe=task_health):
     # The installer owns this directory and grants write access only to the
     # observer account. Do not silently create directories from untrusted paths.
     fd = os.open(root / 'worker.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
@@ -102,12 +122,13 @@ def run_once(cfg, *, root=ROOT, status_path=STATUS, clock=time.time, probe=healt
         except (OSError, ValueError, TypeError):
             status = None
         gm_ok = probe(cfg)
+        tasks = task_probe(cfg) if cfg.get('task_health_enabled',False) else None
         now = clock()
         backup=None
         if cfg.get('backup_health_enabled',False):
             from dnfgm.backup_health import read_health
             backup=read_health('/var/lib/dnf-gm/backup-health.json',now)
-        observe(state, observations(status, gm_ok, now, cfg['thresholds'], backup), now)
+        observe(state, observations(status, gm_ok, now, cfg['thresholds'], backup, tasks), now)
         def persist(value):
             atomic(root / 'private.json', value)
             atomic(root / 'public.json', public_view(value, now), mode=0o644)
