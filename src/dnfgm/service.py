@@ -651,9 +651,11 @@ class Service:
         # Same PVF/policy contract as mail, even for a currency-only versioned gift.
         rewards=self.catalog.items(attachments,q=q,allow_empty=bool(gold or amounts))
         if data['action']=='reward':data['currency_rewards']=amounts
+        # Legacy schedules bind this exact shape. Their saved requests lack the
+        # new field: do not add display metadata that invalidates that binding.
         return {'gold':gold,'rewards':rewards,'has_mail':has_mail,
                 **({'template_source':{'id':data['template_id'],'version':data['template_version'],
-                                      'adjusted':overrides is not None}} if data.get('template_id') else {})}
+                                      'adjusted':overrides is not None}} if data.get('template_id') and 'template_overrides' in data else {})}
 
     def apply_reward(self,q,op,data,preview,account,exact_balances=False):
         # Validate the frozen catalogue/template even for currency-only rewards.

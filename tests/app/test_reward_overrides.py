@@ -51,3 +51,15 @@ def test_adjusted_batch_credits_once_and_delivers_each_character(env):
     for _ in range(3):app.state.reward_jobs.step()
     assert read(db,'SELECT cera FROM taiwan_billing.cash_cera')[0]['cera']==1025
     assert len(rows(db))==2 and all(r['gold']==50 and r['add_info']==200 for r in rows(db))
+
+
+def test_legacy_template_schedule_binding_shape_is_preserved(env):
+    c,s,db,app=env;enable(s);tid=gift(c)
+    legacy={'action':'reward','template_id':tid,'template_version':1,'items':[],
+            'gold':0,'message':'GM rewards','currency_rewards':{}}
+    with db.connect() as con,con.cursor() as q:
+        old_shape=app.state.service.reward_snapshot(q,dict(legacy))
+        new_shape=app.state.service.reward_snapshot(q,{**legacy,'template_overrides':None})
+    assert 'template_source' not in old_shape
+    assert new_shape.pop('template_source')=={'id':tid,'version':1,'adjusted':False}
+    assert old_shape==new_shape

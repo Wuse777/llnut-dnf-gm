@@ -72,8 +72,8 @@ it('rejects blank reason and zero amount before making preview requests',async()
 it('updates template identity after create so next save edits rather than duplicates',async()=>{
  const {w,calls}=testApp();await flushPromises();await click(w,'邮件发放');await click(w,'加入清单');await click(w,'另存为礼包模板');await w.findAll('input').find(i=>i.element.parentElement?.textContent?.includes('模板名称'))!.setValue('测试礼包');await click(w,'创建礼包模板');await click(w,'保存为新版本');expect(calls.filter(x=>x.path==='/gift-templates'&&x.method==='POST')).toHaveLength(1);expect(calls.find(x=>x.path==='/gift-templates/9'&&x.method==='PUT')?.body.expected_version).toBe(1);w.unmount()
 })
-it('selecting template shows its actual items and editing detaches immutable binding',async()=>{
- const {w}=testApp();await target(w);await click(w,'礼包模板');await click(w,'用于发放');expect(w.text()).toContain('绑定模板 #9 v1');expect(w.text()).toContain('野草莓');expect(w.text()).toContain('#1000');await w.find('input[aria-label="物品数量 1000"]').setValue(3);expect(w.text()).not.toContain('绑定模板 #9 v1');w.unmount()
+it('selecting template shows its actual items and editing preserves provenance',async()=>{
+ const {w}=testApp();await target(w);await click(w,'礼包模板');await click(w,'用于发放');expect(w.text()).toContain('绑定模板 #9 v1');expect(w.text()).toContain('野草莓');expect(w.text()).toContain('#1000');await w.find('input[aria-label="物品数量 1000"]').setValue(3);expect(w.text()).toContain('绑定模板 #9 v1');expect(w.text()).toContain('已临时调整本次奖励');await click(w,'解除来源绑定');expect(w.text()).not.toContain('绑定模板 #9 v1');w.unmount()
 })
 it('shows session restoration rather than flashing the login form',async()=>{
  const {w}=testApp();expect(w.text()).toContain('正在恢复安全会话');expect(w.text()).not.toContain('管理员密码');await flushPromises();expect(w.find('aside').exists()).toBe(true);w.unmount()
