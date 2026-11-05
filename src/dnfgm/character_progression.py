@@ -71,4 +71,4 @@ class CharacterProgression:
         comparison=compare_archive(row['lev'],row['selection_exp'],row['saved_exp'],thresholds)
         return {'target':target,'level':row['lev'],'stat_present':row['stat_id'] is not None,'catalog':catalog,
                 **comparison,'collected_at':time.time(),'writable':False,
-                'note':'仅显示数据库快照，不是客户端实时经验。两处经验可能因保存时点不同而有差异，不自动判定损坏或修复；当前不修改等级、经验、技能点、属性或任务。'}
+                'note':'仅显示数据库快照，不是客户端实时经验。两处经验可能因保存时点不同而有差异，不自动判定损坏或修复；本区域仅查询；下方独立等级维护入口会预览关联修改，不自动修正。'}

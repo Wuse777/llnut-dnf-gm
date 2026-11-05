@@ -37,7 +37,7 @@ onMounted(load);onBeforeUnmount(()=>{alive=false})
   </article></div>
   <p v-if="data.range.state==='available'">本级参考起点 {{number(data.range.lower)}} → 下级参考阈值 {{number(data.range.upper)}}（非运行时升级保证）</p>
   <p class="field-hint">{{data.catalog.note}} 数据采集于 {{new Date(data.collected_at*1000).toLocaleString('zh-CN',{hour12:false})}}。</p>
-  <details><summary>为什么目前不直接修改等级？</summary><p>当前镜像的原生升级还会处理技能点、职业成长属性、活动奖励等。直接改等级和经验不等同于执行完整升级；相关写操作仍在适配，本页不提供假升级按钮。</p></details>
+  <details><summary>存档维护与在线升级有什么区别？</summary><p>当前镜像的原生升级还会处理技能点、职业成长属性、活动奖励等。下方等级维护会同步已适配的存档字段，但不会模拟在线升级事件、活动奖励或任务完成。职业修改与技能重置仍是独立功能。</p></details>
  </template>
 </section></template>
 <style scoped>

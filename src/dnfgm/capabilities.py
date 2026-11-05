@@ -42,6 +42,7 @@ FEATURES = (
  ('char-rename','角色改名','角色维护','accounts','char-rename','显式维护窗口内同步角色与关联名称缓存，保留UID、角色编号及历史文字。'),
  ('quest-clear','单任务槽清理','角色维护','accounts','quest-clear','显式维护窗口内清理一个指定进行中槽；保留完成标记、紧急任务、通知和其他任务。'),
  ('char-sp-tp','SP／TP技能点维护','角色维护','accounts','char-sp-tp','显式维护窗口内设置两套PvE技能树剩余SP／TP；保留已学技能和公平决斗存档。'),
+ ('char-level','等级／经验维护','角色维护','accounts','char-level','显式维护窗口同步两处经验、成长差额和剩余技能点；保留职业、已学技能与任务，不冒充在线原生升级。'),
  ('char-rescue','卡死位置救援','角色维护','accounts','char-rescue','显式维护窗口内重置选角、登录与返回城镇，不修改任务或物品，不是在线瞬移。'),
  ('mail-center','完整邮件与操作追踪','记录与维护','mail-center',None,'区分已投递、数据库领取标记与记录缺失。'),
  ('support','玩家问题工作台','记录与维护','support',None,'补偿草稿需再次预览确认，不等于直接撤销原操作。'),
@@ -50,7 +51,7 @@ FEATURES = (
  ('assets','物品图标与职业头像','展示与素材','catalog','assets','图片包匹配不代表像素或客户端一致性已验收。'),
  ('private-message','指定玩家系统消息','待适配',None,'unimplemented','尚未接入当前镜像可靠的私信通道。'),
  ('character-quests','任务检索与异常线索','角色维护','accounts',None,'读取20个任务槽和已完成标记，显示重复任务及PVF缺失等线索，单槽清理使用独立预览入口，不自动完成任务。'),
- ('character-advanced','等级／职业维护','待适配',None,'unimplemented','位置救援、疲劳与改名已有独立入口；等级与职业合法组合仍待适配；任务异常查询已有只读入口。'),
+ ('character-advanced','职业／转职维护','待适配',None,'unimplemented','等级／经验已有独立维护入口；职业、转职与觉醒合法组合写入仍待适配。'),
 )
 REASONS = {
  'maintenance_executor_missing':'完整维护执行与恢复执行器尚未安装或状态过期，可在维护中心核对；不是管理员权限限制。',

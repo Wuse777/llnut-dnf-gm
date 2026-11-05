@@ -66,13 +66,13 @@ class Settings:
             raise ValueError('Origins must be exact scheme://host[:port]')
         if self.public and any(not o.startswith('https://') for o in self.origins):
             raise ValueError('Public mode requires HTTPS origins')
-        if not set(self.writes) <= {'currency', 'mail', 'ban', 'unban', 'equipment-unlock', 'reward', 'batch-reward', 'item-edit', 'item-reclaim', 'item-restore', 'char-fatigue', 'char-rename','char-rescue','quest-clear','char-sp-tp', 'maintenance'}:
+        if not set(self.writes) <= {'currency', 'mail', 'ban', 'unban', 'equipment-unlock', 'reward', 'batch-reward', 'item-edit', 'item-reclaim', 'item-restore', 'char-fatigue', 'char-rename','char-rescue','quest-clear','char-sp-tp','char-level', 'maintenance'}:
             raise ValueError('Unknown write capability')
         if self.writes and not self.image_digest:
             raise ValueError('Explicit server image fingerprint required for writes')
         if self.writes and (len(self.pvf_sha256) != 64 or any(c not in '0123456789abcdef' for c in self.pvf_sha256)):
             raise ValueError('Explicit PVF SHA-256 required for writes')
-        if any(a.startswith('item-') or a in ('char-fatigue','char-rename','char-rescue','quest-clear','char-sp-tp') for a in self.writes):
+        if any(a.startswith('item-') or a in ('char-fatigue','char-rename','char-rescue','quest-clear','char-sp-tp','char-level') for a in self.writes):
             import re
             if (not re.fullmatch(r'[a-f0-9]{64}', self.inventory_program_sha256)
                     or not re.fullmatch(r'sha256:[a-f0-9]{64}', self.image_digest)):
