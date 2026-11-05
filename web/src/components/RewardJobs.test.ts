@@ -11,6 +11,7 @@ function setup(overrides:any={}){
  let job={...fixture(),...overrides};let lose=false
  const fetcher=vi.fn(async(url:any,options:any)=>{
   const path=String(url),method=options?.method||'GET'
+  if(path.includes('/characters?'))return new Response(JSON.stringify({items:[]}))
   if(path.endsWith('/start')){if(lose)throw new TypeError('connection lost');job={...job,status:'running'};return new Response(JSON.stringify(job))}
   if(path.endsWith('/control')){const action=JSON.parse(options.body).action;job={...job,status:action==='resume'?'running':'paused'};return new Response(JSON.stringify(job))}
   if(path.includes('/targets?'))return new Response(JSON.stringify({items:[{ordinal:1,target_uid:1,charac_no:2,target:{charac_name:'Test',accountname:'gm'},operation_id:'a'.repeat(32),status:'pending',attempts:0}],next_after:null}))

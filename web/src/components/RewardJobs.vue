@@ -2,6 +2,7 @@
 import {ref,computed,onMounted,onBeforeUnmount,watch} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
 import ItemQueue from './ItemQueue.vue'
+import CharacterPicker from './CharacterPicker.vue'
 import {mailTextErrors} from '../validation'
 const props=defineProps<{scheduleDraft?:boolean,initialDraft?:any,initialJob?:string}>()
 const emit=defineEmits<{reauth:[],inspect:[id:string],schedule:[draft:any],opened:[]}>()
@@ -117,8 +118,8 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
    <form v-show="draftVisible" @submit.prevent="preview">
     <fieldset :disabled="busy||uncertain">
      <h3>1. 收件范围</h3>
-     <label>目标模式<select v-model="mode" aria-label="目标模式"><option value="selected">指定／导入角色编号</option><option value="accounts">指定／导入账号名单</option><option value="filtered">按条件筛选角色</option><option value="online">在线账号下的角色</option><option value="all">全服未删除角色</option></select></label>
-     <template v-if="mode==='selected'"><label>角色编号名单<textarea v-model="ids" aria-label="角色编号名单" placeholder="例如 900001, 900003；支持换行粘贴" :aria-invalid="!!fieldErrors.ids"/></label><p v-if="fieldErrors.ids" class="submit-error" role="alert">{{fieldErrors.ids}}</p><label class="file-input">导入纯文本名单<input type="file" accept=".txt,.csv" aria-label="导入角色名单" @change="importIds"></label><p class="field-hint">仅在浏览器读取编号文件，不上传文件；重复编号会去重。</p></template>
+     <label>目标模式<select v-model="mode" aria-label="目标模式"><option value="selected">勾选／导入指定角色</option><option value="accounts">指定／导入账号名单</option><option value="filtered">按条件筛选角色</option><option value="online">在线账号下的角色</option><option value="all">全服未删除角色</option></select></label>
+     <template v-if="mode==='selected'"><CharacterPicker v-model="ids"/><label>角色编号名单<textarea v-model="ids" aria-label="角色编号名单" placeholder="例如 900001, 900003；支持换行粘贴" :aria-invalid="!!fieldErrors.ids"/></label><p v-if="fieldErrors.ids" class="submit-error" role="alert">{{fieldErrors.ids}}</p><label class="file-input">导入纯文本名单<input type="file" accept=".txt,.csv" aria-label="导入角色名单" @change="importIds"></label><p class="field-hint">仅在浏览器读取编号文件，不上传文件；重复编号会去重。</p></template>
      <template v-else-if="mode==='accounts'"><label>账号标识类型<select v-model="accountKind" aria-label="账号名单类型"><option value="uid">账号 UID</option><option value="name">账号名（精确匹配）</option></select></label><label>账号名单<textarea v-model="accountList" aria-label="账号名单" placeholder="每行一个，不含表头；也可用逗号分隔" :aria-invalid="!!fieldErrors.accounts"/></label><p v-if="fieldErrors.accounts" class="submit-error" role="alert">{{fieldErrors.accounts}}</p><label class="file-input">导入账号名单<input type="file" accept=".txt,.csv" aria-label="导入账号名单" @change="importAccounts"></label><p class="notice">选择这些账号下的所有未删除角色，不是只选一个角色。账号名区分大小写；纯数字账号名也请选择“账号名”。重复账号去重，货币按下方规则发放，邮件逐角色发放。</p><p class="field-hint">仅本地读取UTF-8无表头单列文件，不上传文件。定时计划预览会绑定账号UID，之后按该UID在触发时选择角色，不跟随同名新账号。</p></template>
      <div v-else-if="mode!=='all'" class="reward-grid"><label>账号 UID<input v-model="uid" aria-label="筛选账号UID" inputmode="numeric" placeholder="全部账号"></label><label>职业编号<input v-model="jobFilter" inputmode="numeric" placeholder="全部职业"></label><label>角色名称<input v-model="name" maxlength="80" placeholder="包含名称"></label><label>最低等级<input v-model.number="minimum" type="number" min="0" max="255"></label><label>最高等级<input v-model.number="maximum" type="number" min="0" max="255"></label></div>
      <p v-if="importNotice" class="notice" role="status">{{importNotice}}</p>
