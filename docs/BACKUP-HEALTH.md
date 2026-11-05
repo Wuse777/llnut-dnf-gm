@@ -43,6 +43,14 @@
 
 API统一在`/dnf-gm/api/v1`：`GET /backups`、`POST /backups/policy`、`GET /backups/policy/requests/{request_id}`、`POST /backups/runs`、`GET /backups/runs/{run_id}`。写接口保留同源/CSRF和重新认证，不支持SQL、文件路径或命令输入。
 
+### 本批实际部署与核验
+
+2026-11-06部署 `20261106-backup-1ffd8a8`，管理库001–016，24项网页能力与全部账号范围保持。公网保存默认计划成功，手动任务 `c2f368f186694b23a6e026445d64b62d` 在线完成：36表、521行、419182字节。SHA-256为 `f947b2c04a84b01adcee8c22fc3259ca5901eee477958e8aed299830608bdc40`。
+
+这份真实备份已复制到维护电脑的私有目录，在socket-only MySQL5.7隔离实例恢复并核对表定义、主键有序字段摘要、行数与文件摘要；临时库已清理。对应恢复收据私存服务器`/var/backups/dnf-gm/restore-evidence/`，当前公共证据绑定这份文件。下一次新备份没有独立恢复收据时仍显示未核验，不延用本次证明。
+
+部署只重启GM组件，6项受保护服务PID保持；在线备份过程中包括GM应用和单执行器的8项PID全部保持。slice检查约91.4MiB/192MiB，CPU限额25%；不把单次采样视为长期峰值。公网桌面/390px检查无JS错误及横向溢出；仅保存备份计划与创建备份任务，没有游戏存档写操作。没有运行全量套件。
+
 ## 本地隔离操作
 
 使用已准备好的socket-only实验室和项目Python环境；所有输出放私有目录，以下为占位路径：
