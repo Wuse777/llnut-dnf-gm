@@ -5,7 +5,7 @@ import GameImage from './GameImage.vue'
 const props=defineProps<{modelValue:string,current?:any,disabled?:boolean}>()
 const emit=defineEmits(['update:modelValue','error'])
 const q=ref(''),page=ref(1),more=ref(false),rows=ref<any[]>([]),busy=ref(false),error=ref(''),loaded=ref(false),state=ref(''),metadata=ref('')
-const picked=ref<any>(null)
+const picked=ref<any>(null),expanded=ref(false)
 const selected=computed(()=>[picked.value,props.current].find(x=>x&&String(x.id)===props.modelValue.trim()))
 let alive=true
 onBeforeUnmount(()=>{alive=false})
@@ -14,13 +14,13 @@ async function search(next=1){
  try{const result=await api('/catalog/enchantments?'+new URLSearchParams({q:q.value.trim(),page:String(next)}));if(!alive)return;rows.value=result.items;page.value=result.page;more.value=result.has_more;state.value=result.state;metadata.value=result.metadata_state;loaded.value=true}
  catch(e){if(alive){error.value=uncertainMessage(e);emit('error',e)}}finally{if(alive)busy.value=false}
 }
-function choose(row:any){if(props.disabled||state.value!=='ok')return;picked.value=row;emit('update:modelValue',String(row.id))}
+function choose(row:any){if(props.disabled||state.value!=='ok')return;picked.value=row;emit('update:modelValue',String(row.id));expanded.value=false}
 </script>
 <template>
  <section class="enchantment-picker" aria-label="附魔选择">
   <div class="section-title"><h4>附魔</h4><button type="button" :disabled="disabled" @click="emit('update:modelValue','0')">清除附魔</button></div>
   <p class="enchantment-selection"><b>{{modelValue.trim()==='0'?'无附魔':selected?.name||'手动编号 · 待预览校验'}}</b><span v-if="modelValue.trim()!=='0'"> #{{modelValue}}</span><small v-if="selected?.summary">{{selected.summary}}</small></p>
-  <details><summary>按名称、编号或效果查找附魔</summary>
+  <details :open="expanded" @toggle="expanded=($event.target as HTMLDetailsElement).open"><summary>按名称、编号或效果查找附魔</summary>
    <div class="enchantment-search"><label>附魔名称、编号或效果<input v-model="q" aria-label="附魔搜索条件" maxlength="80" :disabled="disabled||busy" placeholder="例如：烈焰彼诺修、火属性、3604" @keydown.enter.prevent="search(1)"></label><button type="button" :disabled="disabled||busy" @click="search(1)">{{busy?'查询中…':'查询附魔'}}</button></div>
    <p v-if="error" class="field-error" role="alert">{{error}}</p>
    <p v-if="loaded&&metadata!=='ok'" class="notice">尚未安装附魔定义索引；仍可填写编号并生成预览。</p>
@@ -33,5 +33,5 @@ function choose(row:any){if(props.disabled||state.value!=='ok')return;picked.val
  </section>
 </template>
 <style scoped>
-.enchantment-picker{padding:16px;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-secondary);min-width:0}.enchantment-picker h4{margin:0}.enchantment-selection{margin:12px 0;overflow-wrap:anywhere}.enchantment-selection small{display:block;margin-top:6px;color:var(--text-secondary)}.enchantment-search{display:flex;align-items:end;gap:10px;margin:14px 0}.enchantment-search label{display:grid;gap:6px;flex:1;min-width:0}.enchantment-results{display:grid;gap:8px;margin:12px 0}.enchantment-results article{display:flex;gap:12px;align-items:center;padding:12px;border:1px solid var(--border-color);border-radius:10px;min-width:0}.enchantment-results article.is-selected{border-color:var(--primary-color)}.enchantment-results article>div{flex:1;min-width:0}.enchantment-results small{display:block;color:var(--text-secondary);margin-top:3px}.enchantment-results p{margin:4px 0 0;font-size:12px;overflow-wrap:anywhere}.enchantment-picker details>summary{cursor:pointer}.enchantment-results button{flex-shrink:0}@media(max-width:600px){.enchantment-search{flex-wrap:wrap}.enchantment-search label{flex-basis:100%}.enchantment-search>button{width:100%}.enchantment-results article{gap:8px;padding:9px}}
+.enchantment-picker{padding:16px;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-secondary);min-width:0}.enchantment-picker h4{margin:0}.enchantment-selection{margin:12px 0;overflow-wrap:anywhere}.enchantment-selection small{display:block;margin-top:6px;color:var(--text-secondary)}.enchantment-search{display:flex;align-items:end;gap:10px;margin:14px 0}.enchantment-search label{display:grid;gap:6px;flex:1;min-width:0}.enchantment-results{display:grid;gap:8px;margin:12px 0;max-height:380px;overflow-y:auto;overscroll-behavior:contain;padding-right:4px}.enchantment-results article{display:flex;gap:12px;align-items:center;padding:12px;border:1px solid var(--border-color);border-radius:10px;min-width:0}.enchantment-results article.is-selected{border-color:var(--primary-color)}.enchantment-results article>div{flex:1;min-width:0}.enchantment-results small{display:block;color:var(--text-secondary);margin-top:3px}.enchantment-results p{margin:4px 0 0;font-size:12px;overflow-wrap:anywhere}.enchantment-picker details>summary{cursor:pointer}.enchantment-results button{flex-shrink:0}@media(max-width:600px){.enchantment-search{flex-wrap:wrap}.enchantment-search label{flex-basis:100%}.enchantment-search>button{width:100%}.enchantment-results{max-height:280px}.enchantment-results article{gap:8px;padding:9px}}
 </style>
