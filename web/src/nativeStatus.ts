@@ -1,10 +1,10 @@
 export const supportNames:Record<string,string>={'player-profile':'玩家备注与标签','case-create':'建立玩家问题','case-update':'更新玩家问题','case-comment':'追加问题处理记录','case-link':'关联问题操作'}
-export const inventoryNames:Record<string,string>={'item-edit':'装备属性修改','item-reclaim':'存档物品回收','item-restore':'存档快照恢复','item-intent':'装备执行意向','item-aborted':'装备中断核对','item-cancel':'取消装备预览'}
+export const inventoryNames:Record<string,string>={'char-fatigue':'角色疲劳调整','item-edit':'装备属性修改','item-reclaim':'存档物品回收','item-restore':'存档快照恢复','item-intent':'装备执行意向','item-aborted':'装备中断核对','item-cancel':'取消装备预览'}
 export const inventoryStates:Record<string,string>={preview:'待确认预览',executing:'执行意向已记录，结果待核对',committed:'数据库已提交（游戏效果待核验）',cancelled:'预览已取消',aborted:'确认未提交游戏事务'}
 export const nativeNames:Record<string,string>={'native-notice':'全服公告','native-kick':'账号踢下线','native-ban-kick':'封禁并尝试踢下线'}
 export const nativeStates:Record<string,string>={preview:'仅预览，尚未发送',dispatching:'发送占位已提交，结果待确认',sent:'指令已发送，游戏效果未确认',not_sent:'指令未发送',uncertain:'发送结果不确定，禁止自动重发',cancelled:'预览已取消，未发送'}
 export function operationStatus(row:any){
- if(row?.action?.startsWith('item-'))return inventoryStates[row.status]||'装备操作状态未知'
+ if(row?.action?.startsWith('item-')||row?.action==='char-fatigue')return inventoryStates[row.status]||'装备操作状态未知'
  if(row?.action?.startsWith('native-'))return nativeStates[row.status]||'原生控制状态未知'
  return row?.status==='queued'?'已审计入队，不代表执行完成':row?.status==='cancelled'?'预览已取消':row?.status==='committed'?'数据库已提交':'未提交 / 仅预览'
 }

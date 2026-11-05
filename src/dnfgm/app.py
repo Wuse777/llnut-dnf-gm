@@ -19,6 +19,7 @@ from .release_cleanup import ReleaseCleanup
 from .native_monitor import NativeMonitor
 from .native_operations import NativeOperations
 from .inventory_operations import InventoryOperations
+from .character_maintenance import CharacterMaintenance, CharacterMaintenancePreview
 from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm, MaintenanceClose
 from .models import InventoryPreview
 from .support_models import ProfileSave, CaseCreate, CaseUpdate, CaseEntry, CaseLink, CaseStatus, Category
@@ -93,6 +94,7 @@ def create_app(settings=None, database=None):
     native_monitor = NativeMonitor(settings)
     native_ops = NativeOperations(service, native_monitor)
     inventory_ops = InventoryOperations(service)
+    character_ops = CharacterMaintenance(service)
     maintenance = MaintenanceRequests(db,settings)
     schedules = Schedules(db, settings, jobs, native_ops)
     from .task_health import TaskHealth, WorkerPulse
@@ -115,6 +117,7 @@ def create_app(settings=None, database=None):
     app.state.native_monitor = native_monitor
     app.state.native_operations = native_ops
     app.state.inventory_operations = inventory_ops
+    app.state.character_maintenance = character_ops
     app.state.maintenance = maintenance
     app.add_middleware(Guard, settings=settings)
     app.state.db, app.state.settings, app.state.service = db,settings,service
@@ -413,6 +416,36 @@ def create_app(settings=None, database=None):
     def inventory_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
         key=user(request,True,True);limits.check('inventory-cancel:'+key,12)
         return inventory_ops.cancel(op)
+
+    @app.get(API+'/character-maintenance/characters/{charac_no}')
+    def character_maintenance_read(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
+        key=user(request);limits.check('character-maintenance-read:'+key,30)
+        return character_ops.read(charac_no)
+
+    @app.get(API+'/character-maintenance/operations')
+    def character_history(request:Request,uid:int=Query(0,ge=0,le=2147483647),charac_no:int=Query(0,ge=0,le=2147483647),page:int=Query(1,ge=1,le=10000)):
+        key=user(request);limits.check('character-maintenance-history:'+key,30)
+        return character_ops.history(uid,charac_no,page)
+
+    @app.post(API+'/character-maintenance/preview')
+    def character_preview(data:CharacterMaintenancePreview,request:Request):
+        key=user(request,True,True);limits.check('character-maintenance-preview:'+key,12)
+        return character_ops.preview(key,data.model_dump())
+
+    @app.get(API+'/character-maintenance/operations/{op}')
+    def character_detail(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request);limits.check('character-maintenance-detail:'+key,30)
+        return character_ops.detail(op)
+
+    @app.post(API+'/character-maintenance/operations/{op}/confirm')
+    def character_confirm(data:Confirm,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('character-maintenance-confirm:'+key,10)
+        return character_ops.confirm(key,op,data.idempotency_key)
+
+    @app.post(API+'/character-maintenance/operations/{op}/cancel-preview')
+    def character_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('character-maintenance-cancel:'+key,12)
+        return character_ops.cancel(op)
 
     @app.get(API+'/maintenance')
     def maintenance_status(request:Request):

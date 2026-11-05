@@ -38,13 +38,14 @@ FEATURES = (
  ('item-edit','装备属性与数量编辑','装备维护','accounts','item-edit','必须先显式进入维护窗口，并校验程序指纹、容器原始存档和字段语义。'),
  ('item-reclaim','指定物品实例回收','装备维护','accounts','item-reclaim','维护窗口中核对整个存档，不按物品编号盲目删除多个实例。'),
  ('item-restore','装备存档快照恢复','装备维护','accounts','item-restore','仅在当前存档与原操作after-image完全一致时恢复，不覆盖后续游戏进度。'),
+ ('char-fatigue','角色疲劳恢复／调整','角色维护','accounts','char-fatigue','仅在显式维护窗口修改普通／额外已消耗疲劳，0表示恢复；历史计数与上限不变。'),
  ('mail-center','完整邮件与操作追踪','记录与维护','mail-center',None,'区分已投递、数据库领取标记与记录缺失。'),
  ('support','玩家问题工作台','记录与维护','support',None,'补偿草稿需再次预览确认，不等于直接撤销原操作。'),
  ('economy','GM发放统计','记录与维护','economy',None,'只统计可覆盖的GM操作，不冒充全服完整经济流水。'),
  ('compatibility','升级引用检查','记录与维护','compatibility',None,'只读核对候选资源，不自动激活PVF或暂停任务。'),
  ('assets','物品图标与职业头像','展示与素材','catalog','assets','图片包匹配不代表像素或客户端一致性已验收。'),
  ('private-message','指定玩家系统消息','待适配',None,'unimplemented','尚未接入当前镜像可靠的私信通道。'),
- ('character-rescue','位置救援／改名／疲劳等角色维护','待适配',None,'unimplemented','存档字段、在线缓存与合法组合仍待适配，不能任意改字段上线。'),
+ ('character-rescue','位置救援／改名等角色维护','待适配',None,'unimplemented','存档字段、在线缓存与合法组合仍待适配，不能任意改字段上线。'),
 )
 REASONS = {
  'maintenance_executor_missing':'完整维护执行与恢复执行器尚未安装或状态过期，可在维护中心核对；不是管理员权限限制。',

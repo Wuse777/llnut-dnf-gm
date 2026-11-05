@@ -197,6 +197,7 @@ CREATE TABLE charac_stat (
  charac_no int NOT NULL PRIMARY KEY,
  exp int NOT NULL DEFAULT 0,
  fatigue smallint NOT NULL DEFAULT 0,
+ premium_fatigue smallint NOT NULL DEFAULT 0,
  used_fatigue smallint NOT NULL DEFAULT 0,
  last_play_time datetime NOT NULL DEFAULT '0000-00-00 00:00:00'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;

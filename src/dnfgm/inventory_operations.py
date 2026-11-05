@@ -28,6 +28,8 @@ CONTAINERS={
 
 
 class InventoryOperations:
+    actions=ACTIONS
+    preview_model=InventoryPreview
     def __init__(self,service,fence=None):
         self.service=service;self.db=service.db;self.settings=service.settings
         self.fence=fence or MaintenanceFence('/run/dnf-gm/maintenance',**self.versions())
@@ -69,12 +71,12 @@ class InventoryOperations:
         return action in self.settings.writes and self.settings.write_approvals.get(action) is True
 
     def require_enabled(self,action,uid):
-        if action not in ACTIONS or not self.enabled(action):raise HTTPException(403,'装备写入功能未激活')
+        if action not in self.actions or not self.enabled(action):raise HTTPException(403,'存档写入功能未激活')
         if self.settings.test_uids and uid not in self.settings.test_uids:
             raise HTTPException(403,'当前仅允许专用测试账号写入')
         v=self.versions()
         if not re.fullmatch(r'sha256:[a-f0-9]{64}',v['image_digest']) or any(not re.fullmatch(r'[a-f0-9]{64}',v[k]) for k in ('pvf_sha256','program_sha256')):
-            raise HTTPException(409,'装备写入版本指纹未配置')
+            raise HTTPException(409,'存档写入版本指纹未配置')
 
     @contextmanager
     def fenced(self):
@@ -149,7 +151,7 @@ class InventoryOperations:
         return before,after,preview
 
     def preview(self,session_hash,data):
-        data=InventoryPreview(**data).model_dump();self.require_enabled(data['action'],data['uid'])
+        data=self.preview_model(**data).model_dump();self.require_enabled(data['action'],data['uid'])
         op=uuid.uuid4().hex;now=int(time.time())
         try:
             with self.fenced() as lease,self.db.connect() as c,c.cursor() as q:
@@ -163,11 +165,16 @@ class InventoryOperations:
             return self.detail(op)
         except codec.InventoryFormatError as error:raise HTTPException(409,str(error)) from None
 
-    @staticmethod
-    def row(q,op,lock=False):
+    @classmethod
+    def row(cls,q,op,lock=False):
         row=one(q,'SELECT * FROM dnf_gm.operations WHERE operation_id=%s'+(' FOR UPDATE' if lock else ''),(op,))
-        if not row or row['action'] not in ACTIONS:raise HTTPException(404,'装备操作不存在')
+        if not row or row['action'] not in cls.actions:raise HTTPException(404,'存档操作不存在')
         return row
+
+    def apply_archive(self,q,data,before,after):
+        schema,table,colkey,column,value=self.coordinate(data)
+        q.execute(f'UPDATE `{schema}`.`{table}` SET `{column}`=%s WHERE `{colkey}`=%s AND `{column}`=%s',(after,value,before))
+        if q.rowcount!=1:raise HTTPException(409,'存档条件更新未命中，未修改目标')
 
     def confirm(self,session_hash,op,key):
         from .models import Confirm
@@ -209,10 +216,8 @@ class InventoryOperations:
                 self.engines(q,data)
                 before,after,again=self.build(q,data,True)
                 again['maintenance_id']=lease.state['id']
-                if again!=saved:raise HTTPException(409,'意向建立后存档变化；本次未修改装备，请查询原编号')
-                schema,table,colkey,column,value=self.coordinate(data)
-                q.execute(f'UPDATE `{schema}`.`{table}` SET `{column}`=%s WHERE `{colkey}`=%s AND `{column}`=%s',(after,value,before))
-                if q.rowcount!=1:raise HTTPException(409,'存档条件更新未命中，未修改目标')
+                if again!=saved:raise HTTPException(409,'意向建立后存档变化；本次未修改存档，请查询原编号')
+                self.apply_archive(q,data,before,after)
                 v=self.versions()
                 q.execute('INSERT INTO dnf_gm.inventory_snapshots(operation_id,uid,charac_no,container,slot,source_operation_id,before_blob,after_blob,before_sha256,after_sha256,image_digest,pvf_sha256,program_sha256,maintenance_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
                     (op,data['uid'],data['charac_no'],data['container'],data['slot'],data['source_operation_id'],before,after,codec.digest(before),codec.digest(after),v['image_digest'],v['pvf_sha256'],v['program_sha256'],lease.state['id']))
@@ -231,7 +236,7 @@ class InventoryOperations:
                 row.update(status='committed',result_json=dump(result))
                 return self.public(row)
         except Exception as error:
-            if committing:raise HTTPException(503,'装备事务提交结果待确认，请只查询原操作编号，禁止自动重放') from None
+            if committing:raise HTTPException(503,'存档事务提交结果待确认，请只查询原操作编号，禁止自动重放') from None
             try:
                 with self.db.connect() as c,c.cursor() as q:
                     q.execute('INSERT INTO dnf_gm.failures(operation_id,error_type) VALUES(%s,%s)',(op,type(error).__name__));c.commit()
@@ -250,7 +255,7 @@ class InventoryOperations:
         with self.db.connect() as c,c.cursor() as q:return self.public(self.row(q,op))
 
     def history(self,uid=0,charac_no=0,page=1):
-        terms=[];args=[]
+        terms=['o.action IN ('+','.join(['%s']*len(self.actions))+')'];args=list(self.actions)
         if uid:terms.append('i.uid=%s');args.append(uid)
         if charac_no:terms.append('i.charac_no=%s');args.append(charac_no)
         with self.db.connect() as c,c.cursor() as q:

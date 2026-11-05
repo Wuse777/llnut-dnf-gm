@@ -5,19 +5,21 @@ import Modal from './Modal.vue'
 import GameImage from './GameImage.vue'
 import InventoryGrid from './InventoryGrid.vue'
 import InventoryEditor from './InventoryEditor.vue'
+import CharacterMaintenance from './CharacterMaintenance.vue'
+const fatigueBusy=ref(false),fatiguePending=ref(false),fatigueVisited=ref(false)
 const visual=ref(true)
 import UnlockRequests from './UnlockRequests.vue'
 const props=withDefaults(defineProps<{characNo:number,initialSection?:string}>(),{initialSection:'basic'})
 const emit=defineEmits<{close:[],reauth:[],expired:[]}>()
 const inventoryPending=ref(false),inventoryStale=ref(false)
 const inventoryBusy=ref(false),inventoryVisited=ref(false),inventorySelection=ref<{container:string,slot:number}|null>(null)
-const actionBusy=computed(()=>unlockBusy.value||inventoryBusy.value)
+const actionBusy=computed(()=>unlockBusy.value||inventoryBusy.value||fatigueBusy.value)
 function manageItem(item:any){if(inventoryPending.value||actionBusy.value){section.value='manage';return}inventorySelection.value={container:section.value==='backpack'?'inventory':section.value,slot:item.slot};inventoryVisited.value=true;section.value='manage'}
 const unlockBusy=ref(false),unlockVisited=ref(false),unlockPending=ref(false)
 const root=ref<HTMLElement|null>(null)
 const data=ref<any>(null),loading=ref(false),error=ref(''),section=ref('basic'),search=ref(''),kind=ref(''),page=ref(1)
 let generation=0
-const tabs=[['basic','基本信息'],['attributes','属性存档'],['equipment','穿戴装备'],['backpack','背包道具'],['warehouse','角色仓库'],['account_warehouse','账号仓库'],['unlock','装备解锁'],['manage','装备维护']]
+const tabs=[['basic','基本信息'],['attributes','属性存档'],['equipment','穿戴装备'],['backpack','背包道具'],['warehouse','角色仓库'],['account_warehouse','账号仓库'],['unlock','装备解锁'],['manage','装备维护'],['fatigue','角色维护']]
 function number(n:unknown){return n===null||n===undefined?'未知':Number(n).toLocaleString('zh-CN')}
 function date(s:unknown){if(typeof s!=='string'||s.startsWith('0000-'))return '未记录';const d=new Date(s.replace(' ','T')+'Z');return Number.isNaN(d.getTime())?'未记录':d.toLocaleString('zh-CN',{hour12:false})}
 async function load(){
@@ -42,15 +44,15 @@ const pages=computed(()=>Math.max(1,Math.ceil(filtered.value.length/30)))
 const visible=computed(()=>filtered.value.slice((page.value-1)*30,page.value*30))
 const kinds=computed(()=>Array.from(new Map(items.value.map((i:any)=>[String(i.type),i.type_name])).entries()) as [string,string][])
 watch([section,search,kind],()=>{page.value=1})
-watch(section,async()=>{if(section.value==='unlock')unlockVisited.value=true;if(section.value==='manage')inventoryVisited.value=true;await nextTick();root.value?.closest('.modal-body')?.scrollTo?.({top:0})},{immediate:true})
+watch(section,async()=>{if(section.value==='unlock')unlockVisited.value=true;if(section.value==='manage')inventoryVisited.value=true;if(section.value==='fatigue')fatigueVisited.value=true;await nextTick();root.value?.closest('.modal-body')?.scrollTo?.({top:0})},{immediate:true})
 function tabKey(e:KeyboardEvent){if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const n=tabs.findIndex(t=>t[0]===section.value),index=e.key==='Home'?0:e.key==='End'?tabs.length-1:(n+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tab(tabs[index][0]);void nextTick(()=>root.value?.querySelector<HTMLButtonElement>('#character-tab-'+section.value)?.focus())}
 function tab(id:string){if(actionBusy.value)return;section.value=id;search.value='';kind.value=''}
 </script>
 <template>
  <Modal title="角色详情" :busy="actionBusy" @close="emit('close')">
   <div ref="root" class="character-detail" data-testid="character-detail">
-   <div class="section-title character-toolbar"><span class="pill">角色详情 · #{{characNo}}</span><button :disabled="loading||actionBusy||unlockPending||inventoryPending||section==='unlock'||section==='manage'" @click="load">{{loading?'正在读取…':'刷新角色存档'}}</button></div>
-   <p v-if="inventoryStale" class="notice" role="status">装备操作已提交；下方角色资料仍是旧快照。结束操作后切换到物品页，点击“刷新角色存档”。</p>
+   <div class="section-title character-toolbar"><span class="pill">角色详情 · #{{characNo}}</span><button :disabled="loading||actionBusy||unlockPending||inventoryPending||fatiguePending||section==='unlock'||section==='manage'||section==='fatigue'" @click="load">{{loading?'正在读取…':'刷新角色存档'}}</button></div>
+   <p v-if="inventoryStale" class="notice" role="status">存档操作已提交；下方角色资料仍是旧快照。结束操作后切换到物品页，点击“刷新角色存档”。</p>
    <p v-if="loading" role="status" class="empty"><span class="spinner"/> 正在读取角色资料、装备、背包与仓库…</p>
    <div v-else-if="error" class="submit-error" role="alert"><b>无法读取角色详情</b><p>{{error}}</p><button @click="load">重试查询</button></div>
    <template v-else-if="data">
@@ -59,7 +61,7 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
     <p v-if="data.account_online?.login_status===1" class="warning">所属账号在线；不代表当前角色在线。背包、仓库、金币和属性可能等待游戏进程保存，刷新网页不会强制保存。</p>
     <p v-if="data.catalog_state!=='ok'" class="submit-error" role="status">物品索引不可用或版本不匹配：仍显示存档编号，但物品名称、等级及职业名称可能未知。</p>
     <div class="operation-tabs detail-tabs" role="tablist" aria-label="角色详情分类" @keydown="tabKey"><button v-for="[id,label] in tabs" :id="'character-tab-'+id" :key="id" role="tab" :disabled="actionBusy" :aria-selected="section===id" :tabindex="section===id?0:-1" :aria-controls="'character-section-'+id" :class="{active:section===id}" @click="tab(id)">{{label}}<span v-if="id==='equipment'||id==='backpack'"> · {{data[id].state==='ok'?data[id].items.length:'未知'}}</span></button></div>
-    <section v-show="section!=='manage'" :id="section==='manage'?undefined:'character-section-'+section" role="tabpanel" :aria-labelledby="'character-tab-'+section" tabindex="0">
+    <section v-show="!['manage','fatigue'].includes(section)" :id="['manage','fatigue'].includes(section)?undefined:'character-section-'+section" role="tabpanel" :aria-labelledby="'character-tab-'+section" tabindex="0">
      <UnlockRequests v-if="unlockVisited" v-show="section==='unlock'" :charac-no="characNo" @busy="unlockBusy=$event" @pending="unlockPending=$event" @reauth="emit('reauth')" @expired="emit('expired')"/>
      <template v-if="section==='basic'">
       <div class="character-metrics"><article><span>角色携带金币</span><strong>{{number(data.wealth.gold)}}</strong><small>{{data.wealth.state==='ok'?'不含仓库金币、点券或代币券':'金币存档缺失，不能视为0'}}</small></article><article><span>等级</span><strong>{{data.character.lev}}</strong><small>角色存档等级</small></article><article><span>复活币 coin 原始值</span><strong>{{number(data.wealth.revival_coin_raw)}}</strong><small>非多种复活币合计</small></article></div>
@@ -69,7 +71,7 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
       <p class="field-hint">下列是数据库字段原始存档值，不是游戏内最终面板。速度未擅自换算为百分比；力量、智力、体力、精神及元素抗性等未确认字段映射，暂不猜测显示。</p>
       <dl class="character-facts attribute-grid"><div v-for="a in data.attributes" :key="a.key"><dt>{{a.label}}<small>{{a.key}}</small></dt><dd>{{number(a.value)}}</dd></div></dl>
      </template>
-     <template v-else-if="section==='unlock'||section==='manage'"></template>
+     <template v-else-if="section==='unlock'||section==='manage'||section==='fatigue'"></template>
      <template v-else>
       <div v-if="section==='warehouse'||section==='account_warehouse'" class="warehouse-summary">
        <p class="field-hint">{{storageNotes[section]}}所属 UID：{{container.owner_uid??data.character.uid}}<span v-if="section==='warehouse'"> · 角色 #{{data.character.charac_no}}</span></p>
@@ -99,6 +101,7 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
      </template>
     </section>
    </template>
+   <section v-if="fatigueVisited" v-show="section==='fatigue'" id="character-section-fatigue" role="tabpanel" aria-labelledby="character-tab-fatigue" tabindex="0"><CharacterMaintenance :key="characNo" :charac-no="characNo" @busy="fatigueBusy=$event" @pending="fatiguePending=$event" @changed="inventoryStale=true" @reauth="emit('reauth')" @expired="emit('expired')"/></section>
    <section v-if="inventoryVisited" v-show="section==='manage'" id="character-section-manage" role="tabpanel" aria-labelledby="character-tab-manage" tabindex="0"><InventoryEditor :key="characNo" :charac-no="characNo" :selection="inventorySelection" @busy="inventoryBusy=$event" @pending="inventoryPending=$event" @changed="inventoryStale=true" @reauth="emit('reauth')" @expired="emit('expired')"/></section>
   </div>
   <template #footer><span class="muted">展示为存档快照 · 装备修改需要显式维护窗口与预览确认</span><button class="primary" :disabled="actionBusy" @click="emit('close')">关闭详情</button></template>

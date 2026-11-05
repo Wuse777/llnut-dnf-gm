@@ -358,3 +358,59 @@ def test_fence_lease_failure_immediately_before_game_commit_rolls_back(inv,monke
     with inv[2].connect() as c,c.cursor() as q:
         q.execute('SELECT COUNT(*) n FROM dnf_gm.inventory_snapshots');assert q.fetchone()['n']==0
         q.execute('SELECT COUNT(*) n FROM dnf_gm.audit WHERE operation_id=%s',(op,));assert q.fetchone()['n']==0
+
+
+def fatigue_setup(inv):
+    client,s,db,app,root=inv
+    s.writes=(*s.writes,'char-fatigue');s.write_approvals['char-fatigue']=True
+    app.state.character_maintenance.fence=app.state.inventory_operations.fence
+    with db.connect() as c,c.cursor() as q:
+        q.execute('INSERT INTO taiwan_cain.charac_stat(charac_no,fatigue,premium_fatigue,used_fatigue) VALUES(900001,100,20,88)');c.commit()
+    r=client.get(P+'/character-maintenance/characters/900001')
+    assert r.status_code==200,r.text
+    assert r.json()['maintenance']['available']
+    return dict(uid=900001,charac_no=900001,reference=r.json()['reference'],changes={'fatigue':0,'premium_fatigue':0},reason='恢复测试疲劳')
+
+
+def test_fatigue_atomic_commit_history_and_no_generic_confirm(inv):
+    body=fatigue_setup(inv);client=inv[0];base=P+'/character-maintenance'
+    r=client.post(base+'/preview',json=body);assert r.status_code==200,r.text
+    op=r.json()['operation_id'];key=uuid.uuid4().hex
+    assert client.post(P+f'/operations/{op}/confirm',json={'idempotency_key':key}).status_code==409
+    r=client.post(base+f'/operations/{op}/confirm',json={'idempotency_key':key})
+    assert r.status_code==200,r.text
+    assert r.json()['status']=='committed'
+    with inv[2].connect() as c,c.cursor() as q:
+        q.execute('SELECT fatigue,premium_fatigue,used_fatigue FROM taiwan_cain.charac_stat WHERE charac_no=900001')
+        assert q.fetchone()==dict(fatigue=0,premium_fatigue=0,used_fatigue=88)
+        q.execute('SELECT before_blob,after_blob FROM dnf_gm.inventory_snapshots WHERE operation_id=%s',(op,));snap=q.fetchone()
+        assert json.loads(snap['before_blob'])['fatigue']==100
+        assert json.loads(snap['after_blob'])['format']=='qf1031-fatigue-1'
+        q.execute('SELECT COUNT(*) n FROM dnf_gm.audit WHERE operation_id=%s',(op,));assert q.fetchone()['n']==1
+    (inv[4]/'permit.json').unlink()
+    assert client.post(base+f'/operations/{op}/confirm',json={'idempotency_key':key}).json()['status']=='committed'
+    assert client.get(base+'/operations?charac_no=900001').json()['items'][0]['operation_id']==op
+    assert not client.get(P+'/inventory/operations?charac_no=900001').json()['items']
+    assert client.get(P+f'/inventory/operations/{op}').status_code==404
+
+
+def test_fatigue_stale_and_missing_window_refused(inv):
+    body=fatigue_setup(inv);base=P+'/character-maintenance';client=inv[0]
+    with inv[2].connect() as c,c.cursor() as q:
+        q.execute('UPDATE taiwan_cain.charac_stat SET fatigue=101 WHERE charac_no=900001');c.commit()
+    assert client.post(base+'/preview',json=body).status_code==409
+    body['reference']=client.get(base+'/characters/900001').json()['reference']
+    r=client.post(base+'/preview',json=body);assert r.status_code==200,r.text
+    op=r.json()['operation_id']
+    original=inv[3].state.character_maintenance.apply_archive
+    def failed_write(*args):raise RuntimeError('synthetic pre-write failure')
+    inv[3].state.character_maintenance.apply_archive=failed_write
+    r=client.post(base+f'/operations/{op}/confirm',json={'idempotency_key':uuid.uuid4().hex})
+    assert r.status_code==500
+    inv[3].state.character_maintenance.apply_archive=original
+    (inv[4]/'permit.json').unlink()
+    assert client.post(base+'/preview',json=body).status_code==409
+    assert settle_window(inv[2],'d'*32)['resolved_aborted']==[op]
+    with inv[2].connect() as c,c.cursor() as q:
+        q.execute('SELECT fatigue FROM taiwan_cain.charac_stat WHERE charac_no=900001');assert q.fetchone()['fatigue']==101
+    assert client.get(base+f'/operations/{op}').json()['status']=='aborted'

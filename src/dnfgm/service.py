@@ -319,8 +319,8 @@ class Service:
                 row = one(q, 'SELECT * FROM dnf_gm.operations WHERE operation_id=%s AND session_hash=%s FOR UPDATE', (op,session_hash))
                 if not row:
                     raise HTTPException(404, '操作不存在')
-                if row['action'].startswith('item-'):
-                    raise HTTPException(409, '装备存档操作请使用专用确认入口')
+                if row['action'].startswith('item-') or row['action']=='char-fatigue':
+                    raise HTTPException(409, '存档操作请使用专用确认入口')
                 if row['action'].startswith('native-'):
                     raise HTTPException(409, '原生控制请使用专用确认入口')
                 if row['action'] == 'maintenance':

@@ -38,6 +38,7 @@ def bootstrap_sql(config,ph):
     sql += schedules_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/009-inventory-operations.sql').read_text()
     sql += inventory_management_sql(user)
+    sql += character_maintenance_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/010-support-desk.sql').read_text()
     sql += support_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/011-economy-ledger.sql').read_text()
@@ -71,7 +72,7 @@ def character_read_sql(user="'dnf_gm_app'@'127.0.0.1'"):
                'maxHP,maxMP,phy_attack,phy_defense,mag_attack,mag_defense,hp_regen,mp_regen,'
                'move_speed,attack_speed,cast_speed,hit_recovery,jump,inven_weight,charac_weight')
     return (f'GRANT SELECT({columns}) ON taiwan_cain.charac_info TO {user};\n'
-            f'GRANT SELECT(charac_no,exp,fatigue,used_fatigue,last_play_time) ON taiwan_cain.charac_stat TO {user};\n'
+            f'GRANT SELECT(charac_no,exp,fatigue,premium_fatigue,used_fatigue,last_play_time) ON taiwan_cain.charac_stat TO {user};\n'
             f'GRANT SELECT(charac_no,money,coin,inventory_capacity,inventory,equipslot) ON taiwan_cain_2nd.inventory TO {user};\n')
 
 
@@ -158,7 +159,7 @@ def initialize_owner_capabilities_sql():
     # Installation-time explicit owner activation; does not overwrite later web
     # choices. No game rows, rewards, schedules or maintenance windows created.
     import json
-    switches=['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
+    switches=['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','char-fatigue','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
     enabled=json.dumps(sorted(switches),separators=(',',':'))
     return ("START TRANSACTION;\nSELECT revision FROM dnf_gm.capability_policy WHERE id=1 FOR UPDATE;\n"
             "INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) "
@@ -169,3 +170,8 @@ def initialize_owner_capabilities_sql():
 def gameplay_fence_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     # MySQL5.7 locking SELECTs are tested with only SELECT on this fixed row.
     return f'GRANT SELECT ON dnf_gm.gameplay_fence TO {user};\n'
+
+
+def character_maintenance_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    # Fixed consumed-fatigue columns only. Never writes caps or historical counters.
+    return f"GRANT UPDATE(fatigue,premium_fatigue) ON taiwan_cain.charac_stat TO {user};\n"
