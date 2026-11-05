@@ -19,6 +19,7 @@ from .release_cleanup import ReleaseCleanup
 from .native_monitor import NativeMonitor
 from .native_operations import NativeOperations
 from .inventory_operations import InventoryOperations
+from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm
 from .models import InventoryPreview
 from .support_models import ProfileSave, CaseCreate, CaseUpdate, CaseEntry, CaseLink, CaseStatus, Category
 from .models import NativePreview, SchedulePreview, ActivateSchedule, ScheduleControl
@@ -92,6 +93,7 @@ def create_app(settings=None, database=None):
     native_monitor = NativeMonitor(settings)
     native_ops = NativeOperations(service, native_monitor)
     inventory_ops = InventoryOperations(service)
+    maintenance = MaintenanceRequests(db,settings)
     schedules = Schedules(db, settings, jobs, native_ops)
     from .task_health import TaskHealth, WorkerPulse
     pulse = WorkerPulse()
@@ -113,6 +115,7 @@ def create_app(settings=None, database=None):
     app.state.native_monitor = native_monitor
     app.state.native_operations = native_ops
     app.state.inventory_operations = inventory_ops
+    app.state.maintenance = maintenance
     app.add_middleware(Guard, settings=settings)
     app.state.db, app.state.settings, app.state.service = db,settings,service
 
@@ -408,6 +411,46 @@ def create_app(settings=None, database=None):
         key=user(request,True,True);limits.check('inventory-cancel:'+key,12)
         return inventory_ops.cancel(op)
 
+    @app.get(API+'/maintenance')
+    def maintenance_status(request:Request):
+        key=user(request);limits.check('maintenance-status:'+key,30)
+        return maintenance.status()
+
+    @app.get(API+'/maintenance/requests')
+    def maintenance_history(request:Request,cursor:str=Query('',max_length=50)):
+        key=user(request);limits.check('maintenance-history:'+key,30)
+        return maintenance.history(cursor)
+
+    @app.post(API+'/maintenance/requests')
+    def maintenance_prepare(data:MaintenancePrepare,request:Request):
+        key=user(request,True,True);limits.check('maintenance-prepare:'+key,6)
+        return maintenance.prepare(key,data.model_dump())
+
+    @app.get(API+'/maintenance/requests/{op}')
+    def maintenance_detail(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request);limits.check('maintenance-detail:'+key,40)
+        return maintenance.detail(op)
+
+    @app.post(API+'/maintenance/requests/{op}/confirm')
+    def maintenance_confirm(data:MaintenanceConfirm,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('maintenance-confirm:'+key,6)
+        return maintenance.confirm(key,op,data.model_dump())
+
+    @app.post(API+'/maintenance/requests/{op}/cancel')
+    def maintenance_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('maintenance-cancel:'+key,10)
+        return maintenance.cancel(op)
+
+    @app.post(API+'/maintenance/requests/{op}/observe')
+    def maintenance_observe(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True);limits.check('maintenance-observe:'+key,6)
+        return maintenance.observe(op)
+
+    @app.post(API+'/maintenance/requests/{op}/dispatch')
+    def maintenance_dispatch(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('maintenance-dispatch:'+key,10)
+        return maintenance.dispatch(op)
+
     @app.get(API+'/release-cleanups')
     def cleanup_candidates(request:Request):
         user(request)
@@ -641,6 +684,9 @@ def create_app(settings=None, database=None):
         if not re.fullmatch('[a-f0-9]{32}',op):
             raise HTTPException(422,'非法操作编号')
         result=service.operation(key,op)
+        if result['action']=='maintenance':
+            result['maintenance']=maintenance.detail(op)
+            result['request']={'action':'maintenance','reason':result['maintenance']['reason']}
         if result['action']=='cleanup-release':
             result['cleanup']=cleanup.detail(op)
             # Do not expose worker signing tickets through generic audit lookup.

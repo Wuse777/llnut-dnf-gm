@@ -17,7 +17,7 @@ class IncompatibleRollback(RuntimeError):
 
 def check(q, target):
     manifest = Path(target) / 'deploy/release-features.json'
-    supported = set()
+    supported = set();data = {}
     if manifest.exists():
         if manifest.stat().st_size > 4096:
             raise IncompatibleRollback('Invalid target release feature manifest')
@@ -39,6 +39,18 @@ def check(q, target):
             row=q.fetchone()
             if row and row['revision']>0:
                 raise IncompatibleRollback('Target ignores web-managed permissions. Use a policy-aware release; do not delete permission history.')
+
+    if data.get('maintenance_requests') != 1:
+        q.execute("SELECT COUNT(*) n FROM information_schema.TABLES WHERE TABLE_SCHEMA='dnf_gm' AND TABLE_NAME='operations'")
+        if q.fetchone()['n']:
+            q.execute("SELECT 1 AS found FROM dnf_gm.operations WHERE action='maintenance' LIMIT 1")
+            if q.fetchone():
+                raise IncompatibleRollback('Target cannot reconcile web maintenance requests. Preserve requests and use a compatible release.')
+        q.execute("SELECT COUNT(*) n FROM information_schema.TABLES WHERE TABLE_SCHEMA='dnf_gm' AND TABLE_NAME='capability_policy'")
+        if q.fetchone()['n']:
+            q.execute("SELECT 1 AS found FROM dnf_gm.capability_policy WHERE id=1 AND JSON_CONTAINS(enabled_json, '\"maintenance\"') LIMIT 1")
+            if q.fetchone():
+                raise IncompatibleRollback('Target cannot read the web maintenance capability. Use a compatible release; do not discard policy history.')
 
 
 def main():

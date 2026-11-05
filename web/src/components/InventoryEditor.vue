@@ -63,7 +63,7 @@ onMounted(async()=>{void historyLoad();let id='';try{id=sessionStorage.getItem(s
 onBeforeUnmount(()=>{alive=false;epoch++;if(timer)clearInterval(timer);emit('busy',false);emit('pending',false)})
 </script>
 <template><section ref="root" class="inventory-editor" aria-label="装备存档维护">
- <h3>装备与道具维护</h3><p class="field-hint">此功能需要维护者安排保留 MySQL 的显式维护窗口。网页不能停服；账号离线不等于可以安全修改存档。</p>
+ <h3>装备与道具维护</h3><p class="field-hint">请先在“维护中心”申请并核对保留 MySQL 的维护窗口。完整执行器尚未接通时不会停服；账号离线不等于可以安全修改存档。</p>
  <p v-if="error" class="submit-error" role="alert">{{error}}</p>
  <template v-if="!detail">
   <p v-if="!item" class="empty">从穿戴、背包或仓库选择“维护此物品”；也可查看下方历史记录。</p>

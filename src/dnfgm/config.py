@@ -21,6 +21,7 @@ class Settings:
     cleanup_enabled: bool = False
     cleanup_manifest: str = '/run/dnf-gm/cleanup.json'
     cleanup_dir: str = '/var/lib/dnf-gm/cleanup'
+    maintenance_dir: str = '/var/lib/dnf-gm/maintenance-requests'
     capability_evidence_file: str = ''
     backup_health_file: str = '/var/lib/dnf-gm/backup-health.json'
     task_probe_token: str = ''
@@ -57,7 +58,7 @@ class Settings:
             raise ValueError('Origins must be exact scheme://host[:port]')
         if self.public and any(not o.startswith('https://') for o in self.origins):
             raise ValueError('Public mode requires HTTPS origins')
-        if not set(self.writes) <= {'currency', 'mail', 'ban', 'unban', 'equipment-unlock', 'reward', 'batch-reward', 'item-edit', 'item-reclaim', 'item-restore'}:
+        if not set(self.writes) <= {'currency', 'mail', 'ban', 'unban', 'equipment-unlock', 'reward', 'batch-reward', 'item-edit', 'item-reclaim', 'item-restore', 'maintenance'}:
             raise ValueError('Unknown write capability')
         if self.writes and not self.image_digest:
             raise ValueError('Explicit server image fingerprint required for writes')
@@ -112,7 +113,7 @@ class Settings:
             raise ValueError('Telemetry file must be an absolute maintenance path')
         if type(self.cleanup_enabled) is not bool:
             raise ValueError('Cleanup enable flag must be boolean')
-        for path in (self.cleanup_manifest, self.cleanup_dir):
+        for path in (self.cleanup_manifest, self.cleanup_dir, self.maintenance_dir):
             if not isinstance(path, str) or not Path(path).is_absolute():
                 raise ValueError('Absolute maintenance cleanup paths required')
         # Deprecated compatibility key: old per-item caps no longer affect

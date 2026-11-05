@@ -7,7 +7,7 @@ const emit=defineEmits<{expired:[],reauth:[],navigate:[tab:string]}>()
 const data=ref<any>(null),busy=ref(false),error=ref(''),success=ref(''),reason=ref(''),reasonError=ref(''),enabled=ref<string[]>([]),search=ref(''),filter=ref('all'),confirm=ref(false),pending=ref(''),checking=ref(false)
 const storage='dnf-gm.capability-pending'
 let alive=true,timer:ReturnType<typeof setInterval>|undefined
-const destinations=new Set(['accounts','mail','gifts','reward-jobs','schedules','unlock-center','online','native-controls','mail-center','support','economy','compatibility','catalog'])
+const destinations=new Set(['maintenance','accounts','mail','gifts','reward-jobs','schedules','unlock-center','online','native-controls','mail-center','support','economy','compatibility','catalog'])
 const states:Record<string,string>={configured:'配置已启用',disabled:'尚未启用',attention:'已启用 · 前提待处理',not_implemented:'待实现'}
 const statusNames:Record<string,string>={ok:'完整',incomplete:'迁移不完整',unknown:'未知',recorded:'构建记录可读',dirty:'构建包含未提交变更',matched:'指纹匹配',mismatch:'版本不匹配',unavailable:'不可读取',ready:'图片包匹配',not_installed:'未安装',legacy:'沿用旧配置',managed:'网页管理',loaded:'记录已读取',not_configured:'未提供验收记录'}
 const rows=computed(()=>(data.value?.items??[]).filter((i:any)=>(filter.value==='all'||i.state===filter.value)&&(!search.value||[i.label,i.group,i.note].some(s=>s.includes(search.value)))))

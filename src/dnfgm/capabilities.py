@@ -20,6 +20,7 @@ REFERENCE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$')
 REQUIRED_SCHEMA = set(range(1, 13))
 # id, label, group, destination, activation switch, extra prerequisite note
 FEATURES = (
+ ('maintenance','网页维护申请与执行记录','装备维护','maintenance','maintenance','退出会断开玩家；须具备完整退出、关窗与恢复执行器。入队或游戏退出不等于维护许可。'),
  ('players','玩家中心与角色存档','玩家管理','accounts',None,'角色属性是数据库存档，不是实时战斗属性。'),
  ('currency','点券／代币券／积分','奖励运营','accounts','currency','最终余额及在线消费一致性仍由对应操作校验和验收确认。'),
  ('mail','物品与金币邮件','奖励运营','mail','mail','领取标记不等于背包验收；每种特殊附件应独立核验。'),
@@ -46,6 +47,7 @@ FEATURES = (
  ('character-rescue','位置救援／改名／疲劳等角色维护','待适配',None,'unimplemented','存档字段、在线缓存与合法组合仍待适配，不能任意改字段上线。'),
 )
 REASONS = {
+ 'maintenance_executor_missing':'完整维护执行与恢复执行器尚未安装或状态过期，可在维护中心核对；不是管理员权限限制。',
  'disabled':'配置开关未启用', 'unimplemented':'尚未实现当前镜像适配',
  'schema_unknown':'无法确认管理库迁移状态', 'schema_missing':'管理库迁移不完整',
  'snapshot_unknown':'实时采集缺失或已过期', 'core_unknown':'核心服务本次未确认健康',
@@ -152,6 +154,9 @@ def report(settings, db):
         elif switch:
             enabled=switch in settings.writes;errors=list(write_errors)
             if settings.write_approvals.get(switch) is not True:errors.append('activation_missing')
+            if switch=='maintenance':
+                from .maintenance_requests import MaintenanceRequests
+                if not MaintenanceRequests(db,settings).status()['execute_supported']:errors.append('maintenance_executor_missing')
             if switch=='batch-reward' and not settings.batch_worker_enabled:errors.append('worker_disabled')
             if switch in ('mail','reward','batch-reward') and catalog_state!='matched':errors.append('catalog_mismatch' if catalog_state=='mismatch' else 'catalog_unknown')
         else:errors=list(schema_errors)

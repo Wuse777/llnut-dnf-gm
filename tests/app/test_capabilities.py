@@ -190,7 +190,7 @@ def test_rollback_refuses_live_web_permission_policy(env,tmp_path):
     guard=importlib.util.module_from_spec(spec);spec.loader.exec_module(guard)
     with db.connect() as conn,conn.cursor() as q:
         with pytest.raises(guard.IncompatibleRollback,match='web-managed'):guard.check(q,tmp_path)
-    (tmp_path/'deploy').mkdir();(tmp_path/'deploy/release-features.json').write_text('{"schema_version":1,"reward_target_modes":["accounts"],"web_capability_policy":1}')
+    (tmp_path/'deploy').mkdir();(tmp_path/'deploy/release-features.json').write_text('{"schema_version":1,"reward_target_modes":["accounts"],"web_capability_policy":1,"maintenance_requests":1}')
     with db.connect() as conn,conn.cursor() as q:guard.check(q,tmp_path)
 
 

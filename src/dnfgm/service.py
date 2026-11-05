@@ -314,6 +314,8 @@ class Service:
                     raise HTTPException(409, '装备存档操作请使用专用确认入口')
                 if row['action'].startswith('native-'):
                     raise HTTPException(409, '原生控制请使用专用确认入口')
+                if row['action'] == 'maintenance':
+                    raise HTTPException(409, '维护申请请使用专用确认入口')
                 if row['action'] == 'cleanup-release':
                     raise HTTPException(409, '旧产物清理请使用专用确认入口')
                 old = one(q, 'SELECT operation_id,fingerprint,session_hash,result_json FROM dnf_gm.operations WHERE idempotency_key=%s', (key,))

@@ -155,7 +155,7 @@ def initialize_owner_capabilities_sql():
     # Installation-time explicit owner activation; does not overwrite later web
     # choices. No game rows, rewards, schedules or maintenance windows created.
     import json
-    switches=['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
+    switches=['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
     enabled=json.dumps(sorted(switches),separators=(',',':'))
     return ("START TRANSACTION;\nSELECT revision FROM dnf_gm.capability_policy WHERE id=1 FOR UPDATE;\n"
             "INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) "
