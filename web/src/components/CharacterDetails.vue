@@ -65,9 +65,12 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
     <div class="character-identity"><GameImage :image="data.portrait" :label="data.profession.name" portrait/><div><h3>{{data.character.charac_name}}</h3><p>{{data.profession.name}} · Lv.{{data.character.lev}} · {{data.account?.accountname??'归属账号缺失'}} / UID {{data.character.uid}}</p></div><span class="status-badge" :class="data.character.delete_flag?'neutral':'success'">{{data.character.delete_flag?'已删除（仅查看存档）':'未删除'}}</span></div>
     <div class="button-row character-shortcuts" role="group" aria-label="当前角色快捷操作"><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('currency')">调整所属账号余额</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('mail')">给此角色发奖励</button><button :disabled="navigationLocked" @click="tab('unlock')">查看解锁申请</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('ban')">封禁所属账号</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('unban')">解除账号封禁</button></div>
     <p v-if="navigationLocked" class="field-hint">请先完成或查询当前维护／解锁操作，再使用快捷跳转。</p>
+    <details class="character-guidance"><summary>存档说明与图片状态</summary>
     <p v-if="data.assets&&data.assets.state!=='ready'" class="field-hint">图片：{{data.assets.note}}；文字查询不受影响。</p><p class="field-hint snapshot-note">{{data.snapshot_note}}<br>读取时间：{{new Date(data.collected_at*1000).toLocaleString('zh-CN',{hour12:false})}}。资料、金币及物品为只读查询；装备解锁需在专页单独预览确认。</p>
+    </details>
     <p v-if="data.account_online?.login_status===1" class="warning">所属账号在线；不代表当前角色在线。背包、仓库、金币和属性可能等待游戏进程保存，刷新网页不会强制保存。</p>
     <p v-if="data.catalog_state!=='ok'" class="submit-error" role="status">物品索引不可用或版本不匹配：仍显示存档编号，但物品名称、等级及职业名称可能未知。</p>
+    <label class="character-mobile-section">查看内容<select :value="section" :disabled="actionBusy" aria-label="切换角色详情内容" @change="tab(($event.target as HTMLSelectElement).value)"><option v-for="[id,label] in tabs" :key="id" :value="id">{{label}}</option></select></label>
     <div class="operation-tabs detail-tabs" role="tablist" aria-label="角色详情分类" @keydown="tabKey"><button v-for="[id,label] in tabs" :id="'character-tab-'+id" :key="id" role="tab" :disabled="actionBusy" :aria-selected="section===id" :tabindex="section===id?0:-1" :aria-controls="'character-section-'+id" :class="{active:section===id}" @click="tab(id)">{{label}}<span v-if="id==='equipment'||id==='backpack'"> · {{data[id].state==='ok'?data[id].items.length:'未知'}}</span></button></div>
     <section v-show="!['manage','fatigue'].includes(section)" :id="['manage','fatigue'].includes(section)?undefined:'character-section-'+section" role="tabpanel" :aria-labelledby="'character-tab-'+section" tabindex="0">
      <UnlockRequests v-if="unlockVisited" v-show="section==='unlock'" :charac-no="characNo" @busy="unlockBusy=$event" @pending="unlockPending=$event" @reauth="emit('reauth')" @expired="emit('expired')"/>
@@ -119,5 +122,6 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
 </template>
 
 <style scoped>
+.character-mobile-section{display:none}.character-guidance{margin:12px 0}.character-guidance summary{cursor:pointer;color:var(--text-secondary)}@media(max-width:768px){.character-mobile-section{display:grid;gap:8px;margin:16px 0}.detail-tabs{display:none}.character-identity{display:grid;grid-template-columns:48px minmax(0,1fr);gap:8px 12px}.character-identity>:first-child{grid-row:1/3}.character-identity>.status-badge{grid-column:2;justify-self:start}.character-identity h3{font-size:20px}}
 .character-shortcuts{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.character-shortcuts button{flex:1 1 150px}
 </style>
