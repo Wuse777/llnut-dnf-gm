@@ -29,8 +29,9 @@ STATE = Path('/var/lib/dnf-gm/maintenance-drain')
 GLOBAL_LOCK = Path('/var/lib/dnf-gm/maintenance.lock')
 PREVIEW_TTL = 300
 MAX_BYTES = 256 * 1024
-STATES = {'prepared', 'running', 'needs_review', 'game_drained', 'writers_stopped', 'cancelled', 'expired'}
+STATES = {'prepared', 'running', 'needs_review', 'game_drained', 'writers_stopped', 'completed', 'cancelled', 'expired'}
 TERMINAL_NO_EFFECT = {'cancelled', 'expired'}
+TERMINAL_FINISHED = TERMINAL_NO_EFFECT | {'completed'}
 COMMAND_INTENTS = {'inhibit-intent', 'marker-intent', 'signal-intent', 'writer-inhibit-intent', 'writer-marker-intent', 'writer-signal-intent'}
 
 
@@ -127,7 +128,7 @@ class DrainCoordinator:
             return
         if current is not None:
             prior = self._load(current)
-            if prior['state'] not in TERMINAL_NO_EFFECT:
+            if prior['state'] not in TERMINAL_FINISHED:
                 raise Refused('maintenance_other_request_active')
         self._write('active.json', {'request_id': request_id})
 
@@ -143,7 +144,7 @@ class DrainCoordinator:
                 value = doc[field]
                 if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
                     raise ValueError()
-            if doc['state'] in {'running', 'needs_review', 'game_drained', 'writers_stopped'}:
+            if doc['state'] in {'running', 'needs_review', 'game_drained', 'writers_stopped', 'completed'}:
                 for field in ('started_at', 'started_monotonic'):
                     value = doc[field]
                     if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
@@ -155,7 +156,7 @@ class DrainCoordinator:
             if doc['version'] == 3:
                 validate_cycle(doc['plan'])
                 if doc['state']=='game_drained':raise ValueError()
-            elif 'service_cycle' in doc['plan'] or doc['state']=='writers_stopped':
+            elif 'service_cycle' in doc['plan'] or doc['state'] in ('writers_stopped','completed'):
                 raise ValueError()
             plan = copy.deepcopy(doc['plan'])
             fingerprint = plan.pop('fingerprint')
@@ -180,8 +181,12 @@ class DrainCoordinator:
                     raise ValueError()
             if doc['state'] in {'prepared', *TERMINAL_NO_EFFECT} and doc['events']:
                 raise ValueError()
-            if doc['state'] in ('game_drained','writers_stopped') and len(doc['events']) != len(expected):
+            if doc['state'] in ('game_drained','writers_stopped','completed') and len(doc['events']) != len(expected):
                 raise ValueError()
+            if doc['state']=='completed':
+                from maintenance_session_state import load as load_session
+                if load_session(self.root,self.owner,request_id,doc['plan'])['state']!='completed':
+                    raise Refused('maintenance_completion_unproven')
             return doc
         except (KeyError, TypeError, ValueError, AttributeError):
             raise Refused('maintenance_journal_invalid') from None
@@ -258,12 +263,12 @@ class DrainCoordinator:
             if old is not None:
                 if old['reason'] != reason:
                     raise Refused('maintenance_request_conflict')
-                if old['state'] not in TERMINAL_NO_EFFECT:
+                if old['state'] not in TERMINAL_FINISHED:
                     self._claim(request_id)
-                return self.view(old)
+                return self.status(request_id)
             # Refuse before probing or creating another pending plan.
             active = self._active()
-            if active and self._load(active)['state'] not in TERMINAL_NO_EFFECT:
+            if active and self._load(active)['state'] not in TERMINAL_FINISHED:
                 raise Refused('maintenance_other_request_active')
             if self.admission is None:
                 raise Refused('maintenance_admission_required')
@@ -290,7 +295,21 @@ class DrainCoordinator:
 
     def status(self, request_id):
         # Atomic snapshot reads are available even while the executor holds its lock.
-        return self.view(self._load(request_id))
+        doc=self._load(request_id);result=self.view(doc)
+        if doc['version']==3 and doc['state'] in ('writers_stopped','completed'):
+            from maintenance_session_state import load as load_session
+            try:session=load_session(self.root,self.owner,request_id,doc['plan'])
+            except FileNotFoundError:return result
+            states={'opening':'running','closing':'resuming','restoring':'resuming'}
+            result['state']=states.get(session['state'],session['state'])
+            if session['state']=='completed' and doc['state']!='completed':
+                result['state']='needs_review'  # Final ownership receipt not yet reconciled.
+            offset=len(result['events'])
+            result['events'].extend({'sequence':offset+i+1,'phase':e['phase'],
+                'at':e['at'],'service':e['data'].get('service')} for i,e in enumerate(session['events']))
+            result.update(revision=len(result['events']),phase=result['events'][-1]['phase'],
+                error=session['error'],window_requires_live_check=session['state']=='maintenance_open')
+        return result
 
     def cancel(self, request_id):
         with self.locked():
@@ -313,7 +332,7 @@ class DrainCoordinator:
             # Critical: repeats after ANY start, including stale "running" state,
             # only return its durable record. Never call the adapter a second time.
             if doc['state'] != 'prepared':
-                return self.view(doc)
+                return self.status(request_id)
             if doc['version'] < 2 or self.admission is None:
                 raise Refused('maintenance_admission_required')
             if doc['version']==3 and (self.lifecycle is None or self.lifecycle.host is not self.host):
@@ -381,7 +400,13 @@ class DrainCoordinator:
         try:
             plan = doc['plan']
             if doc['version']==3:
-                observed=ServiceLifecycle(self.host).observe(plan,doc['events'])
+                from maintenance_session_state import load as load_session
+                try:session=load_session(self.root,self.owner,request_id,plan)
+                except FileNotFoundError:session=None
+                if session and any(e['phase']=='window-close-intent' for e in session['events']):
+                    from maintenance_session_monitor import SessionMonitor
+                    observed=SessionMonitor(self,self.root).observe(plan,session)
+                else:observed=ServiceLifecycle(self.host).observe(plan,doc['events'])
                 result.update(state='observed',services=observed,games=[x for x in observed if x['service'] in plan['service_cycle']['games']])
                 return result
             if self.host.identity() != plan['identity']:
@@ -440,7 +465,7 @@ class DrainMonitor:
             if request_id is None:
                 return {'active': False, 'verified': False}
             doc = c._load(request_id)
-            if doc['state'] in {'prepared', *TERMINAL_NO_EFFECT}:
+            if doc['state'] in {'prepared', *TERMINAL_FINISHED}:
                 return {'active': False, 'verified': False}
             now, mono = c._now()
             # Allow fixed waits for each planned game plus probe/receipt overhead.

@@ -37,6 +37,11 @@ def test_full_continuation_uses_original_real_database_before_releasing_gate(env
     assert not read(env[2],'SELECT * FROM taiwan_cain_2nd.postal')
     count=len(h.calls)
     assert s.close_restore(RID)['state']=='completed' and len(h.calls)==count
+    assert c.status(RID)['state']=='completed'
+    next_id='b'*32
+    assert c.prepare(next_id,'下一个隔离数据库维护')['state']=='prepared'
+    assert c.status(RID)['state']=='completed' and c._active()==next_id
+    assert s.close_restore(RID)['state']=='completed' and len(h.calls)==count
 
 
 def test_original_uuid_mismatch_does_not_settle_interrupted_inventory_intent(inv):

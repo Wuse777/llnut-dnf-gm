@@ -79,3 +79,14 @@ it('shows auxiliary writer progress without implying a maintenance permit',async
  expect(w.text()).not.toContain('核对并确认维护')
  expect(posts()).toHaveLength(1)
 })
+
+it('labels restore phases and process observations without claiming gameplay verification',async()=>{
+ const w=setup();await prepare(w)
+ record={...initial(),status:'queued',result:{state:'resuming',events:[{sequence:1,phase:'window-closed',at:1001},{sequence:2,phase:'restore-start-sent',at:1002,service:'guild'}],observation:{state:'observed',collected_at:1003,services:[{service:'guild',state:'starting'},{service:'mysql',state:'restored'}]}}}
+ await click(w,'只查询原申请')
+ expect(w.text()).toContain('窗口已关闭并完成数据库核对')
+ expect(w.text()).toContain('组件启动命令已返回')
+ expect(w.text()).toContain('正在核对就绪状态')
+ expect(w.text()).not.toContain('核对并确认维护')
+ expect(posts()).toHaveLength(1)
+})

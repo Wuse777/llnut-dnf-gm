@@ -1,0 +1,100 @@
+"""Read-only restore transition proof; no database, signals, writes or renewals."""
+import os
+from pathlib import Path
+
+from dnfgm.inventory_fence import MAX_CLOSE_BYTES, _read
+from dnfgm.release_files import Refused
+from maintenance_gate import WriteGateManager
+from maintenance_session_state import bound_to_plan, load
+from service_lifecycle import START_TIMEOUT, validate_cycle
+
+
+class SessionMonitor:
+    def __init__(self, coordinator, runtime_root, *, required_components=()):
+        self.c,self.runtime=coordinator,Path(runtime_root)
+        self.required_components=tuple(required_components)
+
+    def observe(self,plan,session):
+        h=self.c.host;cycle=validate_cycle(plan)
+        if h.identity()!=plan['identity']:raise Refused('maintenance_restore_target_changed')
+        states=h.services();before=plan['services_before']
+        if set(states)!=set(before) or any(list(states[n])!=before[n] for n in cycle['unchanged']):
+            raise Refused('maintenance_restore_unrelated_service_changed')
+        latest={e['data']['service']:e for e in session['events'] if 'service' in e['data']}
+        result=[]
+        for name,entry in cycle['entries'].items():
+            if h.contract(plan['identity'],name)!=entry['contract']:raise Refused('maintenance_service_contract_changed')
+            row=list(states[name]);event=latest.get(name);phase=event['phase'] if event else None
+            stopped=[False,False,False,True,-1]
+            marked=[False,False,entry['before'][2],True,-1]
+            state='changed'
+            if phase is None and row==stopped:state='down_waiting_restore'
+            elif phase=='restore-marker-intent' and row in (stopped,marked):state='restore_marker_pending'
+            elif phase=='restore-marker-applied' and row==marked:state='restore_start_pending'
+            elif phase in ('restore-start-intent','restore-start-sent'):
+                if row==marked:state='restore_start_pending'
+                elif row[0] and row[1] and row[2]==entry['before'][2] and row[4]>0:
+                    process=h.service_process(plan['identity'],row[4])
+                    if process['program_sha256']==entry['process']['program_sha256']:state='starting'
+            elif phase=='service-restored':
+                if row==event['data']['state'] and h.service_process(plan['identity'],row[4])==event['data']['process']:
+                    state='restored'
+            result.append({'service':name,'state':state})
+        if h.identity()!=plan['identity'] or h.services()!=states:raise Refused('maintenance_restore_observation_changed')
+        return result
+
+    def status(self):
+        c=self.c
+        if not os.path.lexists(c.root):return None
+        request_id=c._active()
+        if request_id is None:return None
+        raw=c._load(request_id);plan=raw['plan']
+        if raw['version']!=3 or raw['state'] not in ('writers_stopped','completed'):return None
+        try:session=load(c.root,c.owner,request_id,plan)
+        except FileNotFoundError:
+            if raw['state']=='completed':raise Refused('maintenance_completion_missing')
+            return None
+        if raw['state']=='completed':return {'active':False,'verified':False,'recorded_state':'completed'}
+        closing=next((e for e in session['events'] if e['phase']=='window-close-intent'),None)
+        if closing is None:return None
+        now,mono=c._now();duration=len(plan['service_cycle']['start_order'])*(START_TIMEOUT+10)+120
+        result={'active':True,'verified':False,'authority':'restore-transition',
+                'request_id':request_id,'phase':session['state'],'maintenance_permit':False,
+                'collected_at':now,'expires_at':closing['at']+duration}
+        if not (0<=now-closing['at']<duration and 0<=mono-closing['monotonic']<duration):
+            result['reason']='maintenance_restore_observation_expired';return result
+        original=plan['services_before'];games=set(plan['service_cycle']['games'])
+        if any(name not in original or (name not in games and
+                (original[name][:3]!=[True,True,True] or original[name][4]<1)) for name in self.required_components):
+            result['reason']='maintenance_preexisting_component_failure';return result
+        if os.path.lexists(self.runtime/'permit.json'):
+            # The normal window adapter owns observations before revocation.
+            return None
+        closed=_read(self.runtime,'closed.json',c.owner,MAX_CLOSE_BYTES)
+        if (closed.get('id')!=request_id or not bound_to_plan(closed.get('binding'),plan)
+                or type(closed.get('safe_to_resume')) is not bool):
+            raise Refused('maintenance_close_not_proven')
+        if len(session['events'])>=4 and closed['safe_to_resume'] is not True:
+            raise Refused('maintenance_close_not_proven')
+        gate=c.admission.gate if c.admission else WriteGateManager('/var/lib/dnf-gm/write-gate',owner=c.owner)
+        released=next((e['data'] for e in session['events'] if e['phase']=='gate-released'),None)
+        expected=released or raw['events'][1]['data']
+        with gate.locked(False):
+            if gate.read()!=expected:raise Refused('maintenance_restore_gate_changed')
+        services=self.observe(plan,session)
+        if any(s['state']=='changed' for s in services):
+            result['reason']='maintenance_restore_unexpected_state';return result
+        if (c._active()!=request_id or c._load(request_id)!=raw or load(c.root,c.owner,request_id,plan)!=session
+                or _read(self.runtime,'closed.json',c.owner,MAX_CLOSE_BYTES)!=closed
+                or os.path.lexists(self.runtime/'permit.json')):
+            raise Refused('maintenance_restore_journal_changed')
+        with gate.locked(False):
+            if gate.read()!=expected:raise Refused('maintenance_restore_gate_changed')
+        after,after_mono=c._now()
+        if not (0<=after-closing['at']<duration and 0<=after_mono-closing['monotonic']<duration):
+            result['reason']='maintenance_restore_observation_expired';return result
+        if session['state']=='completed':
+            # No maintenance exception after success; the ordinary collector
+            # independently decides current service/gateway health.
+            return {'active':False,'verified':False,'recorded_state':'completed'}
+        return {**result,'verified':True,'services':services}

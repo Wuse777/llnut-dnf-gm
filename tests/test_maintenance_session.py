@@ -71,8 +71,8 @@ def test_complete_local_window_close_restore_is_bound_and_idempotent(session):
         assert list(h.rows[name][:3])==entry['before'][:3]
     commands=copy.deepcopy(h.calls)
     assert s.close_restore(RID)==result and s.open(RID)==result and h.calls==commands
-    # Completion of this continuation is NOT yet retirement of the root request.
-    assert c._active()==RID
+    # Keep the pointer as history, but mark this request finished so a new one can claim it.
+    assert c._active()==RID and c.status(RID)['state']=='completed'
 
 
 def test_closed_guard_blocks_other_issue_and_shared_writes_during_every_restore(session):

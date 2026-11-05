@@ -6,12 +6,12 @@ are connected. Service commands never replay after a durable start intent.
 """
 import copy
 import hashlib
-import math
 
 from dnfgm.inventory_fence import BOUND_FIELDS, _read
 from dnfgm.inventory_reconcile import settle_window
 from dnfgm.release_files import Refused, canonical, read_json
-from maintenance_drain import MAX_BYTES, error_code
+from maintenance_drain import error_code
+from maintenance_session_state import load as load_session, steps as session_steps
 from maintenance_admission import validate_token
 from service_lifecycle import validate_cycle
 
@@ -28,7 +28,8 @@ class MaintenanceSession:
     def _plan(self, request_id):
         c=self.coordinator
         doc=c._load(request_id)
-        if doc['version']!=3 or doc['state']!='writers_stopped' or c._active()!=request_id:
+        if (doc['version']!=3 or doc['state'] not in ('writers_stopped','completed')
+                or doc['state']!='completed' and c._active()!=request_id):
             raise Refused('maintenance_writers_not_stopped')
         plan=doc['plan'];validate_cycle(plan)
         token=validate_token(doc['events'][1]['data'],plan['admission'],request_id,plan['identity'])
@@ -38,15 +39,7 @@ class MaintenanceSession:
         return {**{k:plan['identity'][k] for k in BOUND_FIELDS if k!='components'},
                 'components':list(self.coordinator.host.cfg['components'])}
 
-    @staticmethod
-    def steps(plan):
-        result=[('window-issue-intent',None),('window-issued',None),
-                ('window-close-intent',None),('window-closed',None)]
-        for name in plan['service_cycle']['start_order']:
-            result.extend((phase,name) for phase in ('restore-marker-intent','restore-marker-applied',
-                'restore-start-intent','restore-start-sent','service-restored'))
-        return result+[('services-restored',None),('gate-release-intent',None),
-                       ('gate-released',None),('session-completed',None)]
+    steps = staticmethod(session_steps)
 
     def _save(self, doc):
         value={k:v for k,v in doc.items() if k!='digest'}
@@ -54,26 +47,7 @@ class MaintenanceSession:
         self.coordinator._write('session-'+doc['request_id']+'.json',value)
 
     def _load(self, request_id, plan):
-        c=self.coordinator;c._id(request_id)
-        doc=_read(c.root,'session-'+request_id+'.json',c.owner,MAX_BYTES)
-        try:
-            if (set(doc)!={'version','request_id','fingerprint','state','events','error','digest'}
-                    or type(doc['version']) is not int or doc['version']!=1
-                    or doc['request_id']!=request_id or doc['fingerprint']!=plan['fingerprint']
-                    or doc['state'] not in ('opening','maintenance_open','closing','restoring','completed','needs_review')
-                    or doc['digest']!=hashlib.sha256(canonical({k:v for k,v in doc.items() if k!='digest'})).hexdigest()
-                    or not isinstance(doc['events'],list) or len(doc['events'])>512):
-                raise ValueError()
-            steps=self.steps(plan)
-            if len(doc['events'])>len(steps):raise ValueError()
-            for event,(phase,name) in zip(doc['events'],steps):
-                if (set(event)!={'phase','data','at','monotonic'}
-                        or any(type(event[k]) not in (int,float) or not math.isfinite(event[k]) or event[k]<0 for k in ('at','monotonic'))
-                        or event['phase']!=phase or not isinstance(event['data'],dict)
-                        or event['data'].get('service')!=name):raise ValueError()
-            if doc['state']=='completed' and len(doc['events'])!=len(steps):raise ValueError()
-        except (KeyError,TypeError,ValueError):raise Refused('maintenance_session_invalid') from None
-        return doc
+        return load_session(self.coordinator.root,self.coordinator.owner,request_id,plan)
 
     def _record(self, doc, plan, phase, data):
         steps=self.steps(plan);i=len(doc['events'])
@@ -151,6 +125,9 @@ class MaintenanceSession:
             plan,token=self._plan(request_id);doc=self._load(request_id,plan)
             # Only an explicit first close initiates service restoration. Other
             # states remain query-only; unknown command effects are not replayed.
+            if doc['state']=='completed':
+                self._retire(doc,plan)
+                return self.view(doc)
             if doc['state']!='maintenance_open':return self.view(doc)
             c.admission.verify_frozen(token);self._database(plan)
             self._window_matches(request_id,plan)
@@ -188,8 +165,40 @@ class MaintenanceSession:
                     released=c.admission.gate.release(token,verify_restored=restored_proof)
                     self._record(doc,plan,'gate-released',released)
                     self._record(doc,plan,'session-completed',{'window_id':request_id})
+                self._retire(doc,plan)
                 return self.view(doc)
             except Exception as error:return self._failure(request_id,plan,error)
+
+    def _retire(self, session, plan):
+        """Finish logical ownership only after durable close/restore/release.
+
+        Called under coordinator.locked(). Retrying this final bookkeeping never
+        repeats a game command. Historical completed requests stay readable even
+        when a later request owns the gate.
+        """
+        c=self.coordinator;request_id=session['request_id'];raw=c._load(request_id)
+        if raw['state']=='completed':return
+        verified=self._load(request_id,plan)
+        if verified['state']!='completed' or c._active()!=request_id:
+            raise Refused('maintenance_completion_unproven')
+        released=next(e['data'] for e in verified['events'] if e['phase']=='gate-released')
+        expected=copy.deepcopy(plan['services_before'])
+        records=[e['data'] for e in verified['events'] if e['phase']=='service-restored']
+        for item in records:expected[item['service']]=item['state']
+        with self.window.closed_guard(request_id,expected_binding=self.binding(plan)):
+            with c.admission.gate.locked(False):
+                if c.admission.gate.read()!=released:raise Refused('maintenance_completion_gate_changed')
+                self._database(plan)
+                health=self.health()
+                if (health.get('core_ok') is not True or health.get('services',{}).get('dnf_gateway') is not True
+                        or any(health.get(k)!=plan['identity'][k] for k in ('image_digest','pvf_sha256'))):
+                    raise Refused('maintenance_restored_core_unhealthy')
+                c.lifecycle.check(plan,expected)
+                for item in records:
+                    if c.host.service_process(plan['identity'],item['state'][4])!=item['process']:
+                        raise Refused('maintenance_restored_process_changed')
+                raw.update(state='completed',updated_at=c._now()[0])
+                c._write(request_id+'.json',raw)
 
     def status(self, request_id):
         plan,_=self._plan(request_id)

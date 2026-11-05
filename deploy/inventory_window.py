@@ -270,8 +270,11 @@ class MonitorWindow:
             if not os.path.lexists(STATE):
                 return {'active':False,'verified':False}
             try:
-                return DrainMonitor(DrainCoordinator(STATE,ServiceHost(self.manager.probe),lock_path=GLOBAL_LOCK),
-                                    required_components=self.monitored_components).status()
+                from maintenance_session_monitor import SessionMonitor
+                coordinator=DrainCoordinator(STATE,ServiceHost(self.manager.probe),lock_path=GLOBAL_LOCK)
+                restored=SessionMonitor(coordinator,self.manager.root,required_components=self.monitored_components).status()
+                if restored is not None:return restored
+                return DrainMonitor(coordinator,required_components=self.monitored_components).status()
             except Exception:
                 return {'active':True,'verified':False,'reason':'maintenance_transition_unavailable'}
         try:

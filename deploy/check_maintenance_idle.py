@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from dnfgm.inventory_fence import _read, directory, MAX_CLOSE_BYTES
 from dnfgm.release_files import Refused, read_json
-from maintenance_drain import DrainCoordinator, STATE, TERMINAL_NO_EFFECT
+from maintenance_drain import DrainCoordinator, STATE, TERMINAL_FINISHED
 
 RUNTIME = Path('/run/dnf-gm/maintenance')
 GATE = Path('/var/lib/dnf-gm/write-gate')
@@ -47,7 +47,7 @@ def assert_idle(*, state=STATE, runtime=RUNTIME, gate=GATE, owner=0):
                 if entry.name != 'coordinator.lock':
                     raise Refused('maintenance_journal_unresolved')
         return
-    if c._load(request_id)['state'] not in TERMINAL_NO_EFFECT:
+    if c._load(request_id)['state'] not in TERMINAL_FINISHED:
         raise Refused('maintenance_request_not_finished')
 
 

@@ -28,7 +28,7 @@ STATES = {'prepared','running','needs_review','game_drained','writers_stopped','
 PUBLIC_FIELDS = {'state','fingerprint','created_at','expires_at','updated_at','revision','phase',
                  'games','events','command_may_have_run','error','maintenance_permit',
                  'can_confirm','can_cancel','can_replay','can_resume','client_verified',
-                 'preview_expired','observation'}
+                 'preview_expired','observation','window_requires_live_check'}
 
 
 class MaintenancePrepare(BaseModel):
