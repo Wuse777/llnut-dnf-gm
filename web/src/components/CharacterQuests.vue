@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import {ref,computed,onMounted,onBeforeUnmount} from 'vue'
+import {ref,computed,onMounted,onBeforeUnmount,nextTick} from 'vue'
 import QuestRepair from './QuestRepair.vue'
 import {api,ApiError,uncertainMessage} from '../api'
 const props=defineProps<{characNo:number}>()
-const repairSelection=ref(0),repairRoot=ref<HTMLElement|null>(null)
+const repairSelection=ref(0),repairRoot=ref<HTMLElement|null>(null),lookupRoot=ref<HTMLElement|null>(null)
 const searchText=ref(''),searchError=ref(''),searchResults=ref<any>(null),searchBusy=ref(false)
-function chooseSlot(slot:number){repairSelection.value=slot;repairRoot.value?.scrollIntoView?.({block:'start',behavior:'smooth'})}
+function reveal(el:HTMLElement|null){
+ if(!el)return
+ const body=el.closest<HTMLElement>('.modal-body')
+ if(!body){el.scrollIntoView?.({block:'start'});return}
+ const identity=body.querySelector<HTMLElement>('.sticky-character-identity')
+ body.scrollTop+=el.getBoundingClientRect().top-body.getBoundingClientRect().top-(identity?.getBoundingClientRect().height||0)-16
+}
+function chooseSlot(slot:number){repairSelection.value=slot;reveal(repairRoot.value)}
 async function searchQuests(page=1){
  searchError.value=searchText.value.trim()?'':'请输入任务名称或编号'
  if(searchError.value||searchBusy.value)return
@@ -13,7 +20,7 @@ async function searchQuests(page=1){
  try{const result=await api(`/characters/${props.characNo}/quests/search?q=${encodeURIComponent(searchText.value.trim())}&page=${page}`);if(alive)searchResults.value=result}
  catch(e){if(alive){searchError.value=uncertainMessage(e);if(e instanceof ApiError&&e.status===401)emit('expired')}}finally{if(alive)searchBusy.value=false}
 }
-function openQuest(id:number){query.value=String(id);void load(1)}
+async function openQuest(id:number){query.value=String(id);await load(1);await nextTick();reveal(lookupRoot.value)}
 const emit=defineEmits(['expired','reauth','busy','pending','changed'])
 const data=ref<any>(null),busy=ref(false),error=ref(''),query=ref(''),queryError=ref(''),filter=ref(''),onlyIssues=ref(false)
 let alive=true,generation=0
@@ -63,7 +70,7 @@ onMounted(()=>load());onBeforeUnmount(()=>{alive=false;generation++})
   <p :class="data.catalog.state==='matched'?'field-hint':'warning'">任务名称索引：{{catalogLabels[data.catalog.state]||data.catalog.state}}<span v-if="data.catalog.state==='matched'&&!data.catalog.runtime_fresh">；实时PVF快照过期，版本匹配仅依据配置</span></p>
   <p v-if="data.state==='missing'" class="warning">{{data.message}}</p>
   <p v-for="issue in data.issues" :key="issue.code" class="warning">{{issue.message}}</p>
-  <article v-if="data.lookup" class="quest-card lookup-card">
+  <article v-if="data.lookup" ref="lookupRoot" class="quest-card lookup-card">
    <h4>查询结果 · #{{data.lookup.id}} {{data.lookup.definition?.name||'无可用名称'}}</h4>
    <p>{{clearText(data.lookup.clear_flag)}} · 进行中槽位：{{data.lookup.active_slots.join('、')||'未占用'}}</p>
    <p v-if="!data.lookup.within_native_range" class="warning">超出当前原生完成标记编号范围</p>
@@ -95,5 +102,5 @@ onMounted(()=>load());onBeforeUnmount(()=>{alive=false;generation++})
  <p v-if="busy" role="status">正在读取任务存档…</p>
 </section></template>
 <style scoped>
-.quest-panel{display:grid;gap:18px}.quest-search,.quest-repair{border-top:1px solid var(--border-color);padding-top:16px}.quest-prerequisites button{text-align:left}h5{margin:12px 0 8px}.quest-heading,.button-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.quest-heading h3,.quest-heading h4{margin:0}.quest-query{display:flex;align-items:end;flex-wrap:wrap;gap:12px}.quest-query label{flex:1;min-width:160px}.quest-query p{flex-basis:100%}label{display:grid;gap:6px}label.inline{display:flex;align-items:center;gap:8px}.inline input{width:auto}.quest-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}.quest-card{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:12px;padding:14px;overflow-wrap:anywhere}.quest-card>.pill{margin-left:8px}.quest-condition{white-space:pre-wrap}.lookup-card{border-left:3px solid var(--primary-color)}.button-row{justify-content:flex-start}details>summary{cursor:pointer}
+.quest-panel{display:grid;gap:18px}.quest-search,.quest-repair{scroll-margin-top:110px;border-top:1px solid var(--border-color);padding-top:16px}.quest-prerequisites button{text-align:left}h5{margin:12px 0 8px}.quest-heading,.button-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.quest-heading h3,.quest-heading h4{margin:0}.quest-query{display:flex;align-items:end;flex-wrap:wrap;gap:12px}.quest-query label{flex:1;min-width:160px}.quest-query p{flex-basis:100%}label{display:grid;gap:6px}label.inline{display:flex;align-items:center;gap:8px}.inline input{width:auto}.quest-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}.quest-card{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:12px;padding:14px;overflow-wrap:anywhere}.quest-card>.pill{margin-left:8px}.quest-condition{white-space:pre-wrap}.lookup-card{scroll-margin-top:110px;border-left:3px solid var(--primary-color)}.button-row{justify-content:flex-start}details>summary{cursor:pointer}
 </style>

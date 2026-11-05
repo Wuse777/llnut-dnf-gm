@@ -71,7 +71,7 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
 <template>
  <Modal title="角色详情" :busy="actionBusy" @close="emit('close')">
   <div ref="root" class="character-detail" data-testid="character-detail">
-   <div class="section-title character-toolbar"><span class="pill">角色详情 · #{{characNo}}</span><button :disabled="loading||actionBusy||unlockPending||inventoryPending||fatiguePending||renamePending||rescuePending||section==='unlock'||section==='manage'||section==='fatigue'||section==='rename'||section==='rescue'" @click="load">{{loading?'正在读取…':'刷新角色存档'}}</button></div>
+   <div class="section-title character-toolbar"><span class="pill">角色详情 · #{{characNo}}</span><button :disabled="loading||actionBusy||unlockPending||inventoryPending||fatiguePending||renamePending||rescuePending||questPending||section==='unlock'||section==='manage'||section==='fatigue'||section==='rename'||section==='rescue'||section==='quests'" @click="load">{{loading?'正在读取…':'刷新角色存档'}}</button></div>
    <p v-if="inventoryStale" class="notice" role="status">存档操作已提交；下方角色资料仍是旧快照。结束操作后切换到物品页，点击“刷新角色存档”。</p>
    <p v-if="loading" role="status" class="empty"><span class="spinner"/> 正在读取角色资料、装备、背包与仓库…</p>
    <div v-else-if="error" class="submit-error" role="alert"><b>无法读取角色详情</b><p>{{error}}</p><button @click="load">重试查询</button></div>
