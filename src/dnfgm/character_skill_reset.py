@@ -85,7 +85,7 @@ class CharacterSkillReset(CharacterSkills):
         return hmac.new(self.settings.secret.encode(),body,hashlib.sha256).hexdigest()
 
     @staticmethod
-    def proposal(archive,payload,expert,sp,trees):
+    def proposal(archive,payload,expert,sp,trees,*,allow_unchanged=False):
         points=archive['points'];context=points['context']
         defaults,skipped=rules.rebuild(payload,context['grow_type'],rules.expert_skills(archive['expert']['kind'],archive['expert']['experience'],context['lev'],expert))
         after=json.loads(dump(archive));new_blob=rules.pack(defaults);totals=rules.reset_points(context['lev'],sp);changes={}
@@ -102,7 +102,7 @@ class CharacterSkillReset(CharacterSkills):
             after['points'][SP[tree]]=totals['sp'];after['points'][TP[tree]]=totals['tp']
             changes[f'tree_{tree}']={'tree':tree,'before':{'skills':rules.learned(raw,payload['definitions']),'sp':points[SP[tree]],'tp':points[TP[tree]]},
                 'after':{'skills':rules.learned(defaults,payload['definitions']),**totals},'temporary_backup_reset':len(fields)>1,'skipped_defaults':skipped}
-        if after==archive:raise ValueError('选中技能树已是重置后的状态，无需提交')
+        if after==archive and not allow_unchanged:raise ValueError('选中技能树已是重置后的状态，无需提交')
         return after,changes
 
     def read(self,charac_no):

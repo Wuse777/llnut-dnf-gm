@@ -197,6 +197,10 @@ class Catalog:
                 read_metadata(c,labels)
                 jobs = json.loads(m.get('jobs','{}'))
                 if not isinstance(jobs,dict): jobs = {}
+                if m.get('profession_rules_version')=='qf1031-profession-1':
+                    for row in c.execute('SELECT job,payload_json FROM profession_rules LIMIT 32'):
+                        display=json.loads(row['payload_json'])
+                        jobs.setdefault(str(row['job']),{})['profiles']={str(o['code']):o['name'] for o in display['choices']}
                 return {'state':'ok','items':labels,'jobs':jobs}
         except (HTTPException,sqlite3.Error,ValueError,OSError):
             return {'state':'unavailable','items':{},'jobs':{}}

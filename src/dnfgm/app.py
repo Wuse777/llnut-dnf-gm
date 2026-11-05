@@ -28,6 +28,7 @@ from .character_progression import CharacterProgression
 from .character_skills import CharacterSkills, SkillPointsPreview
 from .character_skill_reset import CharacterSkillReset, SkillResetPreview
 from .character_levels import CharacterLevels, LevelPreview
+from .character_profession import CharacterProfession, ProfessionPreview
 from .player_preferences import PlayerPreferences,PlayerTarget,PlayerFavorite
 from .backup_schedule import BackupSchedule,BackupPolicy,BackupRequest
 from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm, MaintenanceClose, MaintenanceRecover
@@ -113,6 +114,7 @@ def create_app(settings=None, database=None):
     skill_ops = CharacterSkills(service)
     skill_reset_ops = CharacterSkillReset(service)
     level_ops = CharacterLevels(service)
+    profession_ops = CharacterProfession(service)
     player_preferences = PlayerPreferences(db)
     maintenance = MaintenanceRequests(db,settings)
     schedules = Schedules(db, settings, jobs, native_ops)
@@ -142,6 +144,7 @@ def create_app(settings=None, database=None):
     app.state.character_skills = skill_ops
     app.state.character_skill_reset = skill_reset_ops
     app.state.character_levels = level_ops
+    app.state.character_profession = profession_ops
     app.state.quest_operations = quest_ops
     app.state.maintenance = maintenance
     app.add_middleware(Guard, settings=settings)
@@ -570,6 +573,36 @@ def create_app(settings=None, database=None):
     def skill_reset_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
         key=user(request,True,True);limits.check('character-skill-reset-cancel:'+key,12)
         return skill_reset_ops.cancel(op)
+
+    @app.get(API+'/character-profession/characters/{charac_no}')
+    def character_profession_read(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
+        key=user(request);limits.check('character-profession-read:'+key,30)
+        return profession_ops.read(charac_no)
+
+    @app.get(API+'/character-profession/operations')
+    def profession_history(request:Request,uid:int=Query(0,ge=0,le=2147483647),charac_no:int=Query(0,ge=0,le=2147483647),page:int=Query(1,ge=1,le=10000)):
+        key=user(request);limits.check('character-profession-history:'+key,30)
+        return profession_ops.history(uid,charac_no,page)
+
+    @app.post(API+'/character-profession/preview')
+    def profession_preview(data:ProfessionPreview,request:Request):
+        key=user(request,True,True);limits.check('character-profession-preview:'+key,12)
+        return profession_ops.preview(key,data.model_dump())
+
+    @app.get(API+'/character-profession/operations/{op}')
+    def profession_detail(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request);limits.check('character-profession-detail:'+key,30)
+        return profession_ops.detail(op)
+
+    @app.post(API+'/character-profession/operations/{op}/confirm')
+    def profession_confirm(data:Confirm,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('character-profession-confirm:'+key,10)
+        return profession_ops.confirm(key,op,data.idempotency_key)
+
+    @app.post(API+'/character-profession/operations/{op}/cancel-preview')
+    def profession_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('character-profession-cancel:'+key,12)
+        return profession_ops.cancel(op)
 
     @app.get(API+'/character-levels/characters/{charac_no}')
     def character_levels_read(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):

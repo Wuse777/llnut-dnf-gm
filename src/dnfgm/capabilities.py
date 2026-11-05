@@ -52,7 +52,7 @@ FEATURES = (
  ('assets','物品图标与职业头像','展示与素材','catalog','assets','图片包匹配不代表像素或客户端一致性已验收。'),
  ('private-message','指定玩家系统消息','待适配',None,'unimplemented','尚未接入当前镜像可靠的私信通道。'),
  ('character-quests','任务检索与异常线索','角色维护','accounts',None,'读取20个任务槽和已完成标记，显示重复任务及PVF缺失等线索，单槽清理使用独立预览入口，不自动完成任务。'),
- ('character-advanced','职业／转职维护','待适配',None,'unimplemented','等级／经验已有独立维护入口；职业、转职与觉醒合法组合写入仍待适配。'),
+ ('character-advanced','转职／觉醒维护','存档维护','accounts','char-profession','同基础职业内按PVF选择转职／觉醒；关联成长和两套PvE技能，需显式维护窗口，不冒充在线原生转职。'),
 )
 REASONS = {
  'maintenance_executor_missing':'完整维护执行与恢复执行器尚未安装或状态过期，可在维护中心核对；不是管理员权限限制。',

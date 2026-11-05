@@ -71,7 +71,11 @@ def profession(job, grow_type, jobs):
     entry = jobs.get(str(job), {})
     names = entry.get('grow_names', [])
     base = names[0] if names else f'未知职业 #{job}'
-    # Only exact PVF growtype-name indices. Do not infer awakening bit flags.
+    profiles=entry.get('profiles',{})
+    if str(grow_type&127) in profiles and -128<=grow_type<=127:
+        return {'base_name':base,'name':profiles[str(grow_type&127)],'job':job,'grow_type':grow_type,'grow_name_known':True,
+                'note':'转职／觉醒名称来自当前PVF的分段索引；保留独立高位标记'}
+    # Older catalogs lack the bound segmented names; preserve their honest fallback.
     mapped = 0 <= grow_type < len(names)
     return {'base_name':base, 'name':names[grow_type] if mapped else base,
             'job':job,'grow_type':grow_type,'grow_name_known':mapped,
