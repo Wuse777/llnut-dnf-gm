@@ -214,10 +214,11 @@ class MonitorWindow:
         cfg=read_json(CONFIG,owner=0,limit=65536)
         probe=LinuxProbe(cfg)
         # Maintenance cannot omit another core service known by the normal
-        # collector, or silently target a different container/PVF/component set.
+        # collector, or silently target a different container/PVF. The maintenance inventory
+        # is complete; the normal health monitor may check only core components.
         normalize=lambda n:n.removesuffix('.service')
         if (cfg['container']!=monitor_cfg['container'] or cfg['pvf_path']!=monitor_cfg['pvf_path']
-                or set(cfg['components'])!=set(monitor_cfg['components'])
+                or not set(monitor_cfg['components'])<=set(cfg['components'])
                 or not {normalize(n) for n in monitor_cfg['core_services']} <= {normalize(n) for n in cfg['protected_services'].values()}):
             raise Refused('maintenance_monitor_config_mismatch')
         self.manager=WindowManager(ROOT,probe)

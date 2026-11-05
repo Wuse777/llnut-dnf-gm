@@ -79,7 +79,7 @@ def test_full_readonly_probe(scene):
 
 @pytest.mark.parametrize('row', ['true false false true 9','false true false true -1',
     'false false true true -1','false false false false -1','false false false true 9'])
-def test_down_means_no_restart_and_finish_complete(row):
+def test_down_means_no_restart_and_no_live_service_pid(row):
     with pytest.raises(Refused,match='writers_not_quiescent'):
         parse_components('mysql=true true true false 3\nchannel='+row,['mysql','channel'])
 
@@ -289,7 +289,8 @@ def test_monitor_adapter_cannot_waive_core_or_target_mismatch(scene,tmp_path,mon
                  'core_services':['docker','dnf','mihomo.service','cliproxyapi.service']}
     window=inventory_window.MonitorWindow(monitor_cfg)
     assert window.manager.probe.cfg==cfg
-    for field,value in [('container','other'),('pvf_path','/other'),('components',['mysql','channel']),('core_services',['extra-core.service'])]:
+    assert inventory_window.MonitorWindow({**monitor_cfg,'components':['mysql','channel']}).manager.probe.cfg==cfg
+    for field,value in [('container','other'),('pvf_path','/other'),('components',['mysql','unlisted-writer']),('core_services',['extra-core.service'])]:
         bad={**monitor_cfg,field:value}
         with pytest.raises(Refused,match='config_mismatch'):inventory_window.MonitorWindow(bad)
 
@@ -342,3 +343,111 @@ def test_status_distinguishes_revoked_unresolved_and_successful_close(manager,mo
     with pytest.raises(Refused,match='previous_close_unresolved'):issue(m)
     m.reconcile=original;m.close(issued['id'])
     assert m.status()['state']=='closed' and m.status()['safe_to_resume'] is True
+
+
+def test_initially_down_readiness_is_not_a_finish_or_process_proof():
+    result=parse_components('mysql=true true true false 3\ngame_template=false false false false -1',['mysql','game_template'],dormant=['game_template'])
+    assert result['game_template']==(False,False,False,False,-1)
+
+
+def test_complete_s6_inventory_retains_only_reviewed_infrastructure(scene):
+    cfg,probe,*_=scene
+    cfg=copy.deepcopy(cfg)
+    cfg['components']+=['mysql-log','s6rc-fdholder']
+    cfg['resident_components']=['mysql','mysql-log','s6rc-fdholder']
+    validate(cfg)
+    text='mysql=true true true false 3\nchannel=false false false true -1\ngame_siroco11=false false false true -1\nmysql-log=true true true true 4\ns6rc-fdholder=true true true true 5'
+    assert len(parse_components(text,cfg['components'],cfg['resident_components']))==5
+    with pytest.raises(Refused,match='infrastructure_down'):
+        parse_components(text.replace('mysql-log=true true true true 4','mysql-log=false false true false -1'),cfg['components'],cfg['resident_components'])
+    cfg['resident_components'].append('game_siroco11')
+    with pytest.raises(Refused,match='resident_policy_invalid'):validate(cfg)
+
+
+def test_initially_down_service_does_not_hide_unknown_finish_process(scene):
+    cfg,probe,proc,calls,clock,runner=scene
+    # Existing process-policy evidence must remain required independently of
+    # the supervised service's ready flag.
+    (proc/'103/cmdline').write_bytes(b'finish-script\0')
+    with pytest.raises(Refused,match='unmanaged_process'):probe()
+
+
+def test_resident_service_pid_must_be_an_approved_logger(scene):
+    cfg,probe,proc,calls,clock,_=scene
+    runner=probe.runner
+    cfg=copy.deepcopy(cfg);cfg['components'].append('mysql-log');cfg['resident_components']=['mysql','mysql-log']
+    def run(args,timeout):
+        text=runner(args,timeout)
+        if args[:2]==['docker','exec']:text+='mysql-log=true true true true 2\n'
+        return text
+    tested=LinuxProbe(cfg,runner=run,proc=proc,clock=lambda:clock[0],monotonic=lambda:clock[0])
+    with pytest.raises(Refused,match='resident_process_unproven'):tested()
+
+
+@pytest.mark.parametrize('residents',[None,[],['mysql','mysql'],['mysql',{}],['channel'],['mysql','unknown'],['mysql','channel']])
+def test_invalid_resident_policies_fail_closed(scene,residents):
+    cfg=copy.deepcopy(scene[0]);cfg['resident_components']=residents
+    with pytest.raises(Refused):validate(cfg)
+
+
+def test_shared_supervisor_binary_hash_is_cached_by_inode(scene,tmp_path,monkeypatch):
+    cfg,probe,*_=scene
+    path=tmp_path/'shared';path.write_bytes(b'shared read-only supervisor binary')
+    link=tmp_path/'same-inode';os.link(path,link)
+    probe.deadline=1120
+    original=os.read;calls=[]
+    def read(fd,size):calls.append(size);return original(fd,size)
+    monkeypatch.setattr(os,'read',read)
+    expected=probe.hash_file(path,1000);n=len(calls)
+    assert n>0 and probe.hash_file(link,1000)==expected and len(calls)==n
+
+
+@pytest.mark.parametrize('names',[None,['channel'],['game_siroco11'],['game_template','game_template'],[{}]])
+def test_dormant_policy_cannot_hide_writers(scene,names):
+    cfg=copy.deepcopy(scene[0]);cfg['components'].append('game_template');cfg['dormant_components']=names
+    with pytest.raises(Refused):validate(cfg)
+
+
+def test_dormant_requires_disabled_autostart_and_no_service_pid():
+    for status in ['false false true false -1','true false false false 9','false true false false -1','false false false false 9']:
+        with pytest.raises(Refused,match='dormant_service_active'):
+            parse_components('mysql=true true true false 3\ngame_template='+status,['mysql','game_template'],dormant=['game_template'])
+
+
+def test_full_probe_preserves_logger_and_s6_infrastructure(scene,tmp_path):
+    cfg,old,proc,calls,clock,_=scene
+    cfg=copy.deepcopy(cfg)
+    cfg['components']+=['mysql-log','s6rc-fdholder','game_template']
+    cfg['resident_components']=['mysql','mysql-log','s6rc-fdholder']
+    cfg['dormant_components']=['game_template']
+    for pid,nspid,name,role in [(104,4,'logger','logger'),(105,5,'fdholder','supervisor')]:
+        exe=tmp_path/name;exe.write_bytes(('synthetic '+name).encode())
+        cfg['process_rules'].append({'id':name,'role':role,'exe':str(exe),
+            'sha256':hashlib.sha256(exe.read_bytes()).hexdigest(),'argv':[name],'uid':0,'parents':['init']})
+        entry=proc/str(pid);entry.mkdir();(entry/'ns').mkdir()
+        os.link(proc/'101/ns/pid',entry/'ns/pid');(entry/'exe').symlink_to(exe)
+        (entry/'cmdline').write_bytes(name.encode()+b'\0');(entry/'stat').write_text(stat_line(pid,101))
+        (entry/'cgroup').write_text('0::/docker/synthetic\n')
+        (entry/'status').write_text(f'Uid:\t0\t0\t0\t0\nNSpid:\t{pid}\t{nspid}\n')
+    def runner(args,timeout):
+        text=old.runner(args,timeout)
+        if args[:2]==['docker','exec']:
+            text+='mysql-log=true true true true 4\ns6rc-fdholder=true true true true 5\ngame_template=false false false false -1\n'
+        return text
+    probe=LinuxProbe(cfg,runner=runner,proc=proc,clock=lambda:clock[0],monotonic=lambda:clock[0])
+    result=probe()
+    assert result['safe'] and result['all_writers_down'] and result['mysql_up']
+    assert len(result['components'])==6
+    assert all('stop' not in args and 'start' not in args for args in calls)
+
+
+def test_example_complete_sixty_service_contract_uses_reviewed_resident_classes(scene):
+    example=json.loads((Path(__file__).resolve().parents[1]/'deploy/inventory-maintenance.example.json').read_text())
+    cfg={**scene[0],**{k:example[k] for k in ('components','resident_components','dormant_components')}}
+    validate(cfg)
+    rows=[]
+    for i,n in enumerate(cfg['components'],10):
+        state=f'true true true true {i}' if n in cfg['resident_components'] else 'false false false false -1' if n in cfg['dormant_components'] else 'false false false true -1'
+        rows.append(n+'='+state)
+    parsed=parse_components('\n'.join(rows),cfg['components'],cfg['resident_components'],cfg['dormant_components'])
+    assert len(parsed)==60 and len(cfg['resident_components'])==32

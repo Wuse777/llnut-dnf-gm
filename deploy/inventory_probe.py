@@ -19,7 +19,8 @@ from dnfgm.release_files import canonical
 NAME = re.compile(r'[a-zA-Z0-9][a-zA-Z0-9_.@-]{0,127}\Z')
 HEX = re.compile(r'[a-f0-9]{64}\Z')
 # The complete directory inventory is returned, not just configured names. A new
-# or omitted supervisor therefore invalidates the window. finish must be done.
+# or omitted supervisor therefore invalidates the window. The full /proc check
+# separately rejects finish scripts and writers; readiness alone is not proof.
 S6_SCRIPT = '''set -eu
 for dir in /run/service/*; do
   test -d "$dir" || continue
@@ -35,7 +36,7 @@ def path_ok(value):
 def validate(cfg):
     fields = {'container','components','protected_services','pvf_path','program_path',
               'image_digest','pvf_sha256','program_sha256','process_rules'}
-    if not isinstance(cfg,dict) or set(cfg) != fields:
+    if not isinstance(cfg,dict) or set(cfg)-{'resident_components','dormant_components'} != fields:
         raise Refused('maintenance_config_invalid')
     if not isinstance(cfg['container'],str) or not NAME.fullmatch(cfg['container']):
         raise Refused('maintenance_config_invalid')
@@ -44,6 +45,22 @@ def validate(cfg):
             or any(not isinstance(n,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}',n) for n in components)
             or len(set(components))!=len(components) or 'mysql' not in components):
         raise Refused('maintenance_config_invalid')
+    residents=cfg.get('resident_components',['mysql'])
+    allowed_infrastructure={'mysql','s6-linux-init-shutdownd','s6rc-fdholder','s6rc-oneshot-runner'}
+    if (not isinstance(residents,list) or not residents
+            or any(not isinstance(n,str) or n not in components for n in residents)
+            or len(residents)!=len(set(residents))
+            or 'mysql' not in residents
+            or any(n not in allowed_infrastructure and not n.endswith('-log') for n in residents)):
+        raise Refused('maintenance_resident_policy_invalid')
+    dormant=cfg.get('dormant_components',[])
+    # These optional/template services are explicitly absent from the running
+    # game, not a way to label a game writer as safe while its finish runs.
+    if (not isinstance(dormant,list)
+            or any(not isinstance(n,str) or n not in components or n not in
+                   {'game_template','netbird','tailscale','tailscaled'} for n in dormant)
+            or len(dormant)!=len(set(dormant)) or set(dormant)&set(residents)):
+        raise Refused('maintenance_dormant_policy_invalid')
     services=cfg['protected_services']
     if (not isinstance(services,dict) or set(services)!={'docker','dnf','mihomo','cliproxyapi'}
             or any(not isinstance(n,str) or not NAME.fullmatch(n) or n.startswith('dnf-gm') for n in services.values())
@@ -55,7 +72,7 @@ def validate(cfg):
             or not isinstance(cfg['image_digest'],str) or not re.fullmatch(r'sha256:[a-f0-9]{64}',cfg['image_digest'])):
         raise Refused('maintenance_config_invalid')
     rules=cfg['process_rules']
-    if not isinstance(rules,list) or not 2<=len(rules)<=64:
+    if not isinstance(rules,list) or not 2<=len(rules)<=256:
         raise Refused('maintenance_process_policy_missing')
     ids=set()
     for rule in rules:
@@ -104,24 +121,38 @@ def run_command(args, timeout):
                 child.kill(); child.wait()
 
 
-def parse_components(text, expected):
+def read_components(text, expected):
+    """Parse the COMPLETE s6 inventory without asserting that it is quiescent."""
     rows={}
+    if not isinstance(text,str) or len(text.encode())>65536:
+        raise Refused('maintenance_components_invalid')
     for line in text.splitlines():
-        if '=' not in line:raise Refused('maintenance_components_invalid')
-        name,values=line.split('=',1); parts=values.split()
-        if name in rows or len(parts)!=5 or any(v not in ('true','false') for v in parts[:4]):
+        name,separator,status=line.partition('=');parts=status.split()
+        if (not separator or name in rows or len(parts)!=5
+                or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}',name)
+                or any(v not in ('true','false') for v in parts[:4])):
             raise Refused('maintenance_components_invalid')
         if not re.fullmatch(r'-1|[1-9][0-9]{0,9}',parts[4]):raise Refused('maintenance_components_invalid')
         rows[name]=(*[v=='true' for v in parts[:4]],int(parts[4]))
     if set(rows)!=set(expected):raise Refused('maintenance_components_changed')
+    return rows
+
+
+def parse_components(text, expected, residents=('mysql',), dormant=()):
+    rows=read_components(text,expected)
     for name,row in rows.items():
-        if name=='mysql':
-            # mysql need not implement s6 readiness notification. Actual DB
-            # access/engine checks remain required in the transaction layer.
+        if name in residents:
+            # mysql and several s6 infrastructure daemons do not notify ready.
             if not row[0] or not row[1] or not row[2] or row[4]<1:
-                raise Refused('maintenance_mysql_down')
+                raise Refused('maintenance_mysql_down' if name=='mysql' else 'maintenance_infrastructure_down')
+        elif name in dormant:
+            if row[:3]!=(False,False,False) or row[4]!=-1:
+                raise Refused('maintenance_dormant_service_active')
         elif row!=(False,False,False,True,-1):
             raise Refused('maintenance_writers_not_quiescent')
+        # Only reviewed, initially-disabled optional/template services may have
+        # ready=false. All writers require completed finish; the full process
+        # policy additionally rejects ANY unapproved finish/writer process.
     return rows
 
 
@@ -173,7 +204,7 @@ class LinuxProbe:
         if not stat.S_ISREG(before.st_mode) or not 0<before.st_size<=limit:
             raise Refused('maintenance_program_invalid')
         sig=lambda s:(s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns)
-        key=(str(path),sig(before))
+        key=sig(before) # shared binaries are hashed once across supervisor PIDs
         if key in self.cache:return self.cache[key]
         h=hashlib.sha256()
         flags=os.O_RDONLY if proc_exe else os.O_RDONLY|os.O_NOFOLLOW
@@ -205,7 +236,7 @@ class LinuxProbe:
 
     def components(self):
         text=self.command(['docker','exec',self.cfg['container'],'sh','-c',S6_SCRIPT])
-        return parse_components(text,self.cfg['components'])
+        return parse_components(text,self.cfg['components'],self.cfg.get('resident_components',['mysql']),self.cfg.get('dormant_components',[]))
 
     def process_rows(self,pid):
         base=cgroups((self.proc/str(pid)/'cgroup').read_text())
@@ -220,7 +251,7 @@ class LinuxProbe:
                 cg=cgroups((entry/'cgroup').read_text())
             except FileNotFoundError:continue # an exited host process
             if not in_container(cg,base):continue
-            if len(rows)>=128:raise Refused('maintenance_process_budget')
+            if len(rows)>=256:raise Refused('maintenance_process_budget')
             if (entry/'ns/pid').stat().st_ino!=ns:raise Refused('maintenance_nested_namespace')
             start=(entry/'stat').read_text();ppid,ticks=stat_identity(start)
             exe=os.readlink(entry/'exe')
@@ -275,6 +306,14 @@ class LinuxProbe:
             raise Refused('maintenance_version_changed')
         rows=self.process_rows(initial['pid'])
         rules={r['id']:r for r in cfg['process_rules']};mysql=[r for r in rows if rules[r['rule']]['role']=='mysql']
+        # Each retained supervisor must resolve to an observed, explicitly
+        # approved process. A spoofed service PID cannot bless an extra writer.
+        for name in cfg.get('resident_components',['mysql']):
+            if name=='mysql':continue # separately verify daemon + ancestor chain below
+            live=[r for r in rows if r['nspid']==states[name][-1]]
+            roles={'logger'} if name.endswith('-log') else {'supervisor','mysql'}
+            if len(live)!=1 or rules[live[0]['rule']]['role'] not in roles:
+                raise Refused('maintenance_resident_process_unproven')
         service_pid=states['mysql'][-1]
         by_pid={r['pid']:r for r in rows}
         if len(mysql)!=1:raise Refused('maintenance_mysql_unproven')
