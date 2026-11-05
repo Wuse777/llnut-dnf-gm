@@ -311,6 +311,7 @@ class RewardJobs:
                         q.execute("UPDATE dnf_gm.reward_jobs SET status=%s WHERE id=%s AND status='running'",('needs_attention' if failed else 'finished',job['id']))
                         c.commit();return True
                     lease=gates.enter_context(self.service.write_gate.writer())
+                    lease.protect_transaction(q)
                     q.execute("UPDATE dnf_gm.reward_targets SET status='executing',attempts=attempts+1,last_attempt=%s WHERE job_id=%s AND ordinal=%s",(int(time.time()),job['id'],target['ordinal']))
                     lease.check()
                     c.commit()  # Durable dispatch marker BEFORE any game mutation.
@@ -330,6 +331,7 @@ class RewardJobs:
     def execute_target(self,c,q,job,target,lease):
         attempted=False
         try:
+            lease.protect_transaction(q)
             current=one(q,'SELECT status FROM dnf_gm.reward_jobs WHERE id=%s FOR UPDATE',(job['id'],))
             if current['status']!='running':
                 q.execute("UPDATE dnf_gm.reward_targets SET status='pending' WHERE job_id=%s AND ordinal=%s AND status='executing'",(job['id'],target['ordinal']))

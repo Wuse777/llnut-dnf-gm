@@ -44,6 +44,8 @@ def bootstrap_sql(config,ph):
     sql += economy_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/012-capabilities.sql').read_text()
     sql += capability_policy_sql(user)
+    sql += (Path(__file__).resolve().parents[1]/'migrations/013-gameplay-fence.sql').read_text()
+    sql += gameplay_fence_sql(user)
     sql += reward_jobs_sql(user)
     sql += catalog_policy_sql(user)
     sql += mail_gold_sql(user)
@@ -161,3 +163,8 @@ def initialize_owner_capabilities_sql():
             "INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) "
             "SELECT 'owner-capabilities-initial','maintenance','capability-policy','安装时按所有者要求开放已实现功能','{}','{\"account_scope\":\"all\",\"revision\":1}' FROM dnf_gm.capability_policy WHERE id=1 AND revision=0;\n"
             f"UPDATE dnf_gm.capability_policy SET revision=1,enabled_json='{enabled}',updated_at=UNIX_TIMESTAMP() WHERE id=1 AND revision=0;\nCOMMIT;\n")
+
+
+def gameplay_fence_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    # MySQL5.7 locking SELECTs are tested with only SELECT on this fixed row.
+    return f'GRANT SELECT ON dnf_gm.gameplay_fence TO {user};\n'

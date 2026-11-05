@@ -212,3 +212,10 @@ def test_observer_import_no_database_libraries_and_no_new_service_power():
     assert 'subprocess' not in text and 'systemctl' not in text
     nginx=(Path(worker.__file__).parent/'nginx.conf').read_text()
     assert 'location ^~ /dnf-gm/api/v1/internal/ { return 404; }' in nginx
+
+
+def test_root_managed_group_readable_app_config_is_preserved(tmp_path):
+    app,obs=private_files(tmp_path);app.chmod(0o640)
+    result=configure('prepare',app,obs)
+    assert result['mode']=='prepared' and app.stat().st_mode&0o777==0o640
+    assert json.loads(app.read_text())['task_probe_token']==json.loads(obs.read_text())['task_probe_token']

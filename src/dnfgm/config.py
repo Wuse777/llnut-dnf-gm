@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import json
 import os
+import stat
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -124,8 +125,19 @@ class Settings:
         return self
 
 
+def trusted_config_file(st, uid, gid):
+    mode=stat.S_IMODE(st.st_mode)
+    private=mode==0o600 and st.st_uid in (0,uid)
+    managed=mode==0o640 and st.st_uid==0 and st.st_gid==gid
+    return stat.S_ISREG(st.st_mode) and st.st_nlink==1 and st.st_size<=262144 and (private or managed)
+
+
 def load_settings():
     p = Path(os.environ.get('DNFGM_CONFIG', '/etc/dnf-gm/config.json'))
-    if p.stat().st_mode & 0o077:
-        raise ValueError('Configuration must be private (0600)')
-    return Settings(**json.loads(p.read_text())).check()
+    fd=os.open(p,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+    with os.fdopen(fd,'rb') as stream:
+        if not trusted_config_file(os.fstat(stream.fileno()),os.geteuid(),os.getegid()):
+            raise ValueError('Configuration must be private (0600 or root-owned 0640 for the application group)')
+        body=stream.read(262145)
+        if len(body)>262144:raise ValueError('Private configuration is too large')
+    return Settings(**json.loads(body)).check()

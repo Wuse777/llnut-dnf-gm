@@ -10,11 +10,12 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from dnfgm.inventory_fence import _read, directory
-from dnfgm.release_files import Refused
+from dnfgm.release_files import Refused, read_json
 from maintenance_drain import DrainCoordinator, STATE, TERMINAL_NO_EFFECT
 
 RUNTIME = Path('/run/dnf-gm/maintenance')
 GATE = Path('/var/lib/dnf-gm/write-gate')
+CONFIG = Path('/etc/dnf-gm/config.json')
 
 
 def assert_idle(*, state=STATE, runtime=RUNTIME, gate=GATE, owner=0):
@@ -50,9 +51,29 @@ def assert_idle(*, state=STATE, runtime=RUNTIME, gate=GATE, owner=0):
         raise Refused('maintenance_request_not_finished')
 
 
+def assert_config_gate(config=CONFIG, *, owner=0):
+    """Also inspect a previously configured path; never silently switch it."""
+    config=Path(config)
+    directory(config.parent,owner)
+    # Legacy files may be app-owned but the parent must be root-controlled.
+    cfg=read_json(config,limit=65536)
+    if not isinstance(cfg,dict):raise Refused('maintenance_config_invalid')
+    path=cfg.get('gameplay_gate_dir','')
+    if not isinstance(path,str):raise Refused('maintenance_config_invalid')
+    if path:
+        gate=Path(path)
+        if not gate.is_absolute() or '..' in gate.parts:raise Refused('maintenance_config_invalid')
+        from maintenance_gate import WriteGateManager
+        manager=WriteGateManager(gate,owner=owner)
+        # Missing CONFIGURED state is unknown, not a new unconfigured install.
+        with manager.locked(False):
+            if manager.read()['state']!='open':raise Refused('maintenance_game_writes_frozen')
+
+
 def main():
     try:
         assert_idle()
+        assert_config_gate()
     except Exception:
         # No paths, subprocess output, player data or tracebacks in deployment logs.
         print('GM维护记录尚未结束或无法核验。请在原版本中核对并结束维护后再发布；本检查未停止服务。', file=sys.stderr)

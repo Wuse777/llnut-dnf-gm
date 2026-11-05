@@ -14,7 +14,7 @@ import time
 
 from dnfgm.inventory_fence import directory, open_lock, _read
 from dnfgm.release_files import Refused, atomic_json, canonical
-from dnfgm.write_gate import same_lock, validate
+from dnfgm.write_gate_state import same_lock, validate
 
 
 def binding_hash(identity):
@@ -85,6 +85,41 @@ class WriteGateManager:
         with self.locked(False):
             if token['state']!='frozen' or self.read()!=token:raise Refused('write_gate_token_changed')
         return token
+
+    def drain_database(self,token,db,*,expected_server_uuid):
+        """Read-only current-lock proof; NOT an outcome/permit/resume proof.
+
+        Hold the frozen file state while waiting for all previous participating
+        MySQL transactions, including COMMIT after an application crash. No game
+        commands are issued here. The fixed full coordinator must journal this
+        evidence and reconcile operation outcomes before proceeding. The expected
+        database UUID must come from the original plan, never a fresh replacement
+        target after freeze.
+        """
+        from dnfgm.gameplay_transactions import lock_transactions
+        validate(token)
+        if not isinstance(expected_server_uuid,str) or not re.fullmatch(r'[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}',expected_server_uuid):
+            raise Refused('maintenance_database_identity_required')
+        if (token['state']!='frozen' or not db.settings.gameplay_gate_dir
+                or Path(db.settings.gameplay_gate_dir)!=self.root):
+            raise Refused('maintenance_transaction_fence_binding_invalid')
+        with self.locked(False):
+            if self.read()!=token:raise Refused('write_gate_token_changed')
+            with db.connect() as c,c.cursor() as q:
+                protocol=lock_transactions(q,exclusive=True)
+                q.execute('SELECT @@server_uuid AS server_uuid')
+                server=q.fetchone()['server_uuid']
+                if not isinstance(server,str) or not re.fullmatch(r'[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}',server):
+                    raise Refused('maintenance_database_identity_unproven')
+                if server!=expected_server_uuid:raise Refused('maintenance_database_identity_changed')
+                if self.read()!=token:raise Refused('write_gate_token_changed')
+                c.commit()
+            # A read/COMMIT/close failure never yields a successful proof. Another
+            # read-only probe is safe with this same token; no write is replayed.
+            return {'protocol_version':protocol,'ordinary_transactions_drained':True,
+                    'operation_id':token['operation_id'],'generation':token['generation'],
+                    'binding_sha256':token['binding_sha256'],'server_uuid':server,
+                    'checked_at':self.clock(),'game_writes':False,'maintenance_permit':False}
 
     def release(self,token,verify_restored):
         validate(token)

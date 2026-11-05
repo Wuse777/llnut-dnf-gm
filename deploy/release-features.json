@@ -8,5 +8,6 @@
     "all"
   ],
   "web_capability_policy": 1,
-  "maintenance_requests": 1
+  "maintenance_requests": 1,
+  "gameplay_transaction_fence": 1
 }

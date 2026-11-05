@@ -341,6 +341,7 @@ class Service:
                     c.commit()
                     return result
                 lease=gates.enter_context(self.write_gate.writer())
+                lease.protect_transaction(q)
                 if action == 'unlock-batch':
                     result=unlock_center.UnlockCenter(self).confirm(q,row,data,preview,key)
                     lease.check()

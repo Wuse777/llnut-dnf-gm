@@ -8,16 +8,17 @@ An empty installation path supports old releases, but cannot support maintenance
 from contextlib import contextmanager
 from pathlib import Path
 import fcntl
-import math
 import os
-import re
 
 from fastapi import HTTPException
-from .inventory_fence import open_lock, _read, directory
+from pymysql import MySQLError
+from .gameplay_transactions import lock_transactions
+from .inventory_fence import open_lock, _read
 from .release_files import Refused
 
+from .write_gate_state import validate, same_lock
+
 ROOT_UID = 0
-FIELDS = {'version','state','generation','operation_id','binding_sha256','changed_at'}
 
 
 class WriteGateClosed(HTTPException):
@@ -28,31 +29,19 @@ class WriteGateClosed(HTTPException):
         self.gate_state = state
 
 
-def validate(value):
-    if (not isinstance(value,dict) or set(value)!=FIELDS or type(value['version']) is not int or value['version']!=1
-            or value['state'] not in ('open','frozen') or type(value['generation']) is not int
-            or not 0<=value['generation']<=2147483647 or type(value['changed_at']) not in (int,float)
-            or not math.isfinite(value['changed_at']) or value['changed_at']<0):
-        raise Refused('write_gate_state_invalid')
-    if value['generation']==0:
-        if value['state']!='open' or value['operation_id']!='' or value['binding_sha256']!='':
-            raise Refused('write_gate_state_invalid')
-    elif (not isinstance(value['operation_id'],str) or not re.fullmatch('[a-f0-9]{32}',value['operation_id'])
-            or not isinstance(value['binding_sha256'],str) or not re.fullmatch('[a-f0-9]{64}',value['binding_sha256'])):
-        raise Refused('write_gate_state_invalid')
-    return value
-
-
-def same_lock(root, fd, owner):
-    directory(root,owner)
-    before=os.fstat(fd);after=(Path(root)/'fence.lock').lstat()
-    if (before.st_dev,before.st_ino)!=(after.st_dev,after.st_ino):
-        raise Refused('write_gate_lock_changed')
-
-
 class WriteLease:
     def __init__(self, root=None, fd=None, owner=None, state=None):
         self.root,self.fd,self.owner,self.state=root,fd,owner,state
+
+    def protect_transaction(self, cursor):
+        """Acquire again after EACH commit; transactions do not inherit locks."""
+        if self.root is None:return
+        self.check()
+        try:
+            lock_transactions(cursor)
+            self.check()
+        except (MySQLError,ValueError,TypeError,KeyError):
+            raise WriteGateClosed() from None
 
     def check(self):
         if self.root is None:return

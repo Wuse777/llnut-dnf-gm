@@ -63,3 +63,21 @@ def test_older_policy_reader_cannot_disable_all_writes_on_unknown_maintenance_sw
     (tmp_path/'deploy/release-features.json').write_text(json.dumps({'schema_version':1,'reward_target_modes':['accounts'],'web_capability_policy':1}))
     q=Mock();q.fetchone.side_effect=[{'n':0},{'n':1},{'found':1}]
     with pytest.raises(mod.IncompatibleRollback,match='maintenance capability'):mod.check(q,tmp_path)
+
+
+def test_configured_gate_refuses_old_file_only_or_no_gate_release(tmp_path):
+    (tmp_path/'deploy').mkdir()
+    (tmp_path/'deploy/release-features.json').write_text(json.dumps({'schema_version':1,'reward_target_modes':['accounts'],'web_capability_policy':1,'maintenance_requests':1}))
+    q=Mock()
+    with pytest.raises(mod.IncompatibleRollback,match='transaction fence'):
+        mod.check(q,tmp_path,gameplay_gate_configured=True)
+    q.execute.assert_not_called()
+    data=json.loads((tmp_path/'deploy/release-features.json').read_text());data['gameplay_transaction_fence']=1
+    (tmp_path/'deploy/release-features.json').write_text(json.dumps(data))
+    mod.check(q,tmp_path,gameplay_gate_configured=True)
+    q.execute.assert_not_called()
+
+
+def test_rollback_cli_supplies_actual_gate_configuration():
+    text=(Path(__file__).parents[1]/'deploy/check_rollback.py').read_text()
+    assert 'gameplay_gate_configured=bool(settings.gameplay_gate_dir)' in text

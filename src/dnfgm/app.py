@@ -137,10 +137,13 @@ def create_app(settings=None, database=None):
     @app.get(API+'/health')
     def health():
         with db.connect() as c, c.cursor() as q:
-            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 12')
+            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 13')
             versions={row['version'] for row in q.fetchall()}
-            if versions != set(range(1,13)):
-                raise HTTPException(503,'管理库迁移未完成，需要完成012网页权限迁移（包含此前迁移）')
+            if versions != set(range(1,14)):
+                raise HTTPException(503,'管理库迁移未完成，需要完成013事务屏障迁移（包含012网页权限及此前迁移）')
+            from .gameplay_transactions import inspect_protocol
+            try:inspect_protocol(q)
+            except Exception:raise HTTPException(503,'管理库事务屏障不可核验；不会自动修复或开启维护') from None
         return {'ok':True,'version':'0.3.1'}
 
     @app.get(API+'/ready')

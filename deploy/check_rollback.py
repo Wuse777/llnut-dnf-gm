@@ -15,7 +15,7 @@ class IncompatibleRollback(RuntimeError):
     pass
 
 
-def check(q, target):
+def check(q, target, *, gameplay_gate_configured=False):
     manifest = Path(target) / 'deploy/release-features.json'
     supported = set();data = {}
     if manifest.exists():
@@ -26,6 +26,8 @@ def check(q, target):
         if data.get('schema_version') != 1 or not isinstance(modes, list) or any(not isinstance(m, str) for m in modes):
             raise IncompatibleRollback('Invalid target release feature manifest')
         supported = set(modes)
+    if gameplay_gate_configured and data.get('gameplay_transaction_fence') != 1:
+        raise IncompatibleRollback('Target lacks the configured gameplay transaction fence. Preserve maintenance configuration and use a compatible release.')
     if 'accounts' not in supported:
         q.execute("SELECT COUNT(*) n FROM information_schema.TABLES WHERE TABLE_SCHEMA='dnf_gm' AND TABLE_NAME='schedules'")
         if q.fetchone()['n']:
@@ -65,7 +67,7 @@ def main():
     try:
         settings = Settings(**json.loads(Path('/etc/dnf-gm/config.json').read_text())).check()
         with Database(settings).connect() as c, c.cursor() as q:
-            check(q, target)
+            check(q, target, gameplay_gate_configured=bool(settings.gameplay_gate_dir))
     except IncompatibleRollback as exc:
         raise SystemExit(str(exc))
     except Exception:

@@ -62,7 +62,7 @@ def replace_private(path, value, original, owners, mask):
 
 def configure(mode, *, app_path=APP, observer_path=OBSERVER, app_owners=None, observer_owners=(0,), probe=task_health):
     app_owners=app_owners if app_owners is not None else (0,pwd.getpwnam('dnfgm').pw_uid)
-    original_app=read_private(app_path,app_owners,0o077)
+    original_app=read_private(app_path,app_owners,0o027)
     original_observer=read_private(observer_path,observer_owners,0o027)
     app,observer=dict(original_app[0]),dict(original_observer[0])
     Settings(**app).check();validate_config(observer)
@@ -93,7 +93,7 @@ def configure(mode, *, app_path=APP, observer_path=OBSERVER, app_owners=None, ob
     Settings(**app).check();validate_config(observer)
     # Write application first. An interrupted second write is repaired by the
     # next prepare using the same first-file token. Never print or rotate it.
-    if app!=original_app[0]:replace_private(app_path,app,original_app,app_owners,0o077)
+    if app!=original_app[0]:replace_private(app_path,app,original_app,app_owners,0o027)
     if observer!=original_observer[0]:replace_private(observer_path,observer,original_observer,observer_owners,0o027)
     return {'mode':'prepared','gm_may_need_reload':True,'service_restart':False}
 

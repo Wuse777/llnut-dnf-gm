@@ -169,6 +169,7 @@ class NativeOperations:
                 if row['action'] != data['action'] or preview['image_digest'] != self.settings.image_digest:
                     raise HTTPException(409, '适配版本发生变化，请重新预览')
                 lease=gates.enter_context(self.service.write_gate.writer())
+                lease.protect_transaction(q)
                 self.ready(data['action'], data['uid'])
                 self.engines(q)
                 if self.target(q, data['uid']) != preview['target']:

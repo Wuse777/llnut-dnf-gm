@@ -291,6 +291,7 @@ class Schedules:
         committing = False
         try:
             with self.db.connect() as c, c.cursor() as q:
+                lease.protect_transaction(q)
                 self.engines(q)
                 candidate = one(q, "SELECT id FROM dnf_gm.schedules WHERE status='active' AND next_due<=%s ORDER BY next_due,id LIMIT 1", (now,))
                 if not candidate:

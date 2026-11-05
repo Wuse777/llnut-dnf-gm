@@ -50,6 +50,10 @@ s=Settings(**json.loads(p.read_text())).check()
 print(ipaddress.IPv4Address(s.db_host))
 PY
 )
+# Install the fixed persistent admission gate automatically; do not leave this
+# as a manual SSH feature switch. The helper verifies migration 013 first and
+# preserves existing freezes, credentials and web capability choices.
+/opt/dnf-gm/venv/bin/python "$BASE/deploy/configure_write_gate.py"
 if [[ -L /opt/dnf-gm/current && "$(readlink -f /opt/dnf-gm/current)" != "$BASE" ]]; then
  ln -sfn "$(readlink -f /opt/dnf-gm/current)" /opt/dnf-gm/previous
 fi
