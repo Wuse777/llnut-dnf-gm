@@ -84,7 +84,7 @@ it('groups navigation and gives diagnostic panels unique IDs without fake missin
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(fixture()))))
  const w=mount(CharacterDetails,{props:{characNo:4},global:{stubs:{CharacterActivity:{template:'<div>管理记录内容</div>'},CharacterQuests:{template:'<div>任务查询内容</div>'},CharacterRename:{template:'<div>改名入口</div>'},CharacterRescue:{template:'<div>救援入口</div>'}}}})
  try{await flushPromises();expect(w.findAll('.detail-tab-group')).toHaveLength(4);expect(w.findAll('optgroup')).toHaveLength(4)
- for(const [label,id] of [['任务排查','quests'],['角色改名','rename'],['位置救援','rescue']]){await tab(w,label);expect(w.findAll('#character-section-'+id)).toHaveLength(1);expect(w.text()).not.toContain('未返回此容器记录')}
+ for(const [label,id] of [['任务检索与修复','quests'],['角色改名','rename'],['位置救援','rescue']]){await tab(w,label);expect(w.findAll('#character-section-'+id)).toHaveLength(1);expect(w.text()).not.toContain('未返回此容器记录')}
  await w.get('#character-tab-rescue').trigger('keydown',{key:'End'});await flushPromises();expect(w.get('#character-tab-activity').attributes('aria-selected')).toBe('true')
  }finally{w.unmount()}
 })

@@ -42,6 +42,7 @@ def bootstrap_sql(config,ph):
     sql += character_rename_sql(user)
     sql += character_rescue_sql(user)
     sql += character_quests_sql(user)
+    sql += quest_repair_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/010-support-desk.sql').read_text()
     sql += support_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/011-economy-ledger.sql').read_text()
@@ -164,7 +165,7 @@ def initialize_owner_capabilities_sql():
     # Installation-time explicit owner activation; does not overwrite later web
     # choices. No game rows, rewards, schedules or maintenance windows created.
     import json
-    switches=['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','char-fatigue','char-rename','char-rescue','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
+    switches=['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','char-fatigue','char-rename','char-rescue','quest-clear','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
     enabled=json.dumps(sorted(switches),separators=(',',':'))
     return ("START TRANSACTION;\nSELECT revision FROM dnf_gm.capability_policy WHERE id=1 FOR UPDATE;\n"
             "INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) "
@@ -204,3 +205,9 @@ def character_quests_sql(user="'dnf_gm_app'@'127.0.0.1'"):
 def player_preferences_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     return (f'GRANT SELECT,INSERT(uid,charac_no,favorite,favorited_at,visited_at),'
             f'UPDATE(favorite,favorited_at,visited_at) ON dnf_gm.player_preferences TO {user};\n')
+
+
+def quest_repair_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    # Only active task IDs/progress; never grant completion/notification writes.
+    columns=','.join(f'`play_{i}` , `play_{i}_trigger`' for i in range(1,21))
+    return f'GRANT SELECT(quest_notify),UPDATE({columns}) ON taiwan_cain.new_charac_quest TO {user};\n'

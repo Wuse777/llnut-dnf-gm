@@ -1,4 +1,4 @@
-"""Read-only QF1031 quest diagnosis. No completion/reset or game writes."""
+"""QF1031 quest snapshots, literal catalog search and prerequisite inspection."""
 from contextlib import closing
 from collections import Counter
 import hashlib
@@ -49,6 +49,50 @@ class CharacterQuests:
         except (OSError,sqlite3.Error,ValueError,HTTPException):state='unavailable';rows={}
         return {'state':state,'runtime_fresh':live.get('fresh') is True},rows
 
+    @staticmethod
+    def prerequisite_ids(definition):
+        values=definition.get('prerequisites',[]) if definition else []
+        return list(dict.fromkeys(v for v in values if type(v) is int and 0<v<=65535))
+
+    def prerequisites(self,definition,raw,active):
+        if not definition:return None
+        values=definition['prerequisites'];ids=self.prerequisite_ids(definition)
+        catalog,meta=self.metadata(ids)
+        return {'raw':values,'state':'references' if all(type(v) is int and 0<v<=65535 for v in values) else 'partially_interpreted',
+            'items':[{'id':i,'name':meta.get(i,{}).get('name'),
+                'clear_flag':raw[i] if raw is not None and i<CLEAR_SIZE else None,
+                'active_slots':[x['slot'] for x in active if x['id']==i]} for i in ids],
+            'note':'逐项展示前置任务的数据库标记，不推断多个条件的AND/OR、可接资格或客户端即时进度。'}
+
+    def search(self,charac_no,query,page=1):
+        # One bounded character snapshot; never scan players to search PVF.
+        with self.db.connect() as c,c.cursor() as q:
+            target=InventoryOperations.target(q,charac_no)
+            row=one(q,'SELECT '+','.join('`'+k+'`' for k in QUEST_COLUMNS)+' FROM taiwan_cain.new_charac_quest WHERE charac_no=%s',(charac_no,))
+        collected_at=time.time()
+        active=[{'slot':i,'id':row[f'play_{i}']} for i in range(1,21)] if row else []
+        catalog,unused=self.metadata([])
+        base={'target':target,'catalog':catalog,'query':query,'page':page,'page_size':20,
+            'collected_at':collected_at,'items':[],'has_more':False}
+        if catalog['state']!='matched':return base
+        # Literal substring (including % and _) with numeric exact ID first.
+        identifier=int(query) if query.isascii() and query.isdigit() and len(query)<=5 else 0
+        try:
+            with closing(self.catalog.connect()) as c:
+                metadata=self.catalog.meta(c)
+                if metadata.get('pvf_sha256')!=self.settings.pvf_sha256 or metadata.get('quest_index_version')!='1':
+                    return {**base,'catalog':{'state':'mismatch','runtime_fresh':catalog['runtime_fresh']}}
+                rows=list(c.execute('SELECT id,name,grade,kind,min_level,max_level FROM quests WHERE id=? OR instr(name,?)>0 ORDER BY (id=?) DESC,id LIMIT 21 OFFSET ?',
+                    (identifier,query,identifier,(page-1)*20)))
+        except (OSError,sqlite3.Error):raise HTTPException(503,'任务索引暂时不可读') from None
+        raw=None
+        # Completed status must not be guessed from just the visible 50 flags.
+        if row and self.settings.inventory_program_sha256==PROGRAM_SHA:
+            try:raw=decode_clear(row['clear_quest'])
+            except ValueError:pass
+        return {**base,'items':[{**dict(r),'clear_flag':raw[r['id']] if raw is not None and 0<r['id']<CLEAR_SIZE else None,
+            'active_slots':[x['slot'] for x in active if x['id']==r['id']]} for r in rows[:20]],'has_more':len(rows)>20}
+
     def read(self,charac_no,page=1,quest_id=0):
         with self.db.connect() as c,c.cursor() as q:
             target=InventoryOperations.target(q,charac_no)
@@ -83,7 +127,7 @@ class CharacterQuests:
         completed=[{'id':i,'clear_flag':raw[i],'definition':meta.get(i)} for i in visible]
         lookup=None
         if quest_id:lookup={'id':quest_id,'definition':meta.get(quest_id),'active_slots':[x['slot'] for x in active if x['id']==quest_id],
-            'clear_flag':raw[quest_id] if raw is not None and quest_id<CLEAR_SIZE else None,'within_native_range':quest_id<CLEAR_SIZE}
+            'clear_flag':raw[quest_id] if raw is not None and quest_id<CLEAR_SIZE else None,'within_native_range':quest_id<CLEAR_SIZE,'prerequisites':self.prerequisites(meta.get(quest_id),raw,active)}
         return {**base,'state':'read','active':active,'completed':completed,'completed_count':len(ids) if raw is not None else None,
             'has_more':page*50<len(ids),'clear':clear,'catalog':catalog,'issues':issues,'lookup':lookup,
             'urgent':{'id':urgent,'definition':meta.get(urgent)}}

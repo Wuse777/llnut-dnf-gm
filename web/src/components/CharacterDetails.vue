@@ -10,6 +10,7 @@ import CharacterRename from './CharacterRename.vue'
 import CharacterRescue from './CharacterRescue.vue'
 import CharacterQuests from './CharacterQuests.vue'
 import CharacterProgression from './CharacterProgression.vue'
+const questBusy=ref(false),questPending=ref(false),questVisited=ref(false)
 const rescueBusy=ref(false),rescuePending=ref(false),rescueVisited=ref(false)
 const renameBusy=ref(false),renamePending=ref(false),renameVisited=ref(false)
 import MailCenter from './MailCenter.vue'
@@ -21,7 +22,7 @@ const props=withDefaults(defineProps<{characNo:number,initialSection?:string}>()
 const emit=defineEmits<{close:[],reauth:[],expired:[],visited:[value:{uid:number,charac_no:number}],action:[value:{action:string,uid:number,charac_no:number}],draft:[value:any],inspect:[id:string]}>()
 const inventoryPending=ref(false),inventoryStale=ref(false)
 const inventoryBusy=ref(false),inventoryVisited=ref(false),inventorySelection=ref<{container:string,slot:number}|null>(null)
-const actionBusy=computed(()=>unlockBusy.value||inventoryBusy.value||fatigueBusy.value||renameBusy.value||rescueBusy.value)
+const actionBusy=computed(()=>unlockBusy.value||inventoryBusy.value||fatigueBusy.value||renameBusy.value||rescueBusy.value||questBusy.value)
 function manageItem(item:any){if(inventoryPending.value||actionBusy.value){section.value='manage';return}inventorySelection.value={container:section.value==='backpack'?'inventory':section.value,slot:item.slot};inventoryVisited.value=true;section.value='manage'}
 const unlockBusy=ref(false),unlockVisited=ref(false),unlockPending=ref(false)
 const root=ref<HTMLElement|null>(null)
@@ -30,12 +31,12 @@ let generation=0
 const tabGroups=[
  {label:'角色资料',tabs:[['basic','基本信息'],['attributes','属性存档']]},
  {label:'装备与仓储',tabs:[['equipment','穿戴装备'],['backpack','背包道具'],['warehouse','角色仓库'],['account_warehouse','账号仓库'],['unlock','装备解锁']]},
- {label:'维护与排查',tabs:[['manage','装备维护'],['fatigue','角色维护'],['rename','角色改名'],['rescue','位置救援'],['quests','任务排查'],['progression','等级与经验']]},
+ {label:'维护与排查',tabs:[['manage','装备维护'],['fatigue','角色维护'],['rename','角色改名'],['rescue','位置救援'],['quests','任务检索与修复'],['progression','等级与经验']]},
  {label:'邮件与记录',tabs:[['mail','角色邮件'],['activity','管理记录']]}
 ]
 const tabs=tabGroups.flatMap(group=>group.tabs)
 const separatePanels=['manage','fatigue','rename','rescue','quests','progression']
-const navigationLocked=computed(()=>actionBusy.value||inventoryPending.value||fatiguePending.value||renamePending.value||rescuePending.value||unlockPending.value)
+const navigationLocked=computed(()=>actionBusy.value||inventoryPending.value||fatiguePending.value||renamePending.value||rescuePending.value||questPending.value||unlockPending.value)
 function shortcut(action:string){if(navigationLocked.value||!data.value?.account||data.value.character.delete_flag)return;emit('action',{action,uid:data.value.character.uid,charac_no:props.characNo})}
 function mailDraft(value:any){if(!navigationLocked.value)emit('draft',value)}
 function inspect(id:string){if(!navigationLocked.value)emit('inspect',id)}
@@ -63,7 +64,7 @@ const pages=computed(()=>Math.max(1,Math.ceil(filtered.value.length/30)))
 const visible=computed(()=>filtered.value.slice((page.value-1)*30,page.value*30))
 const kinds=computed(()=>Array.from(new Map(items.value.map((i:any)=>[String(i.type),i.type_name])).entries()) as [string,string][])
 watch([section,search,kind],()=>{page.value=1})
-watch(section,async()=>{if(section.value==='unlock')unlockVisited.value=true;if(section.value==='manage')inventoryVisited.value=true;if(section.value==='fatigue')fatigueVisited.value=true;if(section.value==='rename')renameVisited.value=true;if(section.value==='rescue')rescueVisited.value=true;await nextTick();root.value?.closest('.modal-body')?.scrollTo?.({top:0})},{immediate:true})
+watch(section,async()=>{if(section.value==='unlock')unlockVisited.value=true;if(section.value==='manage')inventoryVisited.value=true;if(section.value==='fatigue')fatigueVisited.value=true;if(section.value==='rename')renameVisited.value=true;if(section.value==='quests')questVisited.value=true;if(section.value==='rescue')rescueVisited.value=true;await nextTick();root.value?.closest('.modal-body')?.scrollTo?.({top:0})},{immediate:true})
 function tabKey(e:KeyboardEvent){if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const n=tabs.findIndex(t=>t[0]===section.value),index=e.key==='Home'?0:e.key==='End'?tabs.length-1:(n+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tab(tabs[index][0]);void nextTick(()=>root.value?.querySelector<HTMLButtonElement>('#character-tab-'+section.value)?.focus())}
 function tab(id:string){if(actionBusy.value)return;section.value=id;search.value='';kind.value=''}
 </script>
@@ -129,7 +130,7 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
    </template>
    <section v-if="renameVisited" v-show="section==='rename'" id="character-section-rename" role="tabpanel" aria-labelledby="character-tab-rename" tabindex="0"><CharacterRename :key="characNo" :charac-no="characNo" @busy="renameBusy=$event" @pending="renamePending=$event" @changed="inventoryStale=true" @reauth="emit('reauth')" @expired="emit('expired')"/></section>
    <section v-if="section==='progression'" id="character-section-progression" role="tabpanel" aria-labelledby="character-tab-progression" tabindex="0"><CharacterProgression :key="characNo" :charac-no="characNo" @expired="emit('expired')"/></section>
-   <section v-if="section==='quests'" id="character-section-quests" role="tabpanel" aria-labelledby="character-tab-quests" tabindex="0"><CharacterQuests :key="characNo" :charac-no="characNo" @expired="emit('expired')"/></section>
+   <section v-if="questVisited" v-show="section==='quests'" id="character-section-quests" role="tabpanel" aria-labelledby="character-tab-quests" tabindex="0"><CharacterQuests :key="characNo" :charac-no="characNo" @busy="questBusy=$event" @pending="questPending=$event" @changed="inventoryStale=true" @reauth="emit('reauth')" @expired="emit('expired')"/></section>
    <section v-if="rescueVisited" v-show="section==='rescue'" id="character-section-rescue" role="tabpanel" aria-labelledby="character-tab-rescue" tabindex="0"><CharacterRescue :key="characNo" :charac-no="characNo" @busy="rescueBusy=$event" @pending="rescuePending=$event" @changed="inventoryStale=true" @reauth="emit('reauth')" @expired="emit('expired')"/></section>
    <section v-if="fatigueVisited" v-show="section==='fatigue'" id="character-section-fatigue" role="tabpanel" aria-labelledby="character-tab-fatigue" tabindex="0"><CharacterMaintenance :key="characNo" :charac-no="characNo" @busy="fatigueBusy=$event" @pending="fatiguePending=$event" @changed="inventoryStale=true" @reauth="emit('reauth')" @expired="emit('expired')"/></section>
    <section v-if="inventoryVisited" v-show="section==='manage'" id="character-section-manage" role="tabpanel" aria-labelledby="character-tab-manage" tabindex="0"><InventoryEditor :key="characNo" :charac-no="characNo" :selection="inventorySelection" @busy="inventoryBusy=$event" @pending="inventoryPending=$event" @changed="inventoryStale=true" @reauth="emit('reauth')" @expired="emit('expired')"/></section>

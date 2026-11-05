@@ -1,7 +1,20 @@
 <script setup lang="ts">
 import {ref,computed,onMounted,onBeforeUnmount} from 'vue'
+import QuestRepair from './QuestRepair.vue'
 import {api,ApiError,uncertainMessage} from '../api'
-const props=defineProps<{characNo:number}>(),emit=defineEmits(['expired'])
+const props=defineProps<{characNo:number}>()
+const repairSelection=ref(0),repairRoot=ref<HTMLElement|null>(null)
+const searchText=ref(''),searchError=ref(''),searchResults=ref<any>(null),searchBusy=ref(false)
+function chooseSlot(slot:number){repairSelection.value=slot;repairRoot.value?.scrollIntoView?.({block:'start',behavior:'smooth'})}
+async function searchQuests(page=1){
+ searchError.value=searchText.value.trim()?'':'请输入任务名称或编号'
+ if(searchError.value||searchBusy.value)return
+ searchBusy.value=true
+ try{const result=await api(`/characters/${props.characNo}/quests/search?q=${encodeURIComponent(searchText.value.trim())}&page=${page}`);if(alive)searchResults.value=result}
+ catch(e){if(alive){searchError.value=uncertainMessage(e);if(e instanceof ApiError&&e.status===401)emit('expired')}}finally{if(alive)searchBusy.value=false}
+}
+function openQuest(id:number){query.value=String(id);void load(1)}
+const emit=defineEmits(['expired','reauth','busy','pending','changed'])
 const data=ref<any>(null),busy=ref(false),error=ref(''),query=ref(''),queryError=ref(''),filter=ref(''),onlyIssues=ref(false)
 let alive=true,generation=0
 const labels:Record<string,string>={empty_with_progress:'空槽仍保存进度值',id_out_of_range:'超出原生任务编号范围',duplicate_active:'多个槽位保存同一任务',missing_definition:'匹配PVF中没有此任务',active_with_clear_flag:'进行中同时有完成标记（可能是重复任务）'}
@@ -21,9 +34,26 @@ async function load(page=1){
 onMounted(()=>load());onBeforeUnmount(()=>{alive=false;generation++})
 </script>
 <template><section class="quest-panel">
- <header class="quest-heading"><div><h3>任务存档排查</h3><p class="field-hint">只读查询，不完成、不放弃、不重置任务。</p></div><button :disabled="busy" @click="load(data?.page||1)">刷新任务存档</button></header>
+ <header class="quest-heading"><div><h3>任务检索与修复</h3><p class="field-hint">查询不修改数据；单槽清理需下方预览确认及显式维护窗口，不修改完成标记。</p></div><button :disabled="busy" @click="load(data?.page||1)">刷新任务存档</button></header>
  <p v-if="error" class="submit-error" role="alert">{{error}}</p>
- <form @submit.prevent="load(1)" class="quest-query" novalidate>
+ <section class="quest-search">
+  <h4>搜索完整PVF任务索引</h4>
+  <form @submit.prevent="searchQuests(1)" class="quest-query" novalidate>
+   <label>任务名称或编号<input v-model="searchText" maxlength="80" placeholder="例如：转职、觉醒或38" :aria-invalid="!!searchError" aria-describedby="quest-search-error" @input="searchError=''"/></label>
+   <button class="primary" :disabled="searchBusy">搜索任务</button>
+   <p v-if="searchError" id="quest-search-error" class="submit-error" role="alert">{{searchError}}</p>
+  </form>
+  <template v-if="searchResults">
+   <p v-if="searchResults.catalog.state!=='matched'" class="warning">任务索引不可用或PVF不匹配，无法按名称搜索。</p>
+   <p v-else-if="!searchResults.items.length" class="empty">没有匹配的任务。</p>
+   <div class="quest-cards"><article v-for="x in searchResults.items" :key="x.id" class="quest-card">
+    <strong>#{{x.id}} {{x.name}}</strong><p>{{clearText(x.clear_flag)}} · 进行中槽：{{x.active_slots.join('、')||'无'}}</p>
+    <button :disabled="busy" @click="openQuest(x.id)">查看条件与前置任务</button>
+   </article></div>
+   <div class="button-row"><button :disabled="searchBusy||searchResults.page<=1" @click="searchQuests(searchResults.page-1)">搜索上一页</button><span>第 {{searchResults.page}} 页 · 每页20项</span><button :disabled="searchBusy||!searchResults.has_more" @click="searchQuests(searchResults.page+1)">搜索下一页</button></div>
+  </template>
+ </section>
+ <form @submit.prevent="load(1)" class="quest-query quest-lookup-form" novalidate>
   <label>按任务编号核对<input v-model="query" inputmode="numeric" placeholder="例如：38" :aria-invalid="!!queryError" aria-describedby="quest-query-error" :disabled="busy" @input="queryError=''"/></label><button class="primary" :disabled="busy">查询任务</button>
   <p v-if="queryError" id="quest-query-error" class="submit-error" role="alert">{{queryError}}</p>
  </form>
@@ -37,7 +67,11 @@ onMounted(()=>load());onBeforeUnmount(()=>{alive=false;generation++})
    <h4>查询结果 · #{{data.lookup.id}} {{data.lookup.definition?.name||'无可用名称'}}</h4>
    <p>{{clearText(data.lookup.clear_flag)}} · 进行中槽位：{{data.lookup.active_slots.join('、')||'未占用'}}</p>
    <p v-if="!data.lookup.within_native_range" class="warning">超出当前原生完成标记编号范围</p>
-   <template v-if="data.lookup.definition"><p>分类 {{data.lookup.definition.grade}} · 等级 {{data.lookup.definition.min_level??'未知'}}–{{data.lookup.definition.max_level??'未知'}}</p><p>前置条件原值：{{JSON.stringify(data.lookup.definition.prerequisites)}}</p><p class="quest-condition">{{data.lookup.definition.condition||'无条件文本'}}</p></template>
+   <template v-if="data.lookup.definition"><p>分类 {{data.lookup.definition.grade}} · 等级 {{data.lookup.definition.min_level??'未知'}}–{{data.lookup.definition.max_level??'未知'}}</p><div v-if="data.lookup.prerequisites" class="quest-prerequisites"><h5>前置任务逐项核对</h5>
+    <p v-if="!data.lookup.prerequisites.items.length">没有可识别的前置任务引用，不代表没有其他接取条件。</p>
+    <p v-for="p in data.lookup.prerequisites.items" :key="p.id"><button :disabled="busy" @click="openQuest(p.id)">#{{p.id}} {{p.name||'无可用名称'}}</button> · {{clearText(p.clear_flag)}} · 槽 {{p.active_slots.join('、')||'无'}}</p>
+    <p class="field-hint">{{data.lookup.prerequisites.note}}</p><details><summary>前置条件原值</summary>{{JSON.stringify(data.lookup.prerequisites.raw)}}</details>
+   </div><p class="quest-condition">{{data.lookup.definition.condition||'无条件文本'}}</p></template>
   </article>
   <template v-if="data.state==='read'">
    <div class="quest-heading"><h4>进行中存档 · 20个槽位</h4><label class="inline"><input v-model="onlyIssues" type="checkbox"/>仅显示疑点</label></div>
@@ -45,6 +79,7 @@ onMounted(()=>load());onBeforeUnmount(()=>{alive=false;generation++})
    <p v-if="!active.length" class="empty">没有符合条件的任务槽记录。</p>
    <div class="quest-cards"><article v-for="x in active" :key="x.slot" class="quest-card">
     <div class="quest-heading"><strong>{{x.definition?.name|| (x.id?'无可用任务名称':'空槽')}}</strong><span class="pill">槽 {{x.slot}} · #{{x.id}}</span></div>
+    <div class="button-row"><button v-if="x.id" :disabled="busy" @click="openQuest(x.id)">核对前置任务</button><button v-if="x.id||x.trigger_raw" @click="chooseSlot(x.slot)">选择此槽进行清理</button></div>
     <p>进度原值 {{x.trigger_raw}} · {{clearText(x.clear_flag)}}</p><p class="field-hint">进度字段可能编码多个条件，不能当成百分比。</p>
     <p v-for="code in x.issues" :key="code" class="warning">{{labels[code]||code}}</p>
     <details v-if="x.definition"><summary>查看PVF任务条件</summary><p>{{x.definition.grade}} · 等级 {{x.definition.min_level??'未知'}}–{{x.definition.max_level??'未知'}}</p><p>前置条件原值：{{JSON.stringify(x.definition.prerequisites)}}</p><p class="quest-condition">{{x.definition.condition}}</p></details>
@@ -56,8 +91,9 @@ onMounted(()=>load());onBeforeUnmount(()=>{alive=false;generation++})
    <div class="button-row"><button :disabled="busy||data.page<=1" @click="load(data.page-1)">上一页</button><span>第 {{data.page}} 页 · 每页50项</span><button :disabled="busy||!data.has_more" @click="load(data.page+1)">下一页</button></div>
   </template>
  </template>
+ <section ref="repairRoot" class="quest-repair"><QuestRepair :charac-no="characNo" :selection="repairSelection" @busy="emit('busy',$event)" @pending="emit('pending',$event)" @changed="load(1);emit('changed')" @reauth="emit('reauth')" @expired="emit('expired')"/></section>
  <p v-if="busy" role="status">正在读取任务存档…</p>
 </section></template>
 <style scoped>
-.quest-panel{display:grid;gap:14px}.quest-heading,.button-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.quest-heading h3,.quest-heading h4{margin:0}.quest-query{display:flex;align-items:end;flex-wrap:wrap;gap:12px}.quest-query label{flex:1;min-width:160px}.quest-query p{flex-basis:100%}label{display:grid;gap:6px}label.inline{display:flex;align-items:center;gap:8px}.inline input{width:auto}.quest-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}.quest-card{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:12px;padding:14px;overflow-wrap:anywhere}.quest-card>.pill{margin-left:8px}.quest-condition{white-space:pre-wrap}.lookup-card{border-left:3px solid var(--primary-color)}.button-row{justify-content:flex-start}details>summary{cursor:pointer}
+.quest-panel{display:grid;gap:18px}.quest-search,.quest-repair{border-top:1px solid var(--border-color);padding-top:16px}.quest-prerequisites button{text-align:left}h5{margin:12px 0 8px}.quest-heading,.button-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.quest-heading h3,.quest-heading h4{margin:0}.quest-query{display:flex;align-items:end;flex-wrap:wrap;gap:12px}.quest-query label{flex:1;min-width:160px}.quest-query p{flex-basis:100%}label{display:grid;gap:6px}label.inline{display:flex;align-items:center;gap:8px}.inline input{width:auto}.quest-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}.quest-card{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:12px;padding:14px;overflow-wrap:anywhere}.quest-card>.pill{margin-left:8px}.quest-condition{white-space:pre-wrap}.lookup-card{border-left:3px solid var(--primary-color)}.button-row{justify-content:flex-start}details>summary{cursor:pointer}
 </style>

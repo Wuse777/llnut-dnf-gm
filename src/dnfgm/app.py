@@ -23,6 +23,7 @@ from .character_maintenance import CharacterMaintenance, CharacterMaintenancePre
 from .character_rename import CharacterRename, RenamePreview
 from .character_rescue import CharacterRescue, RescuePreview
 from .character_quests import CharacterQuests
+from .quest_operations import QuestOperations,QuestPreview
 from .character_progression import CharacterProgression
 from .player_preferences import PlayerPreferences,PlayerTarget,PlayerFavorite
 from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm, MaintenanceClose, MaintenanceRecover
@@ -103,6 +104,7 @@ def create_app(settings=None, database=None):
     rename_ops = CharacterRename(service)
     rescue_ops = CharacterRescue(service)
     quest_reader = CharacterQuests(service)
+    quest_ops = QuestOperations(service)
     progression_reader = CharacterProgression(service)
     player_preferences = PlayerPreferences(db)
     maintenance = MaintenanceRequests(db,settings)
@@ -130,6 +132,7 @@ def create_app(settings=None, database=None):
     app.state.character_maintenance = character_ops
     app.state.character_rename = rename_ops
     app.state.character_rescue = rescue_ops
+    app.state.quest_operations = quest_ops
     app.state.maintenance = maintenance
     app.add_middleware(Guard, settings=settings)
     app.state.db, app.state.settings, app.state.service = db,settings,service
@@ -301,6 +304,12 @@ def create_app(settings=None, database=None):
     def character_quests(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647),page:int=Query(1,ge=1,le=600),quest_id:int=Query(0,ge=0,le=65535)):
         key=user(request);limits.check('character-quests:'+key,30)
         return quest_reader.read(charac_no,page,quest_id)
+
+    @app.get(API+'/characters/{charac_no}/quests/search')
+    def quest_search(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647),q:str=Query(min_length=1,max_length=80),page:int=Query(1,ge=1,le=3277)):
+        key=user(request);limits.check('character-quest-search:'+key,30)
+        if not q.strip():raise HTTPException(422,'请填写任务名称或编号')
+        return quest_reader.search(charac_no,q.strip(),page)
 
     @app.get(API+'/characters/{charac_no}/activity')
     def character_activity(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647),
@@ -550,6 +559,36 @@ def create_app(settings=None, database=None):
     def rescue_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
         key=user(request,True,True);limits.check('character-rescues-cancel:'+key,12)
         return rescue_ops.cancel(op)
+
+    @app.get(API+'/quest-repairs/characters/{charac_no}')
+    def quest_repair_maintenance_read(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
+        key=user(request);limits.check('quest-repairs-read:'+key,30)
+        return quest_ops.read(charac_no)
+
+    @app.get(API+'/quest-repairs/operations')
+    def quest_repair_history(request:Request,uid:int=Query(0,ge=0,le=2147483647),charac_no:int=Query(0,ge=0,le=2147483647),page:int=Query(1,ge=1,le=10000)):
+        key=user(request);limits.check('quest-repairs-history:'+key,30)
+        return quest_ops.history(uid,charac_no,page)
+
+    @app.post(API+'/quest-repairs/preview')
+    def quest_repair_preview(data:QuestPreview,request:Request):
+        key=user(request,True,True);limits.check('quest-repairs-preview:'+key,12)
+        return quest_ops.preview(key,data.model_dump())
+
+    @app.get(API+'/quest-repairs/operations/{op}')
+    def quest_repair_detail(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request);limits.check('quest-repairs-detail:'+key,30)
+        return quest_ops.detail(op)
+
+    @app.post(API+'/quest-repairs/operations/{op}/confirm')
+    def quest_repair_confirm(data:Confirm,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('quest-repairs-confirm:'+key,10)
+        return quest_ops.confirm(key,op,data.idempotency_key)
+
+    @app.post(API+'/quest-repairs/operations/{op}/cancel-preview')
+    def quest_repair_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('quest-repairs-cancel:'+key,12)
+        return quest_ops.cancel(op)
 
     @app.get(API+'/maintenance')
     def maintenance_status(request:Request):
