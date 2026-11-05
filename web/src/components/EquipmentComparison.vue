@@ -1,0 +1,12 @@
+<script setup lang="ts">
+const props=defineProps<{preview:any}>()
+const rows=[['before','修改前'],['after','修改后']]
+const caption=(key:string)=>key==='before'?props.preview.before_enchantment:props.preview.after_enchantment
+const changed=(key:string)=>props.preview.before?.[key]!==props.preview.after?.[key]
+</script>
+<template>
+ <div class="equipment-comparison" aria-label="装备修改前后对照"><section v-for="[key,title] in rows" :key="key"><h4>{{title}}</h4><b>{{preview.item_info?.name||preview.item_name||'物品'}}</b><p class="field-hint">{{preview.item_info?.part_name||'部位未收录'}} · #{{preview[key]?.id}}</p><p v-if="preview[key]?.empty" class="notice">空槽位</p><dl v-else><template v-if="preview[key]?.enhancement!==undefined"><dt>强化 / 锻造</dt><dd :class="{changed:changed('enhancement')||changed('forge')}">+{{preview[key].enhancement}} / +{{preview[key].forge??'—'}}</dd><dt>耐久</dt><dd :class="{changed:changed('durability')}">{{preview[key].durability??'—'}}<span v-if="preview.item_info?.base_durability!=null"> / {{preview.item_info.base_durability}} 基础值</span></dd><dt>增幅代码 / 数值</dt><dd :class="{changed:changed('amplify_type')||changed('amplify_value')}">{{preview[key].amplify_type??'—'}} / {{preview[key].amplify_value??'—'}}</dd><dt>附魔</dt><dd :class="{changed:changed('orb_id')}">{{caption(key)?.name||(preview[key].orb_id?'#'+preview[key].orb_id:'无附魔')}}<small v-if="caption(key)?.id">#{{caption(key).id}}</small><small v-if="caption(key)?.summary">{{caption(key).summary}}</small></dd></template><template v-else-if="preview[key]?.quantity!==undefined"><dt>存档数量</dt><dd :class="{changed:changed('quantity')}">{{preview[key].quantity}}</dd></template></dl></section></div>
+</template>
+<style scoped>
+.equipment-comparison{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}.equipment-comparison section{min-width:0;padding:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:12px}.equipment-comparison h4{margin:0 0 12px;color:var(--text-secondary)}.equipment-comparison dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;font-size:13px}.equipment-comparison dt{color:var(--text-secondary)}.equipment-comparison dd{margin:0;text-align:right;overflow-wrap:anywhere}.equipment-comparison dd small{display:block;color:var(--text-secondary);margin-top:4px}.equipment-comparison .changed{color:var(--primary-color);font-weight:600}@media(max-width:600px){.equipment-comparison{grid-template-columns:1fr}}
+</style>

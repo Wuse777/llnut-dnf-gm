@@ -414,3 +414,39 @@ def test_fatigue_stale_and_missing_window_refused(inv):
     with inv[2].connect() as c,c.cursor() as q:
         q.execute('SELECT fatigue FROM taiwan_cain.charac_stat WHERE charac_no=900001');assert q.fetchone()['fatigue']==101
     assert client.get(base+f'/operations/{op}').json()['status']=='aborted'
+
+
+def test_semantic_equipment_labels_enchant_search_and_preview_preserve_policy(inv):
+    import sqlite3
+    from dnfgm.equipment_metadata import enchantment
+    client,s,db,app,_=inv
+    # Older indexes remain usable; this endpoint does not pretend they contain effects.
+    assert client.get(P+'/catalog/enchantments').json()['metadata_state']=='unavailable'
+    with sqlite3.connect(s.catalog_file) as c:
+        c.executescript('CREATE TABLE equipment_details(item_id INTEGER PRIMARY KEY,part_code TEXT,rarity INTEGER);CREATE TABLE enchantments(item_id INTEGER PRIMARY KEY,targets_json TEXT,effects_json TEXT,summary TEXT);')
+        c.execute("INSERT INTO metadata VALUES('equipment_index_version','1')")
+        c.execute("INSERT INTO equipment_details VALUES(990001,'[coat]',0)")
+        # Deliberately delivery-blocked: the display index must not grant mail rights.
+        c.execute("INSERT INTO items VALUES(990004,'火属性卡片','material',1,1,0,0,0,'fixture/card')")
+        c.execute('INSERT INTO enchantments VALUES(?,?,?,?)',(990004,'["[coat]"]','[{"tag":"[elemental property]","label":"攻击属性","values":["[fire element]"]}]','攻击属性 火属性'))
+    r=client.get(P+'/catalog/enchantments',params={'q':'火属性'});assert r.status_code==200,r.text
+    row=r.json()['items'][0];assert row['id']==990004 and row['target_names']==['上衣']
+    assert 'effects' in row and 'source_path' not in row
+    assert client.get(P+'/catalog/enchantments',params={'q':'%'}).json()['items']==[]
+    assert client.get(P+'/catalog/enchantments',params={'q':'9'*80}).json()['items']==[]
+    item=inspect(inv,'equipment');assert item['item']['part_name']=='上衣'
+    assert item['item']['slot_label']=='武器'  # Actual storage slot, not the PVF item part.
+    assert item['item']['base_durability']==20 and item['item']['enchantment']['name']=='无附魔'
+    body=draft(inv);body['changes']={'orb_id':990004}
+    operation=prepare(inv,body);preview=operation['preview']
+    assert preview['item_info']['name']=='测试装备'
+    assert preview['before_enchantment']['id']==0
+    assert preview['after_enchantment']['name']=='火属性卡片'
+    assert preview['after_enchantment']['summary']=='攻击属性 火属性'
+    submitted=confirm(inv,operation['operation_id']);assert submitted.status_code==200,submitted.text
+    assert inspect(inv)['item']['enchantment']['name']=='火属性卡片'
+    detail=client.get(P+'/characters/900001');assert detail.status_code==200,detail.text
+    assert '火属性卡片' in detail.text
+    assert enchantment({},987)['known'] is False
+    with sqlite3.connect(s.catalog_file) as c:assert c.execute('SELECT allowed FROM items WHERE id=990004').fetchone()[0]==0
+    client.cookies.clear();assert client.get(P+'/catalog/enchantments').status_code==401

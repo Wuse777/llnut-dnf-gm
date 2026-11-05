@@ -15,6 +15,7 @@ from .mail_center import MailCenter
 from .write_gate import GameplayWriteGate
 from .economy import Economy
 from .character_detail import INFO_COLUMNS, ATTRIBUTES, decode_container, profession
+from .equipment_metadata import enchantment
 
 
 CURRENCIES = {'cera': ('taiwan_billing.cash_cera','cera','account',4294967295),
@@ -193,10 +194,12 @@ class Service:
             gold_state='ok' if account_storage else 'missing',
             stored_at=account_storage['occ_time'] if account_storage else None)
         containers = (equipment, backpack, warehouse, account_warehouse)
-        labels = self.catalog.read_labels([i['id'] for group in containers for i in group['items']])
+        labels = self.catalog.read_labels([n for group in containers for i in group['items'] for n in (i['id'],i.get('orb_id',0))])
         for group in containers:
             for item in group['items']:
                 meta = labels['items'].get(item['id'])
+                if meta:item.update(meta)
+                if item.get('orb_id') is not None:item['enchantment']=enchantment(labels['items'],item['orb_id'])
                 item.update(name=meta['name'] if meta else f"未知物品 #{item['id']}",
                             catalog_known=bool(meta),level=meta['level'] if meta else None)
         art_sha=self.settings.pvf_sha256 if labels['state']=='ok' else ''

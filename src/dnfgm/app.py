@@ -745,6 +745,11 @@ def create_app(settings=None, database=None):
         user(request)
         return service.catalog.search(q,category,page,allowed_only,state)
 
+    @app.get(API+'/catalog/enchantments')
+    def enchantments(request:Request,q:str=Query('',max_length=80),page:int=Query(1,ge=1,le=10000)):
+        user(request)
+        return service.catalog.enchantments(q,page)
+
     preferences = ItemPreferences(db,service.catalog)
 
     @app.get(API+'/catalog/collections')

@@ -14,10 +14,10 @@ const policy=computed(()=>({verified:'已验证',trial:'允许试发 · 未验�
   <div class="item-detail-hero"><GameImage :image="item.image" :label="item.name||'物品'"/><div><span class="item-eyebrow">{{stored?'角色存档':'物品索引'}} · #{{item.id}}</span><h3>{{item.name||'名称未收录'}}</h3><p>{{type}} · {{item.level===null||item.level===undefined?'等级未知':'Lv. '+item.level}}</p></div></div>
   <p v-if="!stored" class="item-policy-label" :class="{'is-blocked':item.policy_state==='blocked'}">{{policy}}</p>
   <dl class="character-facts">
-   <div><dt>物品编号</dt><dd>{{item.id}}</dd></div><div><dt>品级</dt><dd>{{item.rarity_name||'未收录'}}<small v-if="has('rarity')&&!item.rarity_name">原始值 {{item.rarity}}，未推断名称</small></dd></div>
+   <div><dt>物品编号</dt><dd>{{item.id}}</dd></div><div v-if="item.part_name"><dt>装备部位</dt><dd>{{item.part_name}}</dd></div><div><dt>品级</dt><dd>{{item.rarity_name||'未收录'}}<small v-if="has('rarity')&&!item.rarity_name">原始值 {{item.rarity}}，未推断名称</small></dd></div>
    <div v-if="stored||has('quantity')"><dt>{{stored?'存档数量':'本条数量'}}</dt><dd>{{number(item.quantity)}}</dd></div>
    <div v-if="stored"><dt>位置</dt><dd>{{item.slot_label||'存档槽位'}} / #{{item.slot}}</dd></div>
-   <template v-if="stored&&has('enhancement')"><div><dt>强化 / 锻造</dt><dd>+{{item.enhancement}} / {{has('forge')?'+'+item.forge:'未知'}}</dd></div><div><dt>耐久</dt><dd>{{number(item.durability)}}</dd></div><div><dt>增幅类型 / 数值</dt><dd>{{number(item.amplify_type)}} / {{number(item.amplify_value)}}</dd></div><div><dt>附魔 ID</dt><dd>{{number(item.orb_id)}}</dd></div><div><dt>封装原始标记</dt><dd>{{number(item.sealed_raw)}}</dd></div></template>
+   <template v-if="stored&&has('enhancement')"><div><dt>强化 / 锻造</dt><dd>+{{item.enhancement}} / {{has('forge')?'+'+item.forge:'未知'}}</dd></div><div><dt>耐久</dt><dd>{{number(item.durability)}}<small v-if="has('base_durability')">PVF基础耐久 {{item.base_durability}}</small></dd></div><div><dt>增幅类型 / 数值</dt><dd>{{number(item.amplify_type)}} / {{number(item.amplify_value)}}</dd></div><div><dt>附魔</dt><dd>{{item.enchantment?.name||number(item.orb_id)}}<small v-if="item.orb_id">#{{item.orb_id}}</small><small v-if="item.enchantment?.summary">{{item.enchantment.summary}}</small></dd></div><div><dt>封装原始标记</dt><dd>{{number(item.sealed_raw)}}</dd></div></template>
    <template v-if="!stored"><div><dt>投递方式</dt><dd>{{delivery}}</dd></div><div><dt>发放数量</dt><dd>不按 PVF 限额<small>正整数，字段范围 1–2,147,483,647</small></dd></div></template>
   </dl>
   <p v-if="!stored&&item.policy_reason" class="field-hint">发放策略：{{item.policy_reason}}</p>

@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from .limits import MAIL_ITEM_QUANTITY_MAX
 from .item_preferences import ItemPreferences
 from .game_assets import GameAssets
+from .equipment_metadata import read_metadata, decode_enchantment
 
 
 def snapshot(settings):
@@ -188,16 +189,38 @@ class Catalog:
                 if m.get('pvf_sha256') != self.settings.pvf_sha256 or (live.get('fresh') and live.get('pvf_sha256') != m.get('pvf_sha256')):
                     return {'state':'mismatch','items':{},'jobs':{}}
                 labels = {}
-                ids = sorted(set(ids))
+                ids = sorted({n for n in ids if type(n) is int and 0<n<=4294967295})
                 for start in range(0,len(ids),400):
                     batch = ids[start:start+400]
-                    rows = c.execute('SELECT id,name,level FROM items WHERE id IN ('+','.join('?' for _ in batch)+')',batch)
+                    rows = c.execute('SELECT id,name,level,category,durability AS base_durability FROM items WHERE id IN ('+','.join('?' for _ in batch)+')',batch)
                     labels.update({row['id']:dict(row) for row in rows})
+                read_metadata(c,labels)
                 jobs = json.loads(m.get('jobs','{}'))
                 if not isinstance(jobs,dict): jobs = {}
                 return {'state':'ok','items':labels,'jobs':jobs}
         except (HTTPException,sqlite3.Error,ValueError,OSError):
             return {'state':'unavailable','items':{},'jobs':{}}
+
+    def enchantments(self, q='', page=1):
+        """PVF-defined enchants only; no name-based orb guesses or policy writes."""
+        with closing(self.connect()) as c:
+            m=self.meta(c);live=snapshot(self.settings)
+            state='ok' if m.get('pvf_sha256')==self.settings.pvf_sha256 and not (live.get('fresh') and live.get('pvf_sha256')!=m.get('pvf_sha256')) else 'mismatch'
+            result={'state':state,'pvf_sha256':m.get('pvf_sha256'),'page':page,'items':[],'has_more':False,
+                    'note':'效果来自PVF原始定义；适用部位仅展示明确标注，不保证当前装备可用。速度等数值未换算百分比。'}
+            if m.get('equipment_index_version')!='1':return {**result,'metadata_state':'unavailable'}
+            term=q.strip();args=[];where=''
+            if term:
+                if term.isascii() and term.isdecimal():
+                    if int(term)>4294967295:return {**result,'metadata_state':'ok'}
+                    where=' WHERE i.id=?';args.append(int(term))
+                else:
+                    literal=term.replace('!','!!').replace('%','!%').replace('_','!_')
+                    where=" WHERE (i.name LIKE ? ESCAPE '!' OR e.summary LIKE ? ESCAPE '!')";args.extend(['%'+literal+'%']*2)
+            rows=c.execute('SELECT i.id,i.name,i.level,e.targets_json,e.effects_json,e.summary FROM enchantments e JOIN items i ON i.id=e.item_id'+where+' ORDER BY i.id LIMIT 21 OFFSET ?',(*args,(page-1)*20)).fetchall()
+            items=[{'id':r['id'],'name':r['name'],'level':r['level'],**decode_enchantment(r)} for r in rows[:20]]
+            self.assets.decorate(m.get('pvf_sha256') if state=='ok' else '',items)
+            return {**result,'metadata_state':'ok','items':items,'has_more':len(rows)>20}
 
     def describe(self, requests, q=None):
         """Read-only labels for saved templates; never activates an item for delivery."""

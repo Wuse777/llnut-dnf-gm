@@ -16,6 +16,8 @@ from fastapi import HTTPException
 from . import inventory_codec as codec
 from .inventory_fence import MaintenanceFence, Refused
 from .models import InventoryPreview
+from .equipment_metadata import enchantment
+from .character_detail import EQUIP_SLOTS, TYPES
 from .service import one, dump, character
 
 ACTIONS=('item-edit','item-reclaim','item-restore')
@@ -101,9 +103,13 @@ class InventoryOperations:
                 blob=self.blob(q,data)
             raw=codec.unpack(blob);codec.integer(slot,0,len(raw)//61-1)
             view=codec.slot_view(raw[slot*61:(slot+1)*61])
-            labels=self.service.catalog.read_labels([view['id']])
+            labels=self.service.catalog.read_labels([view['id'],view.get('orb_id',0)])
             meta=labels['items'].get(view['id'])
             view.update(name=meta['name'] if meta else '空槽位' if view['empty'] else f"未知物品 #{view['id']}")
+            if meta:view.update(meta)
+            view.update(slot=slot,slot_label=EQUIP_SLOTS[slot] if container=='equipment' and slot<len(EQUIP_SLOTS) else f'槽位 {slot}',type_name=TYPES.get(view.get('type'),'未知类型'))
+            if 'orb_id' in view:view['enchantment']=enchantment(labels['items'],view['orb_id'])
+            self.service.catalog.assets.decorate(self.settings.pvf_sha256 if labels['state']=='ok' else '',[view])
             try:reference=self.reference(data,blob)
             except codec.InventoryFormatError:reference=None
             try:window={**self.fence.check(),'available':True}
@@ -135,7 +141,7 @@ class InventoryOperations:
         after,changes,before_slot,after_slot=self.make_change(q,data,before)
         # Require matching index metadata; never apply PVF quantity caps. Metadata
         # gives names, not an assertion that an arbitrary enchant fits this item.
-        ids=[before_slot['id'],after_slot['id']]
+        ids=[before_slot['id'],after_slot['id'],before_slot.get('orb_id',0),after_slot.get('orb_id',0)]
         if data['changes'].get('orb_id'):ids.append(data['changes']['orb_id'])
         labels=self.service.catalog.read_labels(ids)
         if labels['state']!='ok':raise HTTPException(409,'物品索引PVF不匹配或不可读')
@@ -147,6 +153,9 @@ class InventoryOperations:
             'before':before_slot,'after':after_slot,'changes':changes,'before_sha256':codec.digest(before),
             'after_sha256':codec.digest(after),'versions':self.versions(),'reason':data['reason'],
             'item_name':labels['items'].get(before_slot['id'],{}).get('name','未知物品 / 空槽位'),
+            'item_info':labels['items'].get(before_slot['id'],{}),
+            'before_enchantment':enchantment(labels['items'],before_slot.get('orb_id',0)),
+            'after_enchantment':enchantment(labels['items'],after_slot.get('orb_id',0)),
             'note':'维护存档操作；原始品级不是百分比，附魔适用性及游戏效果未由数据库提交证明。'}
         return before,after,preview
 
