@@ -23,6 +23,7 @@ from .character_maintenance import CharacterMaintenance, CharacterMaintenancePre
 from .character_rename import CharacterRename, RenamePreview
 from .character_rescue import CharacterRescue, RescuePreview
 from .character_quests import CharacterQuests
+from .character_progression import CharacterProgression
 from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm, MaintenanceClose, MaintenanceRecover
 from .models import InventoryPreview
 from .support_models import ProfileSave, CaseCreate, CaseUpdate, CaseEntry, CaseLink, CaseStatus, Category
@@ -101,6 +102,7 @@ def create_app(settings=None, database=None):
     rename_ops = CharacterRename(service)
     rescue_ops = CharacterRescue(service)
     quest_reader = CharacterQuests(service)
+    progression_reader = CharacterProgression(service)
     maintenance = MaintenanceRequests(db,settings)
     schedules = Schedules(db, settings, jobs, native_ops)
     from .task_health import TaskHealth, WorkerPulse
@@ -272,6 +274,11 @@ def create_app(settings=None, database=None):
     def character_detail(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
         user(request)
         return service.character_detail(charac_no)
+
+    @app.get(API+'/characters/{charac_no}/progression')
+    def character_progression(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
+        key=user(request);limits.check('character-progression:'+key,30)
+        return progression_reader.read(charac_no)
 
     @app.get(API+'/characters/{charac_no}/quests')
     def character_quests(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647),page:int=Query(1,ge=1,le=600),quest_id:int=Query(0,ge=0,le=65535)):
