@@ -154,6 +154,8 @@ class InventoryOperations:
             'after_sha256':codec.digest(after),'versions':self.versions(),'reason':data['reason'],
             'item_name':labels['items'].get(before_slot['id'],{}).get('name','未知物品 / 空槽位'),
             'item_info':labels['items'].get(before_slot['id'],{}),
+            'before_item_info':labels['items'].get(before_slot['id'],{}),
+            'after_item_info':labels['items'].get(after_slot['id'],{}),
             'before_enchantment':enchantment(labels['items'],before_slot.get('orb_id',0)),
             'after_enchantment':enchantment(labels['items'],after_slot.get('orb_id',0)),
             'note':'维护存档操作；原始品级不是百分比，附魔适用性及游戏效果未由数据库提交证明。'}

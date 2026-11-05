@@ -100,7 +100,7 @@ onBeforeUnmount(()=>{alive=false;epoch++;if(timer)clearInterval(timer);emit('bus
   <p>{{detail.preview.target.accountname}} · UID {{detail.preview.target.uid}} · {{detail.preview.target.character.charac_name}} / #{{detail.preview.target.character.charac_no}}</p>
   <p>{{containerNames[detail.preview.container]||detail.preview.container}} / 槽位 {{detail.preview.slot}} · {{detail.preview.item_name}}</p><p class="operation-number">操作编号：{{detail.operation_id}}</p>
   <p>原因：{{detail.preview.reason}}</p>
-  <EquipmentComparison :preview="detail.preview"/>
+  <EquipmentComparison :preview="detail.preview" :current-item="item?.item"/>
   <div class="inventory-diff" aria-label="本次变更"><h4>本次变更</h4><div v-for="d in differences" :key="d.key"><b>{{fieldName(d.key)}}</b><span>{{display(d.before)}} → <strong>{{display(d.after)}}</strong></span></div></div>
   <details><summary>查看完整修改前后存档字段</summary><div class="inventory-before-after"><div><h4>修改前</h4><dl><template v-for="(v,k) in detail.preview.before" :key="k"><template v-if="labels[String(k)]||k==='id'||k==='empty'"><dt>{{fieldName(String(k))}}</dt><dd>{{display(v)}}</dd></template></template></dl></div><div><h4>修改后</h4><dl><template v-for="(v,k) in detail.preview.after" :key="k"><template v-if="labels[String(k)]||k==='id'||k==='empty'"><dt>{{fieldName(String(k))}}</dt><dd>{{display(v)}}</dd></template></template></dl></div></div></details>
   <p v-if="pending" class="notice" role="status">结果待核对。只查询原编号，不自动重放。执行意向未解决时，维护者关闭窗口会等待数据库事务并核对结果。</p>
