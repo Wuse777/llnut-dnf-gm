@@ -1,5 +1,6 @@
 """Bounded NDJSON audit export with high-water mark and completion sentinel."""
 import json
+from .ordinary_reconcile import public_audit
 
 
 def export_audit(db,uid=0):
@@ -22,6 +23,6 @@ def export_audit(db,uid=0):
                 break
             for row in rows:
                 after=row['id'];count+=1
-                yield line({'type':'record',**row})
+                yield line({'type':'record',**public_audit(row)})
         yield line({'type':'complete','records':count,'through_id':maximum})
     return records()

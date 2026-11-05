@@ -90,3 +90,16 @@ it('labels restore phases and process observations without claiming gameplay ver
  expect(w.text()).not.toContain('核对并确认维护')
  expect(posts()).toHaveLength(1)
 })
+
+it('shows reconciled outcomes without calling unknown native effects successful or replaying',async()=>{
+ record={...initial(),result:{state:'writers_stopped',ordinary_outcomes:{rewards_committed:2,rewards_failed:1,native_uncertain:3,game_writes:false,automatic_replay:false}}}
+ sessionStorage.setItem(storage,JSON.stringify({id}));const w=setup();await flushPromises()
+ const panel=w.find('[aria-label="维护前结果核对"]')
+ expect(panel.text()).toContain('确认已提交 2 项')
+ expect(panel.text()).toContain('确认未提交 1 项')
+ expect(panel.text()).toContain('3 条原生指令结果不确定')
+ expect(panel.text()).toContain('不自动重发')
+ expect(panel.find('.warning').exists()).toBe(true)
+ expect(panel.text()).toContain('不是游戏内效果证明')
+ expect(posts()).toHaveLength(0)
+})

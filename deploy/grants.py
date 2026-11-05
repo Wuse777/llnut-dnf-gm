@@ -45,6 +45,7 @@ def bootstrap_sql(config,ph):
     sql += (Path(__file__).resolve().parents[1]/'migrations/012-capabilities.sql').read_text()
     sql += capability_policy_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/013-gameplay-fence.sql').read_text()
+    sql += (Path(__file__).resolve().parents[1]/'migrations/014-operation-outcomes.sql').read_text()
     sql += gameplay_fence_sql(user)
     sql += reward_jobs_sql(user)
     sql += catalog_policy_sql(user)

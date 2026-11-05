@@ -218,6 +218,13 @@ class DrainCoordinator:
 
     @staticmethod
     def _payload_equal(phase, data, expected):
+        if phase == 'database-drained' and isinstance(data,dict) and 'outcomes' in data:
+            from dnfgm.ordinary_reconcile import validate_summary
+            try:
+                validate_summary(data['outcomes'])
+                if data['outcomes']['audit_id'] != 'maintenance-outcomes:' + expected['operation_id']:return False
+            except (ValueError,TypeError,KeyError):return False
+            data={k:v for k,v in data.items() if k!='outcomes'}
         if phase in ('write-gate-frozen', 'database-drained'):
             time_field = 'changed_at' if phase == 'write-gate-frozen' else 'checked_at'
             return (isinstance(data, dict) and set(data) == set(expected) | {time_field}
@@ -236,9 +243,12 @@ class DrainCoordinator:
 
     def view(self, doc):
         events = doc['events']
+        outcome = next((e['data'].get('outcomes') for e in events if e['phase']=='database-drained'), None)
+        public_outcome = ({k:outcome[k] for k in ('rewards_committed','rewards_failed','native_uncertain','game_writes','automatic_replay')} if outcome else None)
         now, mono = self._now()
         current = 0 <= now - doc['created_at'] < PREVIEW_TTL and 0 <= mono - doc['created_monotonic'] < PREVIEW_TTL
         return {'request_id': doc['request_id'], 'state': doc['state'], 'reason': doc['reason'],
+                'ordinary_outcomes': public_outcome,
                 'fingerprint': doc['plan']['fingerprint'], 'created_at': doc['created_at'],
                 'expires_at': doc['created_at'] + PREVIEW_TTL,
                 'updated_at': doc['updated_at'], 'revision': len(events),

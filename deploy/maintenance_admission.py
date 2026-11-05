@@ -41,6 +41,12 @@ def validate_proof(proof, plan, token):
                 'binding_sha256': token['binding_sha256'], 'server_uuid': plan['server_uuid'],
                 'game_writes': False, 'maintenance_permit': False}
     import math
+    if isinstance(proof,dict) and 'outcomes' in proof:
+        from dnfgm.ordinary_reconcile import validate_summary
+        validate_summary(proof['outcomes'])
+        if proof['outcomes']['audit_id'] != 'maintenance-outcomes:' + token['operation_id']:
+            raise Refused('maintenance_outcome_proof_invalid')
+        expected['outcomes'] = proof['outcomes']
     if (not isinstance(proof, dict) or set(proof) != set(expected) | {'checked_at'}
             or any(type(proof[k]) is not type(v) or proof[k] != v for k, v in expected.items())
             or type(proof['checked_at']) not in (int, float)
@@ -86,7 +92,7 @@ class MaintenanceAdmission:
     def drain(self, plan, token):
         self._configuration()
         validate_plan(plan)
-        proof = self.gate.drain_database(token, self.db, expected_server_uuid=plan['server_uuid'])
+        proof = self.gate.drain_database(token, self.db, expected_server_uuid=plan['server_uuid'], reconcile=True)
         return validate_proof(proof, plan, token)
 
     def verify_frozen(self, token):

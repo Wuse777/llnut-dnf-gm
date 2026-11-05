@@ -16,7 +16,7 @@ from dnfgm.release_files import maintenance_lock
 
 
 def upgrade_sql(user):
-    return (Path(__file__).resolve().parents[1]/'migrations/013-gameplay-fence.sql').read_text()+gameplay_fence_sql(user)
+    return (Path(__file__).resolve().parents[1]/'migrations/013-gameplay-fence.sql').read_text()+(Path(__file__).resolve().parents[1]/'migrations/014-operation-outcomes.sql').read_text()+gameplay_fence_sql(user)
 
 
 def main():
@@ -35,7 +35,7 @@ def main():
         assert_idle()
         assert_config_gate()
         mysql(a.container,a.mysql_port,upgrade_sql(f"'{name}'@'{a.db_account_host}'"))
-    print('013 management transaction fence and SELECT grant installed. No game rows, services or owner switches changed.')
+    print('013/014 management transaction fence and outcome index and SELECT grant installed. No game rows, services or owner switches changed.')
 
 
 if __name__=='__main__':main()

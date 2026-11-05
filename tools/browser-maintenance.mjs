@@ -44,11 +44,14 @@ try{
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:output+'/mobile-confirm.png'});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await page.getByRole('checkbox',{name:'确认断开当前游戏玩家',exact:true}).check();await page.getByRole('button',{name:'确认执行一次',exact:true}).click();
  await page.getByRole('heading',{name:'确认已入队 · 未证明开始',exact:true}).waitFor();assert.equal(calls.filter(c=>c.method==='POST').length,2);
- record={...record,result:{...record.result,state:'game_drained',maintenance_permit:false,events:[{sequence:1,phase:'freeze-intent',at:Date.now()/1000},{sequence:2,phase:'write-gate-frozen',at:Date.now()/1000},{sequence:3,phase:'database-drained',at:Date.now()/1000},{sequence:4,phase:'signal-intent',at:Date.now()/1000,service:'game_fixture'}]}};
+ record={...record,result:{...record.result,state:'game_drained',maintenance_permit:false,ordinary_outcomes:{rewards_committed:2,rewards_failed:1,native_uncertain:3,game_writes:false,automatic_replay:false},events:[{sequence:1,phase:'freeze-intent',at:Date.now()/1000},{sequence:2,phase:'write-gate-frozen',at:Date.now()/1000},{sequence:3,phase:'database-drained',at:Date.now()/1000},{sequence:4,phase:'signal-intent',at:Date.now()/1000,service:'game_fixture'}]}};
  await page.getByRole('button',{name:'只查询原申请',exact:true}).click();await page.getByRole('heading',{name:'游戏退出阶段完成 · 尚非完整维护窗口',exact:true}).waitFor();
  await page.getByText('已记录冻结新写入意向',{exact:true}).waitFor();
  await page.getByText('普通游戏写入已冻结',{exact:true}).waitFor();
  await page.getByText('已核对原数据库普通写事务结束',{exact:true}).waitFor();
+ await page.getByRole('heading',{name:'维护前结果核对',exact:true}).waitFor();
+ await page.getByText('仍有 3 条原生指令结果不确定，保留原记录，不自动重发。',{exact:true}).waitFor();
+ await page.getByRole('region',{name:'维护前结果核对',exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:output+'/mobile-outcomes.png'});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await page.getByRole('button',{name:'核对实际状态（只读）',exact:true}).click();await page.getByText('核对请求已排队；下方如有记录，仅代表上次核对。',{exact:true}).waitFor();
  record={...record,observation_pending:false,result:{...record.result,observation:{state:'observed',collected_at:Date.now()/1000,games:[{service:'game_fixture',state:'down_normal'}]}}};
  await page.getByRole('button',{name:'只查询原申请',exact:true}).click();await page.getByText('game_fixture：进程正常退出（不是存档验收凭据）',{exact:true}).waitFor();
@@ -57,13 +60,13 @@ try{
  await page.getByRole('button',{name:'只查询原申请',exact:true}).click();
  await page.getByText('llnut_gate：组件已按计划由TERM退出（不代表维护完成）',{exact:true}).waitFor();
  assert.equal(await page.getByRole('button',{name:'核对并确认维护',exact:true}).count(),0);
- await page.locator('.maintenance-observation').scrollIntoViewIfNeeded();await page.screenshot({path:output+'/mobile-writers.png'});
+ await page.getByRole('region',{name:'实际状态核对',exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:output+'/mobile-writers.png'});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  record={...record,result:{...record.result,state:'resuming',events:[...record.result.events,{sequence:6,phase:'window-closed',at:Date.now()/1000},{sequence:7,phase:'restore-start-sent',at:Date.now()/1000,service:'guild'}],observation:{state:'observed',collected_at:Date.now()/1000,services:[{service:'guild',state:'starting'},{service:'channel',state:'restored'}]}}};
  await page.getByRole('button',{name:'只查询原申请',exact:true}).click();
  await page.getByText('guild：组件已启动，正在核对就绪状态',{exact:true}).waitFor();
  await page.getByText('窗口已关闭并完成数据库核对',{exact:true}).waitFor();
- await page.locator('.maintenance-observation').scrollIntoViewIfNeeded();await page.screenshot({path:output+'/mobile-restoring.png'});
+ await page.getByRole('region',{name:'实际状态核对',exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:output+'/mobile-restoring.png'});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  failLookup=true;await page.getByRole('button',{name:'只查询原申请',exact:true}).click();await page.getByText('当前查询尚未确认；下方仅显示上次记录，不代表执行器仍在运行。',{exact:true}).waitFor();
  assert.equal(await page.getByRole('button',{name:'核对并确认维护',exact:true}).count(),0);assert.equal(calls.filter(c=>c.method==='POST').length,3);
@@ -72,5 +75,5 @@ try{
  await page.locator('.maintenance-write-gate').scrollIntoViewIfNeeded();await page.screenshot({path:output+'/mobile-write-freeze.png'});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  assert.equal(await page.locator('.maintenance-write-gate button').count(),0);
  assert.equal(calls.filter(c=>c.method==='POST').length,3);assert.equal(errors.length,0,JSON.stringify(errors));
- console.log(JSON.stringify({passed:true,desktop:true,mobile:true,reloadGetOnly:true,databaseAdmissionStages:true,auxiliaryWriterObservation:true,restorationStages:true,postPaths:calls.filter(c=>c.method==='POST').map(c=>c.path),screenshots:output}));
+ console.log(JSON.stringify({passed:true,desktop:true,mobile:true,reloadGetOnly:true,databaseAdmissionStages:true,ordinaryOutcomeSummary:true,auxiliaryWriterObservation:true,restorationStages:true,postPaths:calls.filter(c=>c.method==='POST').map(c=>c.path),screenshots:output}));
 }finally{await browser.close();await new Promise(r=>fixture.close(r))}

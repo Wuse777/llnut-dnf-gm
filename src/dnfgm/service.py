@@ -109,9 +109,10 @@ class Service:
             return {'items': [character(r) for r in q.fetchall()], 'page': page}
 
     def audit(self, page, uid=0):
+        from .ordinary_reconcile import public_audit
         with self.db.connect() as c, c.cursor() as q:
             q.execute('SELECT id,operation_id,actor,action,target_uid,reason,request_json,result_json,created_at FROM dnf_gm.audit WHERE (%s=0 OR target_uid=%s) ORDER BY id DESC LIMIT 50 OFFSET %s', (uid,uid,(page-1)*50))
-            return {'items': q.fetchall(), 'page': page}
+            return {'items': [public_audit(r) for r in q.fetchall()], 'page': page}
 
     def target(self, q, data, lock=False):
         a = self.account(q, data['uid'])

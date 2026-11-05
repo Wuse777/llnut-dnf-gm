@@ -79,17 +79,23 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
  </form>
  <section v-if="id" class="maintenance-request-result" aria-label="维护申请与执行记录">
   <h3>{{names[displayedState]||'申请结果待核对'}}</h3><p v-if="error" class="submit-error" role="alert">{{error}}</p><p class="mono">申请编号：{{id}}</p>
-  <p v-if="!fresh" class="notice">当前查询尚未确认；下方仅显示上次记录，不代表执行器仍在运行。</p>
-  <template v-if="detail"><p>{{detail.reason}}</p><p v-if="!detail.worker_fresh" class="notice">执行器状态过期或不可读；仅展示已有记录。</p><p v-if="detail.receipt_error" class="submit-error">{{detail.receipt_error}}</p>
+  <p v-if="!fresh" class="warning">当前查询尚未确认；下方仅显示上次记录，不代表执行器仍在运行。</p>
+  <template v-if="detail"><p>{{detail.reason}}</p><p v-if="!detail.worker_fresh" class="warning">执行器状态过期或不可读；仅展示已有记录。</p><p v-if="detail.receipt_error" class="submit-error">{{detail.receipt_error}}</p>
    <p v-if="detail.result?.games?.length">本计划涉及：{{detail.result.games.join('、')}}</p><p v-if="detail.result?.expires_at">计划有效期至 {{date(detail.result.expires_at)}}</p>
    <p v-if="detail.status==='cancelled'&&!terminal" class="notice">取消已保存，正在等待执行器释放原计划；这不是停服后的恢复。</p>
    <p v-if="detail.result?.window_requires_live_check" class="notice">窗口签发记录不代表现在仍然有效；装备提交前会重新核对实时许可。</p>
    <p v-if="detail.result?.error" class="submit-error">执行记录：{{detail.result.error}}。不要换编号重复执行。</p>
    <p v-if="restored" class="field-hint">从历史或刷新恢复的申请只做查询，不自动恢复确认按钮。尚未确认的计划可以取消后重新申请。</p>
+   <section v-if="detail.result?.ordinary_outcomes" class="maintenance-observation" aria-label="维护前结果核对">
+    <h4>维护前结果核对</h4>
+    <p>中断奖励：确认已提交 {{detail.result.ordinary_outcomes.rewards_committed}} 项 · 确认未提交 {{detail.result.ordinary_outcomes.rewards_failed}} 项</p>
+    <p v-if="detail.result.ordinary_outcomes.native_uncertain" class="warning" role="status">仍有 {{detail.result.ordinary_outcomes.native_uncertain}} 条原生指令结果不确定，保留原记录，不自动重发。</p>
+    <small>只核对管理记录，未重新充值、发邮件或发送游戏指令；已中断的批量任务请到原任务中处理。这不是游戏内效果证明。</small>
+   </section>
    <section v-if="detail.result?.observation||detail.observation_pending" class="maintenance-observation" aria-label="实际状态核对">
     <h4>实际状态核对（只读）</h4><p v-if="detail.observation_pending" role="status">核对请求已排队；下方如有记录，仅代表上次核对。</p>
     <template v-if="detail.result?.observation"><p>采集时间：{{date(detail.result.observation.collected_at)}} · {{detail.result.observation.state==='observed'?'已取得状态快照':'状态未知 / 无法完成核对'}}</p>
-     <p v-if="detail.result.observation.error" class="notice">{{detail.result.observation.error}}</p>
+     <p v-if="detail.result.observation.error" class="warning">{{detail.result.observation.error}}</p>
      <ul><li v-for="game in (detail.result.observation.services||detail.result.observation.games)" :key="game.service">{{game.service}}：{{observationNames[game.state]||'未知'}}</li></ul>
      <small>这是采集时的进程状态，不证明游戏存档完整，不开放装备写入，也不会重发退出命令或恢复服务。</small>
     </template>

@@ -91,13 +91,14 @@ class WriteGateManager:
             if token['state']!='frozen' or self.read()!=token:raise Refused('write_gate_token_changed')
         return token
 
-    def drain_database(self,token,db,*,expected_server_uuid):
-        """Read-only current-lock proof; NOT an outcome/permit/resume proof.
+    def drain_database(self,token,db,*,expected_server_uuid,reconcile=False):
+        """Current-lock proof, optionally settling management outcomes; never a permit.
 
         Hold the frozen file state while waiting for all previous participating
         MySQL transactions, including COMMIT after an application crash. No game
         commands are issued here. The fixed full coordinator must journal this
-        evidence and reconcile operation outcomes before proceeding. The expected
+        evidence before proceeding. With reconcile=True, management-only outcome
+        updates/audit share this transaction and exclusive database fence. The expected
         database UUID must come from the original plan, never a fresh replacement
         target after freeze.
         """
@@ -118,13 +119,19 @@ class WriteGateManager:
                     raise Refused('maintenance_database_identity_unproven')
                 if server!=expected_server_uuid:raise Refused('maintenance_database_identity_changed')
                 if self.read()!=token:raise Refused('write_gate_token_changed')
+                outcome = None
+                if reconcile:
+                    from dnfgm.ordinary_reconcile import settle
+                    outcome = settle(q, {k: token[k] for k in ('operation_id','generation','binding_sha256')} | {'server_uuid':server})
+                if self.read()!=token:raise Refused('write_gate_token_changed')
                 c.commit()
-            # A read/COMMIT/close failure never yields a successful proof. Another
-            # read-only probe is safe with this same token; no write is replayed.
+            # A COMMIT/close failure never yields a successful proof. The immutable
+            # reconciliation receipt handles retries; no gameplay write is replayed.
             return {'protocol_version':protocol,'ordinary_transactions_drained':True,
                     'operation_id':token['operation_id'],'generation':token['generation'],
                     'binding_sha256':token['binding_sha256'],'server_uuid':server,
-                    'checked_at':self.clock(),'game_writes':False,'maintenance_permit':False}
+                    'checked_at':self.clock(),'game_writes':False,'maintenance_permit':False,
+                    **({'outcomes':outcome} if reconcile else {})}
 
     def release(self,token,verify_restored):
         validate(token)

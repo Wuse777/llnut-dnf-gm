@@ -158,6 +158,10 @@ DNFGM_CONFIG=/absolute/private/config.json PYTHONPATH=src \
 
 浏览器路径固定为 `/dnf-gm/`，API 为 `/dnf-gm/api/v1`。本地生产构建可由后端通过配置中的 `static_dir` 提供；如使用 Vite 开发服务器，必须同步配置精确 Origin，不能放开跨域。
 
+## 维护前普通结果核对（本地开发，未部署）
+
+第三十三批把中断奖励和不确定原生指令的核对接入原数据库事务屏障，管理状态与审计同事务保存；不重复充值、发邮件或发包。维护中心展示脱敏计数与未知结果警告。014只增加管理库状态索引。完整网页维护执行与恢复、最终UI/素材和生产发布仍待完成，详见[本批报告](docs/reports/MANAGEMENT-EXPANSION-33.md)。
+
 ## 安装、测试与维护
 
 - [安装与升级](docs/DEPLOYMENT.md)：私有 Docker 网络、最小权限、SSH 隧道、可选 HTTPS、资源限制及回滚。

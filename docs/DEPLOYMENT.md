@@ -314,3 +314,7 @@ sudo /opt/dnf-gm/venv/bin/python deploy/upgrade-economy.py \
 重装遇到冻结、缺失的旧状态、不一致路径或协议，拒绝继续，不自动解冻。预检在旧虚拟环境缺失时仍可用纯Python标准库读取冻结文件，并同时检查固定目录与已有配置指向的目录。启用该协议后，回滚目标必须声明`gameplay_transaction_fence:1`；不以删除状态或配置键绕过兼容检查。
 
 本批安装器只配置普通写入保护，不安装完整停服／恢复服务，不改变DNF、mihomo、cliproxyapi或共享Docker。完整维护执行仍待接入；详见[写入协议](WRITE-ADMISSION.md)和[第二十八批报告](reports/MANAGEMENT-EXPANSION-28.md)。
+
+### 维护前普通结果核对迁移（014）
+
+新安装`grants.py`和既有`upgrade-gameplay-fence.py`同时包含013/014。014仅给`dnf_gm.operations`增加`(status,action,operation_id)`索引，不更改游戏表和功能权限；脚本可重复执行。执行维护核对前检查索引列及相关表InnoDB引擎，不接受同名错误索引。普通应用兼容013，但新完整维护适配器要求014；不要把旧应用健康检查通过理解为新执行器已安装。升级仍须通过原维护空闲预检，不能清除冻结文件或原审计绕过。当前本地未部署。
