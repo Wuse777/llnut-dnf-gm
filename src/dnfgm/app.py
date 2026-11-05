@@ -941,6 +941,11 @@ def create_app(settings=None, database=None):
         user(request)
         return service.catalog.assets.status(settings.pvf_sha256)
 
+    @app.get(API+'/assets/coverage')
+    def asset_coverage(request:Request,state:str=Query('all',max_length=24),page:int=Query(1,ge=1,le=10000)):
+        key=user(request);limits.check('asset-coverage:'+key,30)
+        return service.catalog.assets.coverage(settings.pvf_sha256,state,page)
+
     @app.get(API+'/assets/{pvf_sha}/{image_hash}.png')
     def asset_image(request:Request,pvf_sha:str=PathParameter(pattern=r'^[a-f0-9]{64}$'),image_hash:str=PathParameter(pattern=r'^[a-f0-9]{64}$')):
         user(request)

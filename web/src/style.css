@@ -148,3 +148,6 @@ input[aria-invalid=true]:focus,select[aria-invalid=true]:focus{box-shadow:0 0 0 
 /* Original decorative artwork; no dependency on private game asset packs. */
 .login-illustrated{background:linear-gradient(90deg,#111d2add,#111d2a88),url('./assets/town-dusk.webp') center/cover no-repeat;isolation:isolate}.login-illustrated .login-card{box-shadow:0 24px 80px #0005;border:1px solid var(--border-color)}.login-illustrated .login-theme select{background:var(--bg-primary)}
 @media(max-width:768px){.login-illustrated{background-image:linear-gradient(#111d2aaa,#111d2acc),url('./assets/town-dusk-small.webp')}}
+
+/* Explicitly attributed promotional portraits, not inventory pixel art. */
+.illustration-portrait{background:var(--bg-secondary);border-color:var(--border-color);box-shadow:0 2px 8px #00000014}.illustration-portrait img{object-fit:cover;image-rendering:auto}

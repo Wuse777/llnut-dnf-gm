@@ -65,15 +65,55 @@ class GameAssets:
                 except sqlite3.Error:state='unavailable';found={}
             for item in items:item['image']=self.image(found.get(item['id']),pvf_sha,'missing' if state=='ready' else state)
 
+    def portrait_row(self,c,pvf_sha,row,meta):
+        image=self.image(row,pvf_sha,'missing')
+        if image['state']!='ready':return image
+        image['match_level']='base' if row['grow_type']==-1 else 'growth'
+        if meta.get('portrait_credits_version')=='1':
+            credit=c.execute('SELECT kind,label,page,focus_x,focus_y FROM portrait_sources WHERE job=? AND grow_type=? AND sex=?',(row['job'],row['grow_type'],row['sex'])).fetchone()
+            if credit is not None:
+                from .portrait_credits import KINDS,source_page
+                if credit['kind'] not in KINDS or not isinstance(credit['label'],str) or len(credit['label'])>120 or any(type(credit[k]) is not int or not 0<=credit[k]<=100 for k in ('focus_x','focus_y')):raise ValueError()
+                image.update(source_kind=credit['kind'],source_label=credit['label'],source_page=source_page(credit['page']),focus_x=credit['focus_x'],focus_y=credit['focus_y'])
+                image['note']={'official_promotional':'DNF官方宣传插画，非当前客户端NPK；基础职业示意，不代表角色装备／外观或精确觉醒阶段','client':'维护者提供的客户端职业图，尚未验收客户端一致性','custom':'维护者提供的职业示意图，非游戏客户端像素验证'}[credit['kind']]
+        return image
+
     def portrait(self,pvf_sha,job,grow_type,sex):
         with self.connection(pvf_sha) as (c,state):
             if c:
                 try:
-                    # Exact mapping preferred, then explicitly declared wildcard.
-                    row=c.execute("SELECT p.sha256,f.width,f.height,'ready' state FROM portraits p JOIN files f ON f.sha256=p.sha256 WHERE p.job=? AND p.grow_type IN (?,-1) AND p.sex IN (?,-1) ORDER BY (p.grow_type=?) DESC,(p.sex=?) DESC LIMIT 1",(job,grow_type,sex,grow_type,sex)).fetchone()
-                    return self.image(row,pvf_sha,'missing')
-                except sqlite3.Error:state='unavailable'
+                    grow=grow_type&127 if type(grow_type) is int and -128<=grow_type<=255 else grow_type
+                    row=c.execute("SELECT p.*,f.width,f.height,'ready' state FROM portraits p JOIN files f ON f.sha256=p.sha256 WHERE p.job=? AND p.grow_type IN (?,-1) AND p.sex IN (?,-1) ORDER BY (p.grow_type=?) DESC,(p.sex=?) DESC LIMIT 1",(job,grow,sex,grow,sex)).fetchone()
+                    return self.portrait_row(c,pvf_sha,row,dict(c.execute('SELECT key,value FROM metadata'))) if row else self.image(None,pvf_sha,'missing')
+                except (sqlite3.Error,ValueError,TypeError):state='unavailable'
             return self.image(None,pvf_sha,state)
+
+    def coverage(self,pvf_sha,state='all',page=1):
+        from contextlib import closing
+        from .catalog import Catalog
+        if state not in ('all','ready','missing','missing_reference','ambiguous','unsupported'):raise HTTPException(422,'未知的图片状态')
+        with self.connection(pvf_sha) as (c,pack_state):
+            if not c:raise HTTPException(409,MESSAGES[pack_state])
+            try:
+                meta=dict(c.execute('SELECT key,value FROM metadata'))
+                where='' if state=='all' else ' WHERE state=?';args=() if state=='all' else (state,)
+                rows=c.execute('SELECT item_id,state FROM item_images'+where+' ORDER BY item_id LIMIT 21 OFFSET ?',(*args,(page-1)*20)).fetchall()
+                items=[{'id':r['item_id'],'state':r['state'],'note':MESSAGES.get(r['state'],MESSAGES['unavailable'])} for r in rows[:20]]
+                with closing(Catalog(self.settings).connect()) as catalog:
+                    binding=dict(catalog.execute('SELECT key,value FROM metadata'))
+                    if binding.get('pvf_sha256')!=pvf_sha:raise HTTPException(409,'物品索引与图片包PVF不匹配')
+                    names={}
+                    if items:
+                        ids=[r['id'] for r in items]
+                        names={r['id']:r['name'] for r in catalog.execute('SELECT id,name FROM items WHERE id IN ('+','.join('?' for _ in ids)+')',ids)}
+                    jobs=json.loads(binding.get('jobs','{}'))
+                for r in items:r['name']=names.get(r['id'],'索引中不存在的物品')
+                portraits=[]
+                for row in c.execute("SELECT p.*,f.width,f.height,'ready' state FROM portraits p JOIN files f ON f.sha256=p.sha256 ORDER BY p.job,p.grow_type,p.sex LIMIT 32"):
+                    base=jobs.get(str(row['job']),{}).get('grow_names',[])
+                    portraits.append({'job':row['job'],'grow_type':row['grow_type'],'sex':row['sex'],'name':base[0] if base else '职业 #'+str(row['job']),'image':self.portrait_row(c,pvf_sha,row,meta)})
+                return {'pvf_sha256':pvf_sha,'state':'ready','items':items,'page':page,'has_more':len(rows)>20,'portraits':portraits,'portrait_total':int(meta.get('portraits','0')),'item_states':json.loads(meta.get('counts','{}')),'client_verified':False}
+            except (sqlite3.Error,ValueError,TypeError,KeyError):raise HTTPException(409,'图片覆盖信息不可读取，请核对私有图片包') from None
 
     def status(self,pvf_sha):
         with self.connection(pvf_sha) as (c,state):
