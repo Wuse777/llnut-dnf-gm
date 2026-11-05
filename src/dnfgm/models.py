@@ -24,6 +24,14 @@ class CurrencyRewards(Model):
     mileage: StrictInt = Field(default=0,ge=0,le=1000000000)
 
 
+class RewardOverrides(Model):
+    """Complete one-off reward contents; never updates the source gift version."""
+    items: list[Attachment] = Field(max_length=20)
+    gold: StrictInt = Field(ge=0, le=MAIL_GOLD_MAX)
+    message: str = Field(max_length=60)
+    currency_rewards: CurrencyRewards
+
+
 class Preview(Model):
     support_case_id: str | None = Field(default=None,pattern=r'^[a-f0-9]{32}$')
     action: Literal['currency', 'mail', 'ban', 'unban', 'equipment-unlock', 'reward']
@@ -38,6 +46,7 @@ class Preview(Model):
     message: str = Field(default='GM rewards', max_length=60)
     template_id: StrictInt | None = Field(default=None, ge=1)
     template_version: StrictInt | None = Field(default=None, ge=1)
+    template_overrides: RewardOverrides | None = None
     currency_rewards: CurrencyRewards = Field(default_factory=CurrencyRewards)
 
 
@@ -85,6 +94,7 @@ class RewardDefinition(Model):
     currency_rewards: CurrencyRewards = Field(default_factory=CurrencyRewards)
     template_id: StrictInt | None = Field(default=None,ge=1)
     template_version: StrictInt | None = Field(default=None,ge=1)
+    template_overrides: RewardOverrides | None = None
 
 
 class RewardTargets(Model):

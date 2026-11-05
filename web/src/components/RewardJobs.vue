@@ -10,6 +10,9 @@ watch([accountKind,mode],()=>{importNotice.value=''})
 const rewardMode=ref('once_per_account'),reason=ref(''),gold=ref(0),message=ref('GM rewards'),amounts=ref<Record<string,number>>({cera:0,cera_point:0,mileage:0})
 const currencyNames:Record<string,string>={cera:'点券',cera_point:'代币券',mileage:'商城积分'}
 const items=ref<any[]>([]),query=ref(''),found=ref<any[]>([]),templateQuery=ref(''),templates=ref<any[]>([]),template=ref<any>(null)
+const adjusted=ref(false)
+function selectTemplate(g:any){template.value=g;adjustTemplate();adjusted.value=false}
+function adjustTemplate(){const r=template.value.rewards;if(!r)return;items.value=r.items.map((i:any)=>({...i}));gold.value=r.gold||0;message.value=r.message??'GM rewards';amounts.value={cera:0,cera_point:0,mileage:0,...r.currency_rewards};adjusted.value=true}
 const selected=ref<any>(null),targets=ref<any[]>([]),next=ref<number|null>(null),cursor=ref(0),previous=ref<number[]>([])
 const jobs=ref<any[]>([]),page=ref(1),more=ref(false),busy=ref(false),error=ref(''),lookupError=ref(''),searchError=ref(''),notice=ref('')
 const fieldErrors=ref<Record<string,string>>({}),confirmation=ref(''),repeat=ref(false),uncertain=ref(false),pendingId=ref(''),key=ref('')
@@ -46,7 +49,7 @@ function payload(){
   if(!integer(minimum.value,0,255)||!integer(maximum.value,0,255)||minimum.value>maximum.value)errors.filters='请填写正确的等级范围。'
   if(mode.value==='filtered'&&!uid.value&&!jobFilter.value&&!name.value.trim()&&minimum.value===0&&maximum.value===255)errors.filters='请填写筛选条件，或明确选择全服角色。'
  }
- if(!template.value){
+ if(!template.value||adjusted.value){
   for(const [k,v] of Object.entries(amounts.value))if(!integer(v,0,1000000000))errors.reward=currencyNames[k]+'须为0至10亿的整数。'
   if(!integer(gold.value,0,1000000000))errors.reward='金币附件须为0至10亿的整数。'
   items.value.forEach((item,n)=>{if(!integer(item.quantity,1,2147483647))errors['batch-quantity-'+n]='数量须为1至2,147,483,647的整数。'})
@@ -54,7 +57,8 @@ function payload(){
  }
  fieldErrors.value=errors;if(Object.keys(errors).length)throw new Error('请修正对应输入项旁的提示。')
  const filters=mode.value==='accounts'?{mode:'accounts',[accountKind.value==='uid'?'account_uids':'account_names']:accounts}:mode.value==='selected'?{mode:mode.value,charac_nos:list}:mode.value==='all'?{mode:'all'}:{mode:mode.value,uid:Number(uid.value)||0,job:jobFilter.value===''?null:Number(jobFilter.value),min_level:minimum.value,max_level:maximum.value,q:name.value.trim()}
- const reward=template.value?{template_id:template.value.id,template_version:template.value.current_version}:{items:items.value.map(({id,quantity})=>({id,quantity})),gold:gold.value,message:message.value,currency_rewards:amounts.value}
+ const contents={items:items.value.map(({id,quantity})=>({id,quantity})),gold:gold.value,message:message.value,currency_rewards:amounts.value}
+ const reward=template.value?{template_id:template.value.id,template_version:template.value.current_version,...(adjusted.value?{template_overrides:contents}:{})}:contents
  return {targets:filters,reward,account_reward_mode:rewardMode.value,reason:reason.value.trim()}
 }
 async function list(){try{const r=await api('/reward-jobs?page='+page.value);if(!alive)return;jobs.value=r.items;more.value=r.has_more}catch(e){if(alive)lookupError.value=uncertainMessage(e)}}
@@ -91,11 +95,12 @@ function add(item:any){if(items.value.length>=20){searchError.value='最多20条
 async function move(nextPage:boolean){const after=nextPage?next.value:previous.value.pop();if(after==null)return;if(nextPage)previous.value.push(cursor.value);busy.value=true;try{await loadTargets(after)}catch(e){lookupError.value=uncertainMessage(e)}finally{busy.value=false}}
 watch(()=>props.initialDraft,d=>{
  if(!d)return
- const t=d.targets,r=d.reward
+ const t=d.targets,r=d.reward.template_overrides||d.reward
+ adjusted.value=!!d.reward.template_overrides
  accountKind.value=t.account_names?.length?'name':'uid';accountList.value=(t.account_names?.length?t.account_names:(t.account_uids||[])).join('\n')
  mode.value=t.mode;ids.value=(t.charac_nos||[]).join(', ');uid.value=t.uid?String(t.uid):'';jobFilter.value=t.job==null?'':String(t.job);minimum.value=t.min_level??0;maximum.value=t.max_level??255;name.value=t.q||''
  rewardMode.value=d.account_reward_mode;reason.value=d.reason;gold.value=r.gold||0;message.value=r.message||'GM rewards';amounts.value={cera:0,cera_point:0,mileage:0,...r.currency_rewards}
- items.value=(r.items||[]).map((i:any)=>({...i,name:i.name||'#'+i.id}));template.value=r.template_id?{id:r.template_id,current_version:r.template_version,name:'原计划礼包 #'+r.template_id}:null
+ items.value=(r.items||[]).map((i:any)=>({...i,name:i.name||'#'+i.id}));template.value=d.reward.template_id?{id:d.reward.template_id,current_version:d.reward.template_version,name:'原计划礼包 #'+d.reward.template_id}:null
 },{immediate:true})
 onMounted(async()=>{if(props.scheduleDraft)return;try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(saved&&/^[a-f0-9]{32}$/.test(saved.id)){pendingId.value=saved.id;key.value=saved.key||'';uncertain.value=!!saved.uncertain;queryId.value=saved.id;await inspect(saved.id)}}catch(e){lookupError.value=uncertainMessage(e)}try{if(props.initialJob){if(uncertain.value&&pendingId.value!==props.initialJob){lookupError.value='已优先恢复结果待确认的任务；请先核对，再查看异常中心选择的任务 '+props.initialJob}else{await inspect(props.initialJob);draftVisible.value=false}emit('opened')}}catch(e){lookupError.value=uncertainMessage(e)}await list();if(!alive)return;timer=setInterval(()=>{if(!busy.value&&!document.hidden&&selected.value){busy.value=true;void inspect(selected.value.id,false).catch(e=>{lookupError.value=uncertainMessage(e)}).finally(()=>{busy.value=false})}},30000)})
 onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
@@ -118,9 +123,9 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
      <p v-if="mode==='online'" class="notice">选择在线账号下所有符合条件的角色，不代表这些角色同时在线。</p><p v-if="mode==='all'" class="notice">范围是全服有归属账号的未删除角色。不包含没有角色的账号。启动前需再次确认。</p>
      <h3>2. 奖励内容</h3>
      <div class="toolbar"><label>查找礼包模板<input v-model="templateQuery" aria-label="查找礼包模板" placeholder="名称或编号"></label><button type="button" @click="findTemplates">查询模板</button></div>
-     <div v-if="templates.length" class="reward-results"><button v-for="g in templates" :key="g.id" type="button" :disabled="!g.enabled" @click="template=g">{{g.name}} · v{{g.current_version}}{{g.enabled?'':' · 已停用'}}</button></div>
-     <div v-if="template" class="notice">绑定 {{template.name}} v{{template.current_version}}，内容以模板版本为准。<button type="button" @click="template=null">解除模板绑定</button></div>
-     <template v-else>
+     <div v-if="templates.length" class="reward-results"><button v-for="g in templates" :key="g.id" type="button" :disabled="!g.enabled" @click="selectTemplate(g)">{{g.name}} · v{{g.current_version}}{{g.enabled?'':' · 已停用'}}</button></div>
+     <div v-if="template" class="notice">来源 {{template.name}} v{{template.current_version}} · {{adjusted?'临时调整，不修改原模板':'按模板原内容发放'}}。<button v-if="!adjusted&&template.rewards" type="button" @click="adjustTemplate">临时调整本次奖励</button><button type="button" @click="template=null">解除模板绑定</button></div>
+     <template v-if="!template||adjusted">
       <div class="reward-grid"><label v-for="(label,k) in currencyNames" :key="k">{{label}}<input v-model.number="amounts[k]" type="number" min="0" max="1000000000" :aria-label="'批量'+label"></label><label>每角色邮件金币<input v-model.number="gold" type="number" min="0" max="1000000000" aria-label="批量金币附件"></label></div>
       <div class="toolbar"><label>搜索物品<input v-model="query" aria-label="批量物品搜索" placeholder="物品名称或编号" @keydown.enter.prevent="findItems"></label><button type="button" @click="findItems">搜索物品</button></div>
       <div class="reward-results"><button v-for="item in found" :key="item.id" type="button" :disabled="item.sendable===false" @click="add(item)">＋ {{item.name}} #{{item.id}}</button></div>
@@ -142,6 +147,7 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
    <p v-if="!selected.worker_enabled" class="notice">执行器未启用；不能启动或继续发放。</p>
    <div class="reward-grid"><div v-for="(value,k) in selected.preview.currency_totals" :key="k">{{currencyNames[k]||k}}合计：<strong>{{value}}</strong></div><div>邮件金币合计：<strong>{{selected.preview.gold_total}}</strong></div></div>
    <p v-if="selected.preview.account_selection" class="notice">账号名单：{{selected.preview.account_selection.requested_accounts}} 个账号，已去除 {{selected.preview.account_selection.duplicates_removed}} 条重复输入；名单包含这些账号下的全部未删除角色。</p>
+   <p v-if="selected.request.reward.template_id">来源礼包 #{{selected.request.reward.template_id}} / v{{selected.request.reward.template_version}} · {{selected.request.reward.template_overrides?'临时调整（原模板未修改）':'模板原内容'}}</p>
    <p>账号货币：{{selected.request.account_reward_mode==='once_per_account'?'同账号只发一次':'逐角色重复发到所属账号'}}</p>
    <ul><li v-for="(item,n) in selected.preview.rewards.items" :key="n">每角色 {{item.name||'#'+item.id}} #{{item.id}} × {{item.quantity}}</li></ul>
    <p class="field-hint">{{selected.preview.note}}</p>

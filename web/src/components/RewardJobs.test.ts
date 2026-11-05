@@ -15,6 +15,7 @@ function setup(overrides:any={}){
   if(path.endsWith('/control')){const action=JSON.parse(options.body).action;job={...job,status:action==='resume'?'running':'paused'};return new Response(JSON.stringify(job))}
   if(path.includes('/targets?'))return new Response(JSON.stringify({items:[{ordinal:1,target_uid:1,charac_no:2,target:{charac_name:'Test',accountname:'gm'},operation_id:'a'.repeat(32),status:'pending',attempts:0}],next_after:null}))
   if(path.endsWith('/preview'))return new Response(JSON.stringify(job))
+  if(path.includes('/gift-templates?'))return new Response(JSON.stringify({items:[{id:9,name:'Original',enabled:true,current_version:1,rewards:{items:[{id:99,name:'Material',quantity:2}],gold:12,message:'original',currency_rewards:{cera:10}}}]}))
   if(path.includes('/catalog?'))return new Response(JSON.stringify({items:[{id:99,name:'Material',category:'material',sendable:true}]}))
   if(path.endsWith('/'+id))return new Response(JSON.stringify(job))
   return new Response(JSON.stringify({items:[job],has_more:false}))
@@ -96,4 +97,12 @@ it('copies canonical schedule account UIDs into the reward draft',async()=>{
  expect((w.get('[aria-label="目标模式"]').element as HTMLSelectElement).value).toBe('accounts')
  expect((w.get('[aria-label="账号名单"]').element as HTMLTextAreaElement).value).toBe('900001')
  await w.find('form').trigger('submit');await flushPromises();expect((w.emitted('schedule')![0][0] as any).targets).toEqual({mode:'accounts',account_uids:[900001]})
+})
+
+it('keeps template provenance while editing only this batch reward',async()=>{
+ const {w,fetcher}=setup();await flushPromises();await fill(w);await click(w,'查询模板');await click(w,'Original · v1');
+ await click(w,'临时调整本次奖励');await w.find('[aria-label="批量金币附件"]').setValue(50);await w.find('[aria-label="物品数量 99"]').setValue(200);await preview(w);
+ const body=JSON.parse(fetcher.mock.calls.find(([u])=>String(u).endsWith('/preview'))![1].body);
+ expect(body.reward).toMatchObject({template_id:9,template_version:1,template_overrides:{gold:50,items:[{id:99,quantity:200}],currency_rewards:{cera:10}}});
+ expect(w.text()).toContain('临时调整，不修改原模板');expect(fetcher.mock.calls.some(([,o])=>o?.method==='PUT')).toBe(false)
 })

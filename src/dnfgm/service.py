@@ -218,6 +218,8 @@ class Service:
         if not data['reason'].strip():
             raise HTTPException(422, '必须填写原因')
         gold = data.get('gold', 0)
+        if data.get('template_overrides') is not None and action not in ('mail','reward'):
+            raise HTTPException(422,'临时奖励仅用于模板邮件或组合奖励')
         if type(gold) is not int or not 0 <= gold <= MAIL_GOLD_MAX or (action not in ('mail','reward') and gold):
             raise HTTPException(422, '金币附件仅用于邮件，金额须为0至10亿的整数')
         if action == 'currency' and (data.get('currency') not in CURRENCIES or not data.get('delta') or data.get('items') or data.get('template_id')):
@@ -610,22 +612,35 @@ class Service:
         amounts=self.currency_rewards(data)
         attachments=data.get('items',[])
         gold=data.get('gold',0)
+        overrides=data.get('template_overrides')
+        if overrides is not None and not data.get('template_id'):
+            raise HTTPException(422,'临时调整必须保留来源模板和版本')
         if data.get('template_id'):
             if attachments or not data.get('template_version'):
-                raise HTTPException(422,'模板发放必须指定版本，不能混入自选附件')
+                raise HTTPException(422,'模板发放必须指定版本；临时附件请使用临时调整内容')
             t=one(q,'SELECT t.enabled,t.current_version,v.payload_json FROM dnf_gm.gift_templates t JOIN dnf_gm.gift_versions v ON v.template_id=t.id AND v.version=%s WHERE t.id=%s',(data['template_version'],data['template_id']))
             if not t or not t['enabled'] or t['current_version']!=data['template_version']:
                 raise HTTPException(409,'礼包已停用或版本已变化')
-            payload=json.loads(t['payload_json']);attachments=payload['items']
+            payload=json.loads(t['payload_json'])
+            if overrides is not None:
+                # Revalidate even when called by a persisted scheduled/batch task.
+                from .models import RewardOverrides
+                from pydantic import ValidationError
+                try: overrides=RewardOverrides.model_validate(overrides).model_dump()
+                except ValidationError:
+                    raise HTTPException(422,'临时奖励格式无效') from None
+                data['template_overrides']=overrides
+                payload=overrides
+            attachments=payload['items']
             for key,default in (('gold',0),('message','GM rewards')):
                 if key in payload:
                     if data.get(key,default) not in (default,payload[key]):
-                        raise HTTPException(409,'奖励与绑定模板不符；修改奖励请解除模板绑定')
+                        raise HTTPException(409,'奖励内容冲突，请重新预览')
                     data[key]=payload[key]
             gold=data.get('gold',0)
             bound=self.currency_rewards(payload)
             if amounts and amounts!=bound:
-                raise HTTPException(409,'账号奖励与绑定模板不符；请解除模板绑定')
+                raise HTTPException(409,'账号奖励内容冲突，请重新预览')
             amounts=bound
         if amounts and data['action']!='reward':
             raise HTTPException(422,'含点券/代币券/积分的礼包请使用组合奖励操作')
@@ -636,7 +651,9 @@ class Service:
         # Same PVF/policy contract as mail, even for a currency-only versioned gift.
         rewards=self.catalog.items(attachments,q=q,allow_empty=bool(gold or amounts))
         if data['action']=='reward':data['currency_rewards']=amounts
-        return {'gold':gold,'rewards':rewards,'has_mail':has_mail}
+        return {'gold':gold,'rewards':rewards,'has_mail':has_mail,
+                **({'template_source':{'id':data['template_id'],'version':data['template_version'],
+                                      'adjusted':overrides is not None}} if data.get('template_id') else {})}
 
     def apply_reward(self,q,op,data,preview,account,exact_balances=False):
         # Validate the frozen catalogue/template even for currency-only rewards.
@@ -652,6 +669,7 @@ class Service:
             expected=preview['balances'][currency]['before'] if exact_balances else None
             balances[currency]=self.apply_currency(q,{'uid':data['uid'],'currency':currency,'delta':delta},expected)
         result={'currency_rewards':balances,'state':'database_reward_committed','client_verified':False}
+        if preview.get('template_source'):result['template_source']=preview['template_source']
         if preview['has_mail']:
             result.update(self.apply_mail(q,op,data,preview,account))
             result['state']='database_reward_committed'

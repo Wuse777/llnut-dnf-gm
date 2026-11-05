@@ -250,3 +250,12 @@ it('resolves an administrator policy audit receipt without offering game confirm
  expect(calls.filter(c=>!c.startsWith('GET'))).toEqual([])
  w.unmount()
 })
+
+it('keeps template source when a single mail reward is adjusted',async()=>{
+ const {w,calls}=testApp();await flushPromises();await click(w,'礼包模板');await click(w,'用于发放');
+ await w.find('[aria-label="物品数量 1000"]').setValue(8);
+ expect(w.text()).toContain('绑定模板 #9 v1');expect(w.text()).toContain('已临时调整本次奖励');
+ await w.find('[aria-label="查找收件账号"]').setValue('gm');await click(w,'查找账号');await click(w,'gm · UID 3');
+ await w.find('[aria-label="收件角色"]').setValue('4');await w.find('input[placeholder="必填，写入不可删除审计"]').setValue('调整测试');await click(w,'生成预览 →');
+ expect(calls.find(c=>c.path==='/operations/preview')?.body).toMatchObject({template_id:9,template_version:1,items:[],template_overrides:{items:[{id:1000,quantity:8}]}});w.unmount()
+})
