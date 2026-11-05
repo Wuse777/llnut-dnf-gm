@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Annotated
 from .limits import MAIL_GOLD_MAX, MAIL_ITEM_QUANTITY_MAX
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
@@ -88,8 +88,10 @@ class RewardDefinition(Model):
 
 
 class RewardTargets(Model):
-    mode: Literal['selected','filtered','online','all'] = 'selected'
+    mode: Literal['selected','accounts','filtered','online','all'] = 'selected'
     charac_nos: list[StrictInt] = Field(default_factory=list,max_length=5000)
+    account_uids: list[StrictInt] = Field(default_factory=list,max_length=5000)
+    account_names: list[Annotated[str,Field(min_length=1,max_length=255)]] = Field(default_factory=list,max_length=1000)
     uid: StrictInt = Field(default=0,ge=0,le=2147483647)
     job: StrictInt | None = Field(default=None,ge=0,le=255)
     min_level: StrictInt = Field(default=0,ge=0,le=255)

@@ -111,12 +111,15 @@ class Schedules:
             self.engines(q)
             binding = self.binding(q, data)
             estimate = None
+            account_selection = None
             if data['kind'] == 'reward':
-                clause, args, _ = self.jobs.selector(data['reward_job']['targets'])
+                selected, _, account_selection = self.jobs.resolve_accounts(q,data['reward_job']['targets'])
+                data['reward_job']['targets']=selected
+                clause, args, _ = self.jobs.selector(selected)
                 estimate = one(q, 'SELECT COUNT(*) target_count,COUNT(DISTINCT c.m_id) account_count '
                                'FROM taiwan_cain.charac_info c JOIN d_taiwan.accounts a ON a.UID=c.m_id '
                                'LEFT JOIN taiwan_login.login_account_3 l ON l.m_id=c.m_id WHERE ' + clause, args)
-            preview = {'binding': binding, 'estimate': estimate, 'timezone': 'Asia/Shanghai',
+            preview = {'binding': binding, 'estimate': estimate, 'account_selection':account_selection, 'timezone': 'Asia/Shanghai',
                        'late_window_seconds': LATE_WINDOW,
                        'note': '当前人数仅为估算；到期实际触发时冻结名单。超过5分钟的错过期次记为跳过，不补发。取消计划不撤销已创建的子任务。'}
             q.execute("INSERT INTO dnf_gm.schedules(id,session_hash,fingerprint,title,kind,request_json,preview_json,status,next_due,created_at,expires_at) VALUES(%s,%s,%s,%s,%s,%s,%s,'preview',%s,%s,%s)",

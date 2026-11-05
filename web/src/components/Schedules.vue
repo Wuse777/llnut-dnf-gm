@@ -100,6 +100,7 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
   <section v-if="selected" class="panel" aria-label="计划预览与状态">
    <div class="section-title"><h2>{{selected.title}}</h2><span class="pill">{{labels[selected.status]||selected.status}}</span></div>
    <p class="break">计划编号：<code>{{selected.id}}</code></p>
+   <p v-if="selected.preview.account_selection" class="notice">账号名单已固定为 {{selected.preview.account_selection.requested_accounts}} 个UID；角色在触发时选择。账号改名不会把奖励转给另一个同名账号。</p>
    <p>首次：{{scheduleTime(selected.request.first_due)}} · {{({once:'仅一次',daily:'每天',weekly:'每周'} as Record<string,string>)[selected.request.recurrence]}}</p>
    <p>下一期：{{scheduleTime(selected.next_due)}}<span v-if="selected.request.end_at"> · 截止：{{scheduleTime(selected.request.end_at)}}</span></p>
    <p v-if="selected.last_error" class="submit-error" role="alert">{{selected.last_error}}</p>

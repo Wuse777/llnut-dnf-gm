@@ -52,9 +52,21 @@ class RewardJobs:
     @staticmethod
     def selector(filters):
         mode=filters['mode'];ids=sorted(set(filters['charac_nos']))
+        uids=sorted(set(filters.get('account_uids',[])));names=sorted(set(filters.get('account_names',[])))
+        if mode not in ('selected','accounts','filtered','online','all'):
+            raise HTTPException(422,'未知目标模式')
         if filters['min_level']>filters['max_level']:
             raise HTTPException(422,'等级下限不能高于上限')
         changed=bool(filters['uid'] or filters['job'] is not None or filters['min_level'] or filters['max_level']!=255 or filters['q'])
+        if mode=='accounts':
+            if ids or changed or bool(uids)==bool(names):
+                raise HTTPException(422,'账号名单只能填写UID或账号名其中一种，不能混合角色或筛选条件')
+            if any(type(i) is not int or not 1<=i<=2147483647 for i in uids):
+                raise HTTPException(422,'账号UID必须为有效正整数')
+            if any(not isinstance(n,str) or not n.strip() or any(ord(c)<32 or ord(c)==127 for c in n) for n in names):
+                raise HTTPException(422,'账号名不能为空或含控制字符')
+        elif uids or names:
+            raise HTTPException(422,'账号名单只能用于指定账号模式')
         if mode=='selected':
             if not ids or any(type(i) is not int or not 1<=i<=2147483647 for i in ids) or changed:
                 raise HTTPException(422,'指定名单需要有效角色编号，不可混合筛选条件')
@@ -64,6 +76,8 @@ class RewardJobs:
             raise HTTPException(422,'请填写筛选条件，或明确选择全服角色')
         conditions=['c.delete_flag=0'];args=[]
         if ids:conditions.append('c.charac_no IN ('+','.join(['%s']*len(ids))+')');args.extend(ids)
+        if uids:conditions.append('a.UID IN ('+','.join(['%s']*len(uids))+')');args.extend(uids)
+        if names:conditions.append('BINARY a.accountname IN ('+','.join(['%s']*len(names))+')');args.extend(names)
         if filters['uid']:conditions.append('c.m_id=%s');args.append(filters['uid'])
         if filters['job'] is not None:conditions.append('c.job=%s');args.append(filters['job'])
         conditions.append('c.lev BETWEEN %s AND %s');args.extend([filters['min_level'],filters['max_level']])
@@ -74,9 +88,27 @@ class RewardJobs:
             args.extend([like(filters['q']),like(mysql_latin1_text(filters['q'].encode('utf-8')))])
         return ' AND '.join(conditions),args,ids
 
+    def resolve_accounts(self,q,filters):
+        # Names identify an exact account now, not a dynamic future recipient.
+        # Only SELECT UID/accountname; no passwords or other account attributes.
+        self.selector(filters)
+        if filters['mode']!='accounts':return filters,[],None
+        kind='account_uids' if filters.get('account_uids') else 'account_names'
+        raw=filters[kind];wanted=sorted(set(raw))
+        column='UID' if kind=='account_uids' else 'BINARY accountname'
+        q.execute('SELECT UID,accountname FROM d_taiwan.accounts WHERE '+column+' IN ('+','.join(['%s']*len(wanted))+') ORDER BY UID LIMIT 5001',wanted)
+        rows=q.fetchall()
+        keys=[r['UID'] if kind=='account_uids' else r['accountname'] for r in rows]
+        if len(rows)!=len(wanted) or set(keys)!=set(wanted):
+            raise HTTPException(422,'名单包含不存在或名称不唯一的账号；请核对账号名单，没有创建任务')
+        uids=[r['UID'] for r in rows]
+        resolved={**filters,'account_uids':uids,'account_names':[]}
+        return resolved,uids,{'input_kind':kind,'requested_accounts':len(wanted),'duplicates_removed':len(raw)-len(wanted)}
+
     def create_in_transaction(self,q,session_hash,data,job_id=None,now=None):
         if not data['reason'].strip():raise HTTPException(422,'必须填写发放原因')
-        clause,args,ids=self.selector(data['targets'])
+        selected,expected_accounts,account_selection=self.resolve_accounts(q,data['targets'])
+        clause,args,ids=self.selector(selected)
         request=copy.deepcopy(data);reward=request['reward'];reward['action']='reward'
         job_id=job_id or uuid.uuid4().hex;now=int(time.time()) if now is None else now;digest=hashlib.sha256();ordinal=0
         self.engines(q)
@@ -97,12 +129,19 @@ class RewardJobs:
             if inserts:q.executemany('INSERT INTO dnf_gm.reward_targets(job_id,ordinal,target_uid,charac_no,target_json,operation_id) VALUES(%s,%s,%s,%s,%s,%s)',inserts)
             if len(rows)<250:break
             last=rows[-1]['charac_no']
-        if not ordinal:raise NoRewardTargets()
+        if not ordinal:
+            if expected_accounts:raise HTTPException(422,'账号名单中没有可发放的未删除角色；没有创建任务')
+            raise NoRewardTargets()
+        if expected_accounts:
+            q.execute('SELECT DISTINCT target_uid FROM dnf_gm.reward_targets WHERE job_id=%s LIMIT 5001',(job_id,))
+            if {r['target_uid'] for r in q.fetchall()}!=set(expected_accounts):
+                raise HTTPException(422,'部分账号没有可发放的未删除角色；名单未被静默缩减，没有创建任务')
         if ids and len(ids)!=ordinal:raise HTTPException(422,'名单包含不存在、已删除或无所属账号的角色；没有创建任务')
         accounts=one(q,'SELECT COUNT(DISTINCT target_uid) n FROM dnf_gm.reward_targets WHERE job_id=%s',(job_id,))['n']
         multiplier=accounts if data['account_reward_mode']=='once_per_account' else ordinal
         summary={**resolved,'target_count':ordinal,'account_count':accounts,
-                 'duplicates_removed':len(data['targets']['charac_nos'])-len(ids),
+                 'duplicates_removed':account_selection['duplicates_removed'] if account_selection else len(data['targets']['charac_nos'])-len(ids),
+                 'account_selection':account_selection,
                  'account_reward_mode':data['account_reward_mode'],
                  'currency_totals':{key:str(value*multiplier) for key,value in reward['currency_rewards'].items()},
                  'gold_total':str(reward.get('gold',0)*ordinal),

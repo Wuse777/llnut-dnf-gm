@@ -9,10 +9,28 @@ fi
 chmod 600 /var/lib/dnf-gm/maintenance.lock
 flock -x 9
 
-# Older installers do not know the cleanup protocol. Disable it across reboot.
-if [[ -f /etc/systemd/system/dnf-gm-cleanup.timer ]]; then systemctl disable --now dnf-gm-cleanup.timer; fi
 PREVIOUS=$(readlink -f /opt/dnf-gm/previous)
 [[ "$PREVIOUS" == /opt/dnf-gm/releases/* && -f "$PREVIOUS/deploy/install.sh" ]] || exit 1
+BASE=$(cd "$(dirname "$0")/.." && pwd)
+# Quiesce the only GM writer before checking stored request compatibility. The
+# monitor cannot auto-start it during a failed or interrupted rollback.
+INHIBIT_OWNED=false
+if [[ ! -e /var/lib/dnf-gm/no-auto-recover ]]; then
+ touch /var/lib/dnf-gm/no-auto-recover
+ INHIBIT_OWNED=true
+fi
+for UNIT in dnf-gm-monitor.service dnf-gm.service; do
+ if systemctl cat "$UNIT" >/dev/null 2>&1; then systemctl stop "$UNIT"; fi
+done
+/opt/dnf-gm/venv/bin/python "$BASE/deploy/check_rollback.py" "$PREVIOUS" || {
+ echo 'GM remains stopped; current release and data preserved. Review compatibility before manually enabling it.' >&2
+ exit 1
+}
+
+# Older installers do not know the cleanup protocol. Disable it across reboot.
+if [[ -f /etc/systemd/system/dnf-gm-cleanup.timer ]]; then systemctl disable --now dnf-gm-cleanup.timer; fi
 # Reinstalls the previous release's locked wheels and service units, preserves DB.
 # Nginx snippets must be removed/reloaded manually before rollback if desired.
-exec bash "$PREVIOUS/deploy/install.sh"
+bash "$PREVIOUS/deploy/install.sh"
+# Remove only the inhibit we created, and only after the installer succeeded.
+if [[ "$INHIBIT_OWNED" == true ]]; then rm -f /var/lib/dnf-gm/no-auto-recover; fi

@@ -1,0 +1,4 @@
+{
+  "schema_version": 1,
+  "reward_target_modes": ["selected", "accounts", "filtered", "online", "all"]
+}

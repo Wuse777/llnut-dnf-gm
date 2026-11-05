@@ -4,7 +4,9 @@ import {api,ApiError,uncertainMessage} from '../api'
 import ItemQueue from './ItemQueue.vue'
 const props=defineProps<{scheduleDraft?:boolean,initialDraft?:any,initialJob?:string}>()
 const emit=defineEmits<{reauth:[],inspect:[id:string],schedule:[draft:any],opened:[]}>()
+const accountKind=ref('uid'),accountList=ref(''),importNotice=ref('')
 const mode=ref('selected'),ids=ref(''),uid=ref(''),jobFilter=ref(''),minimum=ref(0),maximum=ref(255),name=ref('')
+watch([accountKind,mode],()=>{importNotice.value=''})
 const rewardMode=ref('once_per_account'),reason=ref(''),gold=ref(0),message=ref('GM rewards'),amounts=ref<Record<string,number>>({cera:0,cera_point:0,mileage:0})
 const currencyNames:Record<string,string>={cera:'点券',cera_point:'代币券',mileage:'商城积分'}
 const items=ref<any[]>([]),query=ref(''),found=ref<any[]>([]),templateQuery=ref(''),templates=ref<any[]>([]),template=ref<any>(null)
@@ -19,12 +21,25 @@ function persist(){try{sessionStorage.setItem(storage,JSON.stringify({id:pending
 function fail(e:unknown){error.value=uncertainMessage(e);if(e instanceof ApiError&&e.status===403&&error.value.includes('认证'))emit('reauth')}
 function integer(v:unknown,lo:number,hi:number){return typeof v==='number'&&Number.isSafeInteger(v)&&v>=lo&&v<=hi}
 function parseIds(){const parts=ids.value.trim().split(/[\s,，;；]+/).filter(Boolean);if(!parts.length||parts.length>5000||parts.some(v=>!/^\d+$/.test(v)||!integer(Number(v),1,2147483647)))throw new Error('填写1至5000个有效角色编号，用空格、逗号或换行分隔。');return parts.map(Number)}
-async function importIds(event:Event){const input=event.target as HTMLInputElement;const file=input.files?.[0];if(!file)return;try{if(file.size>262144)throw new Error('名单文件不能超过256 KiB。');ids.value=await file.text();parseIds();fieldErrors.value={};notice.value='名单已读入本地草稿，没有上传文件或发放奖励。'}catch(e){fieldErrors.value={ids:uncertainMessage(e)}}finally{input.value=''}}
+function parseAccounts():number[]|string[]{
+ const parts=accountList.value.trim().split(/[\r\n,，;；]+/).map(v=>v.trim()).filter(Boolean)
+ const max=accountKind.value==='uid'?5000:1000
+ if(!parts.length||parts.length>max)throw new Error('请填写1至'+max+'个账号，每行一个，不含表头。')
+ if(accountKind.value==='uid'){
+  if(parts.some(v=>!/^\d+$/.test(v)||!integer(Number(v),1,2147483647)))throw new Error('账号 UID 须为1至2,147,483,647的整数；每行一个。')
+  return parts.map(Number)
+ }
+ if(parts.some(v=>Array.from(v).length>255||/[\x00-\x1f\x7f]/.test(v)))throw new Error('账号名不能超过255个字符或包含控制字符。')
+ return parts
+}
+async function importAccounts(event:Event){const input=event.target as HTMLInputElement;const file=input.files?.[0];if(!file)return;importNotice.value='';try{if(file.size>262144)throw new Error('名单文件不能超过256 KiB。');accountList.value=await file.text();parseAccounts();fieldErrors.value={};importNotice.value='账号名单已读入草稿；预览时核对账号，没有发放奖励。'}catch(e){fieldErrors.value={accounts:uncertainMessage(e)}}finally{input.value=''}}
+async function importIds(event:Event){const input=event.target as HTMLInputElement;const file=input.files?.[0];if(!file)return;importNotice.value='';try{if(file.size>262144)throw new Error('名单文件不能超过256 KiB。');ids.value=await file.text();parseIds();fieldErrors.value={};importNotice.value='名单已读入本地草稿，没有上传文件或发放奖励。'}catch(e){fieldErrors.value={ids:uncertainMessage(e)}}finally{input.value=''}}
 function payload(){
- const errors:Record<string,string>={};let list:number[]=[]
+ const errors:Record<string,string>={};let list:number[]=[],accounts:number[]|string[]=[]
  if(!reason.value.trim())errors.reason='请填写发放原因。'
  if(mode.value==='selected'){try{list=parseIds()}catch(e){errors.ids=uncertainMessage(e)}}
- if(mode.value!=='selected'&&mode.value!=='all'){
+ if(mode.value==='accounts'){try{accounts=parseAccounts()}catch(e){errors.accounts=uncertainMessage(e)}}
+ if(mode.value!=='selected'&&mode.value!=='all'&&mode.value!=='accounts'){
   if(uid.value&&!/^\d+$/.test(uid.value))errors.filters='账号 UID 应为正整数。'
   if(uid.value&&!integer(Number(uid.value),1,2147483647))errors.filters='账号 UID 超出范围。'
   if(jobFilter.value&&!integer(Number(jobFilter.value),0,255))errors.filters='职业编号应为0至255的整数。'
@@ -38,7 +53,7 @@ function payload(){
   if(!items.value.length&&!gold.value&&!Object.values(amounts.value).some(Boolean))errors.reward='至少添加一项账号货币、金币或物品奖励。'
  }
  fieldErrors.value=errors;if(Object.keys(errors).length)throw new Error('请修正对应输入项旁的提示。')
- const filters=mode.value==='selected'?{mode:mode.value,charac_nos:list}:mode.value==='all'?{mode:'all'}:{mode:mode.value,uid:Number(uid.value)||0,job:jobFilter.value===''?null:Number(jobFilter.value),min_level:minimum.value,max_level:maximum.value,q:name.value.trim()}
+ const filters=mode.value==='accounts'?{mode:'accounts',[accountKind.value==='uid'?'account_uids':'account_names']:accounts}:mode.value==='selected'?{mode:mode.value,charac_nos:list}:mode.value==='all'?{mode:'all'}:{mode:mode.value,uid:Number(uid.value)||0,job:jobFilter.value===''?null:Number(jobFilter.value),min_level:minimum.value,max_level:maximum.value,q:name.value.trim()}
  const reward=template.value?{template_id:template.value.id,template_version:template.value.current_version}:{items:items.value.map(({id,quantity})=>({id,quantity})),gold:gold.value,message:message.value,currency_rewards:amounts.value}
  return {targets:filters,reward,account_reward_mode:rewardMode.value,reason:reason.value.trim()}
 }
@@ -77,6 +92,7 @@ async function move(nextPage:boolean){const after=nextPage?next.value:previous.v
 watch(()=>props.initialDraft,d=>{
  if(!d)return
  const t=d.targets,r=d.reward
+ accountKind.value=t.account_names?.length?'name':'uid';accountList.value=(t.account_names?.length?t.account_names:(t.account_uids||[])).join('\n')
  mode.value=t.mode;ids.value=(t.charac_nos||[]).join(', ');uid.value=t.uid?String(t.uid):'';jobFilter.value=t.job==null?'':String(t.job);minimum.value=t.min_level??0;maximum.value=t.max_level??255;name.value=t.q||''
  rewardMode.value=d.account_reward_mode;reason.value=d.reason;gold.value=r.gold||0;message.value=r.message||'GM rewards';amounts.value={cera:0,cera_point:0,mileage:0,...r.currency_rewards}
  items.value=(r.items||[]).map((i:any)=>({...i,name:i.name||'#'+i.id}));template.value=r.template_id?{id:r.template_id,current_version:r.template_version,name:'原计划礼包 #'+r.template_id}:null
@@ -93,9 +109,11 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
    <form v-show="draftVisible" @submit.prevent="preview">
     <fieldset :disabled="busy||uncertain">
      <h3>1. 收件范围</h3>
-     <label>目标模式<select v-model="mode" aria-label="目标模式"><option value="selected">指定／导入角色编号</option><option value="filtered">按条件筛选角色</option><option value="online">在线账号下的角色</option><option value="all">全服未删除角色</option></select></label>
+     <label>目标模式<select v-model="mode" aria-label="目标模式"><option value="selected">指定／导入角色编号</option><option value="accounts">指定／导入账号名单</option><option value="filtered">按条件筛选角色</option><option value="online">在线账号下的角色</option><option value="all">全服未删除角色</option></select></label>
      <template v-if="mode==='selected'"><label>角色编号名单<textarea v-model="ids" aria-label="角色编号名单" placeholder="例如 900001, 900003；支持换行粘贴" :aria-invalid="!!fieldErrors.ids"/></label><p v-if="fieldErrors.ids" class="submit-error" role="alert">{{fieldErrors.ids}}</p><label class="file-input">导入纯文本名单<input type="file" accept=".txt,.csv" aria-label="导入角色名单" @change="importIds"></label><p class="field-hint">仅在浏览器读取编号文件，不上传文件；重复编号会去重。</p></template>
+     <template v-else-if="mode==='accounts'"><label>账号标识类型<select v-model="accountKind" aria-label="账号名单类型"><option value="uid">账号 UID</option><option value="name">账号名（精确匹配）</option></select></label><label>账号名单<textarea v-model="accountList" aria-label="账号名单" placeholder="每行一个，不含表头；也可用逗号分隔" :aria-invalid="!!fieldErrors.accounts"/></label><p v-if="fieldErrors.accounts" class="submit-error" role="alert">{{fieldErrors.accounts}}</p><label class="file-input">导入账号名单<input type="file" accept=".txt,.csv" aria-label="导入账号名单" @change="importAccounts"></label><p class="notice">选择这些账号下的所有未删除角色，不是只选一个角色。账号名区分大小写；纯数字账号名也请选择“账号名”。重复账号去重，货币按下方规则发放，邮件逐角色发放。</p><p class="field-hint">仅本地读取UTF-8无表头单列文件，不上传文件。定时计划预览会绑定账号UID，之后按该UID在触发时选择角色，不跟随同名新账号。</p></template>
      <div v-else-if="mode!=='all'" class="reward-grid"><label>账号 UID<input v-model="uid" aria-label="筛选账号UID" inputmode="numeric" placeholder="全部账号"></label><label>职业编号<input v-model="jobFilter" inputmode="numeric" placeholder="全部职业"></label><label>角色名称<input v-model="name" maxlength="80" placeholder="包含名称"></label><label>最低等级<input v-model.number="minimum" type="number" min="0" max="255"></label><label>最高等级<input v-model.number="maximum" type="number" min="0" max="255"></label></div>
+     <p v-if="importNotice" class="notice" role="status">{{importNotice}}</p>
      <p v-if="fieldErrors.filters" class="submit-error" role="alert">{{fieldErrors.filters}}</p>
      <p v-if="mode==='online'" class="notice">选择在线账号下所有符合条件的角色，不代表这些角色同时在线。</p><p v-if="mode==='all'" class="notice">范围是全服有归属账号的未删除角色。不包含没有角色的账号。启动前需再次确认。</p>
      <h3>2. 奖励内容</h3>
@@ -123,6 +141,7 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
    <p v-if="selected.pause_reason" class="notice">{{selected.pause_reason}}</p>
    <p v-if="!selected.worker_enabled" class="notice">执行器未启用；不能启动或继续发放。</p>
    <div class="reward-grid"><div v-for="(value,k) in selected.preview.currency_totals" :key="k">{{currencyNames[k]||k}}合计：<strong>{{value}}</strong></div><div>邮件金币合计：<strong>{{selected.preview.gold_total}}</strong></div></div>
+   <p v-if="selected.preview.account_selection" class="notice">账号名单：{{selected.preview.account_selection.requested_accounts}} 个账号，已去除 {{selected.preview.account_selection.duplicates_removed}} 条重复输入；名单包含这些账号下的全部未删除角色。</p>
    <p>账号货币：{{selected.request.account_reward_mode==='once_per_account'?'同账号只发一次':'逐角色重复发到所属账号'}}</p>
    <ul><li v-for="(item,n) in selected.preview.rewards.items" :key="n">每角色 {{item.name||'#'+item.id}} #{{item.id}} × {{item.quantity}}</li></ul>
    <p class="field-hint">{{selected.preview.note}}</p>

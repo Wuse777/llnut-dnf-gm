@@ -72,3 +72,28 @@ it('does not abandon an uncertain original to follow a health target',async()=>{
  expect(fetcher.mock.calls.some(([u])=>String(u).endsWith('/'+other))).toBe(false)
  expect(JSON.parse(sessionStorage.getItem('dnfgm.pending-reward-job')!).id).toBe(id)
 })
+it('previews UID accounts separately from stale role filters and explains all roles',async()=>{
+ const {w,fetcher}=setup();await flushPromises();await fill(w);await w.get('[aria-label="目标模式"]').setValue('accounts')
+ await w.get('[aria-label="账号名单"]').setValue('900001\n900001\n900002');await preview(w)
+ const body=JSON.parse(fetcher.mock.calls.find(([u])=>String(u).endsWith('/preview'))![1].body)
+ expect(body.targets).toEqual({mode:'accounts',account_uids:[900001,900001,900002]});expect(w.text()).toContain('所有未删除角色');expect(w.text()).toContain('账号货币')
+ expect(fetcher.mock.calls.some(([u])=>String(u).endsWith('/start'))).toBe(false)
+})
+it('keeps numeric account names as names and validates missing lists near the input',async()=>{
+ const {w,fetcher}=setup();await flushPromises();await fill(w);await w.get('[aria-label="目标模式"]').setValue('accounts');await preview(w)
+ expect(w.get('[aria-label="账号名单"]').attributes('aria-invalid')).toBe('true');expect(w.text()).toContain('每行一个，不含表头');expect(fetcher.mock.calls.some(([u])=>String(u).endsWith('/preview'))).toBe(false)
+ await w.get('[aria-label="账号名单类型"]').setValue('name');await w.get('[aria-label="账号名单"]').setValue('123\n测试账号\nname with space');await preview(w)
+ expect(JSON.parse(fetcher.mock.calls.find(([u])=>String(u).endsWith('/preview'))![1].body).targets).toEqual({mode:'accounts',account_names:['123','测试账号','name with space']})
+})
+it('imports an account file into the draft without calling a write API',async()=>{
+ const {w,fetcher}=setup();await flushPromises();await w.get('[aria-label="目标模式"]').setValue('accounts')
+ const input=w.get('[aria-label="导入账号名单"]');Object.defineProperty(input.element,'files',{value:[{size:13,text:async()=> '900001\n900002'}]})
+ await input.trigger('change');await flushPromises();expect((w.get('[aria-label="账号名单"]').element as HTMLTextAreaElement).value).toBe('900001\n900002')
+ expect(w.text()).toContain('没有发放奖励');expect(fetcher.mock.calls.some(([,o])=>o?.method==='POST')).toBe(false)
+})
+it('copies canonical schedule account UIDs into the reward draft',async()=>{
+ const w=mount(RewardJobs,{props:{scheduleDraft:true,initialDraft:{targets:{mode:'accounts',account_uids:[900001],account_names:[]},reward:{currency_rewards:{cera:100}},account_reward_mode:'once_per_account',reason:'copied'}}});wrappers.push(w);await flushPromises()
+ expect((w.get('[aria-label="目标模式"]').element as HTMLSelectElement).value).toBe('accounts')
+ expect((w.get('[aria-label="账号名单"]').element as HTMLTextAreaElement).value).toBe('900001')
+ await w.find('form').trigger('submit');await flushPromises();expect((w.emitted('schedule')![0][0] as any).targets).toEqual({mode:'accounts',account_uids:[900001]})
+})
