@@ -168,3 +168,18 @@ it('new maintenance never inherits a previous completed close key',async()=>{
  record=initial();await prepare(w)
  expect(JSON.parse(sessionStorage.getItem(storage)!)).toEqual({id})
 })
+
+it('requires explicit interrupted-restore acknowledgement and polls only the original request',async()=>{
+ record={...initial(),status:'queued',can_cancel:false,can_recover:true,result:{state:'needs_review',fingerprint,revision:42,phase:'restore-start-intent'}}
+ ready.enabled=false;ready.write_gate={state:'frozen',operation_id:id}
+ sessionStorage.setItem(storage,JSON.stringify({id}))
+ const normal=vi.mocked(api).getMockImplementation()!
+ vi.mocked(api).mockImplementation(async(p,m,b)=>p.endsWith('/recover')?structuredClone(record):normal(p,m,b))
+ const w=setup();await flushPromises()
+ await click(w,'核对中断并继续恢复');await click(w,'确认核对并继续')
+ expect(w.find('#maintenance-recovery-error').text()).toContain('请先确认');expect(posts()).toHaveLength(0)
+ await w.find('[aria-label="确认核对并继续恢复"]').setValue(true);await click(w,'确认核对并继续')
+ expect(posts()).toEqual([[`/maintenance/requests/${id}/recover`,'POST',expect.objectContaining({revision:42,fingerprint,acknowledge_restore:true})]])
+ await click(w,'只查询原申请');expect(posts()).toHaveLength(1)
+ expect(w.findAll('button').some((b:any)=>b.text()==='核对中断并继续恢复')).toBe(false)
+})

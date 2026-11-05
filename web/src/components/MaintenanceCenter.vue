@@ -8,6 +8,7 @@ const state=ref<any>(null),detail=ref<any>(null),history=ref<any[]>([]),cursor=r
 const reason=ref(''),reasonError=ref(''),error=ref(''),busy=ref(false),historyBusy=ref(false),id=ref(''),lookup=ref('')
 const fresh=ref(false),attempted=ref(false),restored=ref(false),dialog=ref(false),ack=ref(false),ackError=ref(''),key=ref('')
 const closeDialog=ref(false),closeAck=ref(false),closeError=ref(''),closeKey=ref(''),closeAttempted=ref(false)
+const recoveryDialog=ref(false),recoveryAck=ref(false),recoveryError=ref(''),recoveryKey=ref(''),recoveryAttempted=ref(false)
 const storage='dnf-gm.maintenance-pending'
 let alive=true,timer:ReturnType<typeof setInterval>|undefined
 const names:Record<string,string>={close_queued:'结束维护已入队 · 等待关窗与恢复',cancelling:'取消已保存 · 等待释放原计划',preparing:'等待只读计划',prepared:'计划已生成 · 尚未执行',queued:'确认已入队 · 未证明开始',running:'已记录执行开始 · 需核对进度',needs_review:'执行结果待核对',writers_stopped:'游戏写入组件已退出 · 尚未签发维护窗口',game_drained:'游戏退出阶段完成 · 尚非完整维护窗口',maintenance_open:'维护窗口已建立',resuming:'正在核对并恢复服务',completed:'维护流程已结束',cancelled:'预览已取消',expired:'计划已过期',rejected:'执行器已拒绝'}
@@ -15,12 +16,14 @@ const phases:Record<string,string>={'window-issue-intent':'已记录维护窗口
 const terminal=computed(()=>['cancelled','expired','rejected','completed'].includes(detail.value?.result?.state))
 const canConfirm=computed(()=>fresh.value&&detail.value?.can_confirm&&state.value?.write_gate?.state==='open'&&!attempted.value&&!restored.value&&!busy.value)
 const canClose=computed(()=>fresh.value&&detail.value?.can_close&&!closeAttempted.value&&!busy.value)
+const canRecover=computed(()=>fresh.value&&detail.value?.can_recover&&!busy.value&&!recoveryAttempted.value)
 const displayedState=computed(()=>{const result=detail.value?.result?.state,status=detail.value?.status;
  if(detail.value?.close_requested&&result==='maintenance_open')return 'close_queued';
  if(status==='queued'&&(!result||result==='prepared'))return 'queued';
  if(status==='cancelled'&&!['cancelled','expired','rejected','completed'].includes(result))return 'cancelling';
  return result||status})
 const gateNames:Record<string,string>={open:'普通写入已开放',frozen:'维护冻结中',unknown:'状态未知 · 普通写入已保护',not_configured:'尚未安装维护写入屏障'}
+const recoveryReasons:Record<string,string>={maintenance_start_outcome_unproven:'组件已有启动意向，但目前没有匹配的运行进程。为避免重复启动，本次未继续；请先核对组件状态。',maintenance_restored_process_changed:'已恢复组件的进程发生变化，不能继续沿用旧恢复记录。',maintenance_restored_core_unhealthy:'组件恢复后核心健康检查未通过；可修复问题后再次核对恢复。'}
 const observationNames:Record<string,string>={down_waiting_restore:'组件保持停止，等待恢复',restore_marker_pending:'恢复启动标记中',restore_start_pending:'启动命令待确认',starting:'组件已启动，正在核对就绪状态',restored:'组件状态与恢复记录一致',down_terminated:'组件已按计划由TERM退出（不代表维护完成）',original:'与计划前状态一致',restart_inhibited:'进程仍在运行，自动重启已禁止',restart_inhibited_marker_missing:'进程仍在运行，停止标记待核对',down_normal:'进程正常退出（不是存档验收凭据）',down_abnormal:'进程异常退出',changed:'与原计划不一致'}
 const active=computed(()=>!!id.value&&!terminal.value)
 function date(value:any){return typeof value==='number'?new Date(value*1000).toLocaleString('zh-CN',{hour12:false}):'未知'}
@@ -63,6 +66,18 @@ async function closeMaintenance(){if(!canClose.value)return
  catch(e){if(alive){fail(e);error.value+='；结束维护结果待核对，编号已保留，请只查询原申请，不自动重发。'}}
  finally{if(alive){busy.value=false;void loadHistory(true)}}
 }
+function openRecovery(){if(!canRecover.value)return;recoveryAck.value=false;recoveryError.value='';recoveryDialog.value=true}
+async function recoverMaintenance(){if(!canRecover.value)return
+ if(!recoveryAck.value){recoveryError.value='请先确认按原计划核对并继续恢复。';return}
+ recoveryKey.value=crypto.randomUUID().replaceAll('-','')
+ if(!save(id.value)){recoveryError.value=error.value;return}
+ const fingerprint=detail.value.result.fingerprint,revision=detail.value.result.revision
+ recoveryAttempted.value=true;recoveryDialog.value=false;busy.value=true;fresh.value=false;error.value=''
+ try{const result=await api('/maintenance/requests/'+id.value+'/recover','POST',{idempotency_key:recoveryKey.value,fingerprint,revision,acknowledge_restore:true});if(alive){detail.value=result;fresh.value=true}}
+ catch(e){if(alive){fail(e);error.value+='；不自动重发，请先查询原申请核对恢复结果。'}}
+ finally{if(alive){busy.value=false;void loadHistory(true)}}
+}
+function reviewRecovery(){recoveryAttempted.value=false;void inspect()}
 async function cancel(){if(busy.value||!detail.value?.can_cancel)return;busy.value=true;error.value='';fresh.value=false
  try{const result=await api('/maintenance/requests/'+id.value+'/cancel','POST');if(alive){detail.value=result;fresh.value=true;attempted.value=true;if(terminal.value)forget()}}
  catch(e){if(alive)fail(e)}finally{if(alive){busy.value=false;void loadHistory(true)}}}
@@ -72,7 +87,7 @@ async function dispatch(){if(busy.value||!detail.value?.retry_dispatch_allowed)r
 async function observe(){if(busy.value||!detail.value?.can_observe)return;busy.value=true;error.value=''
  try{const result=await api('/maintenance/requests/'+id.value+'/observe','POST');if(alive){detail.value=result;fresh.value=true}}
  catch(e){if(alive)fail(e)}finally{if(alive)busy.value=false}}
-function reset(){if(busy.value||active.value)return;forget();closeKey.value='';closeAttempted.value=false;id.value='';detail.value=null;lookup.value='';attempted.value=false;restored.value=false;fresh.value=false;error.value=''}
+function reset(){if(busy.value||active.value)return;forget();recoveryAttempted.value=false;recoveryKey.value='';closeKey.value='';closeAttempted.value=false;id.value='';detail.value=null;lookup.value='';attempted.value=false;restored.value=false;fresh.value=false;error.value=''}
 onMounted(async()=>{void loadState();void loadHistory(true)
  try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(/^[a-f0-9]{32}$/.test(saved?.id)){id.value=saved.id;closeKey.value=/^[a-f0-9]{32}$/.test(saved.closeKey)?saved.closeKey:'';closeAttempted.value=!!closeKey.value;attempted.value=true;restored.value=true;await inspect(saved.id)}}catch{}
  timer=setInterval(()=>{if(!document.hidden&&!busy.value){if(active.value)void inspect();void loadState()}},10000)
@@ -98,7 +113,7 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
    <p v-if="detail.result?.games?.length">本计划涉及：{{detail.result.games.join('、')}}</p><p v-if="detail.result?.expires_at">计划有效期至 {{date(detail.result.expires_at)}}</p>
    <p v-if="detail.status==='cancelled'&&!terminal" class="notice">取消已保存，正在等待执行器释放原计划；这不是停服后的恢复。</p>
    <p v-if="detail.result?.window_requires_live_check" class="notice">窗口签发记录不代表现在仍然有效；装备提交前会重新核对实时许可。窗口到期后停止装备写入，不会自动续期；请点击“结束维护并恢复服务”。</p>
-   <p v-if="detail.result?.error" class="submit-error">执行记录：{{detail.result.error}}。不要换编号重复执行。</p>
+   <p v-if="detail.result?.error" class="submit-error">执行记录：{{recoveryReasons[detail.result.error]||detail.result.error}}。不要换编号重复执行。</p>
    <p v-if="restored" class="field-hint">从历史或刷新恢复后，不会自动执行。尚未确认的计划可以取消；已经开启的维护窗口可以核对后明确结束维护并恢复服务。</p>
    <section v-if="detail.result?.ordinary_outcomes" class="maintenance-observation" aria-label="维护前结果核对">
     <h4>维护前结果核对</h4>
@@ -114,13 +129,21 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
      <small>这是采集时的进程状态，不证明游戏存档完整，不开放装备写入，也不会重发退出命令或恢复服务。</small>
     </template>
    </section>
-   <ol v-if="detail.result?.events?.length" class="maintenance-events"><li v-for="event in detail.result.events" :key="event.sequence"><b>{{phases[event.phase]||event.phase}}</b><span>{{event.service||'维护流程'}} · {{date(event.at)}}</span></li></ol>
+   <ol v-if="detail.result?.events?.length" class="maintenance-events"><li v-for="event in detail.result.events" :key="event.sequence"><b>{{event.reconciled?'中断后已核对组件运行状态（未重发启动）':phases[event.phase]||event.phase}}</b><span>{{event.service||'维护流程'}} · {{date(event.at)}}</span></li></ol>
   </template>
-  <div class="toolbar"><button :disabled="busy" @click="inspect()">只查询原申请</button><button v-if="detail?.can_observe" :disabled="busy||detail?.observation_pending" @click="observe">核对实际状态（只读）</button><button v-if="canConfirm" class="danger" @click="openConfirm">核对并确认维护</button><button v-if="canClose" class="primary" @click="openClose">结束维护并恢复服务</button><button v-if="detail?.can_cancel" :disabled="busy" @click="cancel">取消尚未执行的计划</button><button v-if="detail?.retry_dispatch_allowed&&!detail?.receipt_error" :disabled="busy" @click="dispatch">补投递原申请</button><button v-if="terminal" :disabled="busy" @click="reset">结束查看</button></div>
+  <div class="toolbar"><button :disabled="busy" @click="inspect()">只查询原申请</button><button v-if="detail?.can_observe" :disabled="busy||detail?.observation_pending" @click="observe">核对实际状态（只读）</button><button v-if="canConfirm" class="danger" @click="openConfirm">核对并确认维护</button><button v-if="canRecover" class="primary" @click="openRecovery">核对中断并继续恢复</button><button v-if="recoveryAttempted" :disabled="busy" @click="reviewRecovery">核对上次恢复结果</button><button v-if="canClose" class="primary" @click="openClose">结束维护并恢复服务</button><button v-if="detail?.can_cancel" :disabled="busy" @click="cancel">取消尚未执行的计划</button><button v-if="detail?.retry_dispatch_allowed&&!detail?.receipt_error" :disabled="busy" @click="dispatch">补投递原申请</button><button v-if="terminal" :disabled="busy" @click="reset">结束查看</button></div>
  </section>
  <form class="toolbar" @submit.prevent="inspect(lookup)" novalidate><input v-model="lookup" aria-label="维护申请编号" placeholder="粘贴32位原申请编号"><button :disabled="busy">按编号查询</button></form>
  <div class="section-title"><h3>维护申请历史</h3><button :disabled="historyBusy" @click="loadHistory(true)">刷新历史</button></div>
  <p v-if="!history.length" class="empty">尚无已读取的维护申请。</p><div class="table-wrap" v-else><table><thead><tr><th>申请时间</th><th>原因</th><th>提交状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in history" :key="row.operation_id"><td>{{date(row.created_at)}}</td><td>{{row.reason}}</td><td>{{names[row.status]||row.status}}</td><td><button :disabled="busy" @click="inspect(row.operation_id)">查看记录</button></td></tr></tbody></table></div><button v-if="cursor" :disabled="historyBusy" @click="loadHistory()">加载更早申请</button>
+ <Modal v-if="recoveryDialog" title="核对中断并继续恢复" :busy="busy" @close="recoveryDialog=false">
+  <p class="warning">只接续这次维护的关窗与恢复步骤，不重新停服、不重复充值或装备修改，不重新发送已有启动意向的命令。</p>
+  <p>申请编号：{{id}}</p><p>当前步骤：{{phases[detail?.result?.phase]||detail?.result?.phase}}</p>
+  <p class="field-hint">已启动的组件会核对进程；未执行的后续步骤按原计划继续。若某组件只有启动意向但实际没有运行，会保留冻结并显示原因，不盲目重启。</p>
+  <label class="maintenance-ack"><input v-model="recoveryAck" type="checkbox" aria-label="确认核对并继续恢复" :aria-invalid="!!recoveryError">我确认核对当前状态，并继续恢复原游戏组件。</label>
+  <FieldError id="maintenance-recovery-error" :message="recoveryError"/>
+  <template #footer><button @click="recoveryDialog=false">返回核对</button><button class="primary" :disabled="!canRecover" @click="recoverMaintenance">确认核对并继续</button></template>
+ </Modal>
  <Modal v-if="closeDialog" title="结束维护并恢复服务" :busy="busy" @close="closeDialog=false">
   <p class="warning">将先关闭当前装备维护窗口，核对未决装备操作，再按进入维护前的状态恢复游戏组件。不会回滚已完成的装备修改，不会操作 mihomo、cliproxyapi 或共享 Docker。</p>
   <p>申请编号：{{id}}</p><p>维护原因：{{detail?.reason}}</p>

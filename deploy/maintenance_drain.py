@@ -317,9 +317,12 @@ class DrainCoordinator:
                 result['state']='needs_review'  # Final ownership receipt not yet reconciled.
             offset=len(result['events'])
             result['events'].extend({'sequence':offset+i+1,'phase':e['phase'],
-                'at':e['at'],'service':e['data'].get('service')} for i,e in enumerate(session['events']))
+                'at':e['at'],'service':e['data'].get('service'),
+                **({'reconciled':True} if e['data'].get('reconciled') is True else {})} for i,e in enumerate(session['events']))
             result.update(revision=len(result['events']),phase=result['events'][-1]['phase'],
-                error=session['error'],window_requires_live_check=session['state']=='maintenance_open')
+                error=session['error'],window_requires_live_check=session['state']=='maintenance_open',
+                recovery_available=doc['state']!='completed' and len(session['events'])>=2
+                    and session['state'] not in ('opening','maintenance_open'))
         return result
 
     def cancel(self, request_id):

@@ -73,13 +73,30 @@ class ExecutionWorker(PreparationWorker):
 
     def process(self,data):
         phase,op=data['phase'],data['operation_id']
-        if phase not in ('confirm','close'):return super().process(data)
+        if phase not in ('confirm','close','recover'):return super().process(data)
         binding=self.bind(data)
         if binding['cancelled']:return super().process(data)
         record=self.private_status(op)
         if record is None:raise Refused('maintenance_plan_required')
         plan=self.coordinator._load(op)['plan']
         if data['fingerprint']!=plan['fingerprint']:raise Refused('maintenance_request_conflict')
+        if phase=='recover':
+            # Consume each explicit recovery attempt before any action. A queued
+            # duplicate after a crash only reports; a new attempt needs new web
+            # confirmation bound to the latest journal revision.
+            path=self.root/'bindings'/(data['recovery_id']+'.recovery.json')
+            identity={k:data[k] for k in ('operation_id','request_sha256','fingerprint','revision','recovery_id')}
+            if path.exists():
+                if read_json(path,owner=self.owner,limit=8192)!=identity:
+                    raise Refused('maintenance_recovery_binding_changed')
+                return self.report(data)
+            if (record.get('revision')!=data['revision'] or not record.get('recovery_available')):
+                return self.report(data)
+            self.handshake.check(self.coordinator.host.cfg,healthy=None)
+            atomic_json(path,identity,mode=0o600)
+            with self.heartbeat(data):self.session.close_restore(op,recover=True)
+            self.publish_status()
+            return self.report(data)
         if phase=='confirm':
             # Repeated delivery after a start is QUERY ONLY, including a crash
             # between writers-stopped and issuing the maintenance window.

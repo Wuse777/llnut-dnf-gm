@@ -16,7 +16,7 @@ from maintenance_drain import error_code
 ID=re.compile(r'[a-f0-9]{32}\Z')
 SHA=re.compile(r'[a-f0-9]{64}\Z')
 FIELDS={'operation_id','reason','created_at','image_digest','pvf_sha256','program_sha256'}
-PHASES={'prepare','confirm','cancel','observe','close'}
+PHASES={'prepare','confirm','cancel','observe','close','recover'}
 
 
 def validate_packet(value, filename):
@@ -26,7 +26,7 @@ def validate_packet(value, filename):
     if (phase not in PHASES or not isinstance(op,str) or not ID.fullmatch(op)
             or filename!=op+'.'+phase+'.json' or not isinstance(request,dict)
             or set(request)!=FIELDS or request.get('operation_id')!=op
-            or set(value)!=({'version','operation_id','phase','request','request_sha256'}|({'fingerprint'} if phase in ('confirm','close') else set()))):
+            or set(value)!=({'version','operation_id','phase','request','request_sha256'}|({'fingerprint'} if phase in ('confirm','close','recover') else set())|({'recovery_id','revision'} if phase=='recover' else set()))):
         raise Refused('maintenance_request_invalid')
     if (not isinstance(request['reason'],str) or not 2<=len(request['reason'].strip())<=200
             or request['reason']!=request['reason'].strip() or type(request['created_at']) is not int
@@ -34,8 +34,11 @@ def validate_packet(value, filename):
             or not re.fullmatch(r'sha256:[a-f0-9]{64}',request['image_digest'])
             or any(not isinstance(request[k],str) or not SHA.fullmatch(request[k]) for k in ('pvf_sha256','program_sha256'))
             or value.get('request_sha256')!=hashlib.sha256(canonical(request)).hexdigest()
-            or phase in ('confirm','close') and (not isinstance(value.get('fingerprint'),str) or not SHA.fullmatch(value['fingerprint']))):
+            or phase in ('confirm','close','recover') and (not isinstance(value.get('fingerprint'),str) or not SHA.fullmatch(value['fingerprint']))):
         raise Refused('maintenance_request_invalid')
+    if phase=='recover' and (not isinstance(value.get('recovery_id'),str) or not ID.fullmatch(value['recovery_id'])
+            or type(value.get('revision')) is not int or not 1<=value['revision']<=2048):
+        raise Refused('maintenance_recovery_request_invalid')
     return value
 
 
@@ -114,7 +117,7 @@ class PreparationWorker:
                 result={'state':'cancelled','can_confirm':False,'can_cancel':False,
                         'command_may_have_run':False,'maintenance_permit':False,'updated_at':self.clock()}
             return self.publish(data,result)
-        if phase=='close':raise Refused('maintenance_full_executor_unavailable')
+        if phase in ('close','recover'):raise Refused('maintenance_full_executor_unavailable')
         if phase=='confirm':
             # Never call coordinator.confirm: game-only drain has no complete
             # stop/fence/restore workflow. HTTP readiness also refuses this.
@@ -146,7 +149,7 @@ class PreparationWorker:
             with os.scandir(self.root/'inbox') as entries:
                 for i,entry in enumerate(entries):
                     if i>=96:break
-                    if re.fullmatch(r'[a-f0-9]{32}\.(prepare|confirm|cancel|observe|close)\.json',entry.name):candidates.append(entry.name)
+                    if re.fullmatch(r'[a-f0-9]{32}\.(prepare|confirm|cancel|observe|close|recover)\.json',entry.name):candidates.append(entry.name)
             errors=0
             for name in sorted(candidates):
                 path=self.root/'inbox'/name

@@ -49,7 +49,7 @@ class SessionMonitor:
         if request_id is None:raise Refused('maintenance_recovery_not_open')
         raw=c._load(request_id);plan=raw['plan']
         session=load(c.root,c.owner,request_id,plan)
-        if raw['version']!=3 or raw['state']!='writers_stopped' or session['state']!='maintenance_open':
+        if raw['version']!=3 or raw['state']!='writers_stopped' or (session['state'] not in ('maintenance_open','needs_review','closing') or not 2<=len(session['events'])<=3):
             raise Refused('maintenance_recovery_not_open')
         permit=_read(self.runtime,'permit.json',c.owner,4096)
         # Validate original shape and lifetime, NOT permission at the current time.
@@ -86,8 +86,55 @@ class SessionMonitor:
         if not (0<=after-now<=20 and 0<=after_mono-mono<=20):
             raise Refused('maintenance_evidence_stale')
         return {'active':True,'verified':True,'authority':'recovery-only',
-                'request_id':request_id,'phase':'maintenance_open','maintenance_permit':False,
+                'request_id':request_id,'phase':session['state'],'maintenance_permit':False,
                 'write_window_expired':True,'collected_at':now,'expires_at':now+30,'services':services}
+
+    def interrupted(self, request_id, raw, session):
+        """Fresh read-only recovery visibility, never renewed game-write authority.
+
+        No duration extension of an old transition: re-read original identities,
+        the closed window, gate and every process at each collection instead.
+        """
+        c=self.c;plan=raw['plan'];now,mono=c._now()
+        if raw['state']!='writers_stopped' or len(session['events'])<3:
+            raise Refused('maintenance_recovery_not_closed')
+        if any(now<e['at'] or mono<e['monotonic'] for e in session['events']):
+            raise Refused('maintenance_evidence_stale')
+        if os.path.lexists(self.runtime/'permit.json'):return None
+        closed=_read(self.runtime,'closed.json',c.owner,MAX_CLOSE_BYTES)
+        if (closed.get('id')!=request_id or not bound_to_plan(closed.get('binding'),plan)
+                or type(closed.get('safe_to_resume')) is not bool
+                or len(session['events'])>=4 and closed['safe_to_resume'] is not True):
+            raise Refused('maintenance_close_not_proven')
+        original=plan['services_before'];games=set(plan['service_cycle']['games'])
+        if any(name not in original or (name not in games and
+                (original[name][:3]!=[True,True,True] or original[name][4]<1)) for name in self.required_components):
+            raise Refused('maintenance_preexisting_component_failure')
+        gate=c.admission.gate if c.admission else WriteGateManager('/var/lib/dnf-gm/write-gate',owner=c.owner)
+        frozen=raw['events'][1]['data'];phases={e['phase'] for e in session['events']}
+        released=next((e['data'] for e in session['events'] if e['phase']=='gate-released'),None)
+        with gate.locked(False):
+            current=gate.read()
+            if released:
+                if current!=released:raise Refused('maintenance_restore_gate_changed')
+            elif current!=frozen:
+                if ('gate-release-intent' not in phases or current['state']!='open'
+                        or any(current[k]!=frozen[k] for k in ('generation','operation_id','binding_sha256'))):
+                    raise Refused('maintenance_restore_gate_changed')
+        services=self.observe(plan,session)
+        if any(row['state']=='changed' for row in services):raise Refused('maintenance_restore_unexpected_state')
+        if (c._active()!=request_id or c._load(request_id)!=raw
+                or load(c.root,c.owner,request_id,plan)!=session
+                or _read(self.runtime,'closed.json',c.owner,MAX_CLOSE_BYTES)!=closed
+                or os.path.lexists(self.runtime/'permit.json')):
+            raise Refused('maintenance_restore_journal_changed')
+        with gate.locked(False):
+            if gate.read()!=current:raise Refused('maintenance_restore_gate_changed')
+        after,after_mono=c._now()
+        if not (0<=after-now<=20 and 0<=after_mono-mono<=20):raise Refused('maintenance_evidence_stale')
+        return {'active':True,'verified':True,'authority':'recovery-only','request_id':request_id,
+                'phase':session['state'],'maintenance_permit':False,'recovery_required':True,
+                'collected_at':now,'expires_at':now+30,'services':services}
 
     def status(self):
         c=self.c
@@ -103,12 +150,14 @@ class SessionMonitor:
         if raw['state']=='completed':return {'active':False,'verified':False,'recorded_state':'completed'}
         closing=next((e for e in session['events'] if e['phase']=='window-close-intent'),None)
         if closing is None:return None
+        if session['state'] in ('needs_review','completed'):
+            return self.interrupted(request_id,raw,session)
         now,mono=c._now();duration=len(plan['service_cycle']['start_order'])*(START_TIMEOUT+10)+120
         result={'active':True,'verified':False,'authority':'restore-transition',
                 'request_id':request_id,'phase':session['state'],'maintenance_permit':False,
                 'collected_at':now,'expires_at':closing['at']+duration}
         if not (0<=now-closing['at']<duration and 0<=mono-closing['monotonic']<duration):
-            result['reason']='maintenance_restore_observation_expired';return result
+            return self.interrupted(request_id,raw,session)
         original=plan['services_before'];games=set(plan['service_cycle']['games'])
         if any(name not in original or (name not in games and
                 (original[name][:3]!=[True,True,True] or original[name][4]<1)) for name in self.required_components):

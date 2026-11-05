@@ -323,7 +323,7 @@ class Service:
                     raise HTTPException(409, '存档操作请使用专用确认入口')
                 if row['action'].startswith('native-'):
                     raise HTTPException(409, '原生控制请使用专用确认入口')
-                if row['action'] == 'maintenance':
+                if row['action'] in ('maintenance','maint-close','maint-recover'):
                     raise HTTPException(409, '维护申请请使用专用确认入口')
                 if row['action'] == 'cleanup-release':
                     raise HTTPException(409, '旧产物清理请使用专用确认入口')

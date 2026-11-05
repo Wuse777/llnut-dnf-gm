@@ -12,7 +12,7 @@ import time
 
 from fastapi import HTTPException
 import pymysql
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 from .write_gate import GameplayWriteGate
 from .catalog import snapshot
@@ -23,13 +23,13 @@ CLOSE_ACTION = 'maint-close'
 ROOT_UID = 0
 ID = re.compile(r'^[a-f0-9]{32}$')
 SHA = re.compile(r'^[a-f0-9]{64}$')
-PHASES = ('prepare', 'confirm', 'cancel', 'observe', 'close')
+PHASES = ('prepare', 'confirm', 'cancel', 'observe', 'close', 'recover')
 STATES = {'prepared','running','needs_review','game_drained','writers_stopped','cancelled','expired','rejected',
           'maintenance_open','resuming','completed'}
 PUBLIC_FIELDS = {'state','fingerprint','created_at','expires_at','updated_at','revision','phase',
                  'games','events','command_may_have_run','error','maintenance_permit',
                  'can_confirm','can_cancel','can_replay','can_resume','client_verified',
-                 'preview_expired','observation','window_requires_live_check','ordinary_outcomes'}
+                 'recovery_available','preview_expired','observation','window_requires_live_check','ordinary_outcomes'}
 
 
 class MaintenancePrepare(BaseModel):
@@ -52,6 +52,14 @@ class MaintenanceClose(BaseModel):
     acknowledge_restore: StrictBool
 
 
+class MaintenanceRecover(MaintenanceClose):
+    revision: StrictInt = Field(ge=1, le=2048)
+
+
+def recovery_id(op, key):
+    return hashlib.sha256(('maintenance-recover:'+op+':'+key).encode()).hexdigest()[:32]
+
+
 def close_id(op):
     return hashlib.sha256(('maintenance-close:'+op).encode('ascii')).hexdigest()[:32]
 
@@ -60,13 +68,14 @@ def request_hash(request):
     return hashlib.sha256(canonical(request)).hexdigest()
 
 
-def packet(request, phase, *, fingerprint=None):
+def packet(request, phase, *, fingerprint=None, recovery=None):
     if phase not in PHASES:
         raise Refused('maintenance_phase_invalid')
     data = {'version':1, 'operation_id':request['operation_id'], 'phase':phase,
             'request':request, 'request_sha256':request_hash(request)}
-    if phase in ('confirm','close'):
+    if phase in ('confirm','close','recover'):
         data['fingerprint'] = fingerprint
+    if phase=='recover':data.update(recovery)
     return data
 
 
@@ -188,6 +197,9 @@ class MaintenanceRequests:
             and receipt['state']=='maintenance_open' and current['state']=='ok'
             and current['execute_supported']
             and receipt.get('fingerprint')==json.loads(row['preview_json']).get('fingerprint'))
+        result['can_recover'] = bool(row['status']=='queued' and receipt
+            and receipt.get('recovery_available') is True and current['state']=='ok'
+            and current['execute_supported'] and receipt.get('fingerprint')==json.loads(row['preview_json']).get('fingerprint'))
         phase='close' if close else 'cancel' if row['status']=='cancelled' else 'confirm' if row['status']=='queued' else 'prepare'
         result['dispatch_phase']=phase
         needs_dispatch=(receipt is None or phase=='confirm' and receipt['state']=='prepared'
@@ -343,6 +355,42 @@ class MaintenanceRequests:
             if isinstance(error,pymysql.IntegrityError):raise HTTPException(409,'确认编号已用于其他操作') from None
             raise
         return self.dispatch(op)
+
+    def recover(self, session, op, data):
+        d=MaintenanceRecover(**data).model_dump()
+        if d['acknowledge_restore'] is not True:
+            raise HTTPException(422,'请确认核对中断状态并继续恢复原游戏组件')
+        rid=recovery_id(op,d['idempotency_key']);attempted=False
+        expected={'operation_id':op,'fingerprint':d['fingerprint'],'revision':d['revision'],
+                  'acknowledge_restore':True}
+        try:
+            with self.db.connect() as c,c.cursor() as q:
+                self.engines(q);row=self.row(q,op,True)
+                q.execute('SELECT * FROM dnf_gm.operations WHERE operation_id=%s FOR UPDATE',(rid,));prior=q.fetchone()
+                if prior:
+                    if (prior['action']!='maint-recover' or prior['idempotency_key']!=d['idempotency_key']
+                            or json.loads(prior['request_json'])!=expected):
+                        raise HTTPException(409,'恢复确认编号已绑定其他内容，请查询原申请')
+                else:
+                    current=self.status();receipt=self.receipt(row)
+                    if (row['status']!='queued' or current['state']!='ok' or not current['execute_supported']
+                            or not receipt or not receipt.get('recovery_available')
+                            or receipt.get('revision')!=d['revision'] or receipt.get('fingerprint')!=d['fingerprint']
+                            or json.loads(row['preview_json']).get('fingerprint')!=d['fingerprint']):
+                        raise HTTPException(409,'恢复状态已经变化或不可核验，请刷新原申请')
+                    now=int(time.time());payload=canonical(expected).decode()
+                    q.execute("INSERT INTO dnf_gm.operations(operation_id,session_hash,idempotency_key,fingerprint,action,request_json,preview_json,status,created_at,expires_at) VALUES(%s,%s,%s,%s,'maint-recover',%s,'{}','queued',%s,%s)",
+                              (rid,session,d['idempotency_key'],request_hash(expected),payload,now,now))
+                    q.execute("INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) VALUES(%s,'owner','maintenance-recover',%s,%s,%s)",
+                              (rid,self.request(row)['reason'],payload,json.dumps({'state':'queued','operation_id':op,'recovery_operation_id':rid})))
+                    attempted=True;c.commit()
+        except Exception as error:
+            if attempted:raise HTTPException(503,'恢复确认保存结果待核对，请查询原申请；不会自动重发') from None
+            if isinstance(error,pymysql.IntegrityError):raise HTTPException(409,'确认编号已用于其他操作') from None
+            raise
+        self.enqueue(op,'recover',packet(self.request(row),'recover',fingerprint=d['fingerprint'],
+            recovery={'recovery_id':rid,'revision':d['revision']}))
+        return {**self.detail(op),'recovery_operation_id':rid}
 
     def cancel(self, op):
         # Safety cancellation stays available when the capability is switched off.

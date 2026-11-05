@@ -76,7 +76,7 @@ def validate(doc,request_id,plan):
             elif phase=='restore-marker-intent':
                 if data!={'service':name,'normally_up':cycle['entries'][name]['before'][2]}:raise ValueError()
             elif phase in ('restore-marker-applied','restore-start-intent','restore-start-sent'):
-                if data!={'service':name}:raise ValueError()
+                if data!={'service':name} and not (phase=='restore-start-sent' and data=={'service':name,'reconciled':True}):raise ValueError()
             elif phase=='service-restored':restored_record(data,cycle['entries'][name])
             elif phase=='services-restored':
                 if data!={'services':cycle['start_order'],'ordinary_writes_open':False}:raise ValueError()

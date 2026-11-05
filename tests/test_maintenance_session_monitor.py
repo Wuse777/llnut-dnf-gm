@@ -47,7 +47,7 @@ def test_monitor_accepts_each_durable_restore_phase_without_writes(session):
 
 
 @pytest.mark.parametrize('case',['resident','contract','unplanned_start','reverted_marker','gate','closed','wall','monotonic','identity'])
-def test_monitor_never_waives_unplanned_changes_or_renews_time(session,case):
+def test_monitor_never_waives_unplanned_changes_and_only_refreshes_recovery_visibility(session,case):
     s,c,h,plan=session;monitor=interrupted(session)
     assert monitor.status()['verified']
     doc=s._load(RID,plan);first=plan['service_cycle']['start_order'][0]
@@ -66,7 +66,10 @@ def test_monitor_never_waives_unplanned_changes_or_renews_time(session,case):
     calls=copy.deepcopy(h.calls)
     try:result=monitor.status()
     except Refused:pass
-    else:assert not result['verified']
+    else:
+        if case in ('wall','monotonic'):
+            assert result['verified'] and result['authority']=='recovery-only' and result['maintenance_permit'] is False
+        else:assert not result['verified']
     assert h.calls==calls and s._load(RID,plan)==doc
 
 

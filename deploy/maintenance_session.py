@@ -119,35 +119,46 @@ class MaintenanceSession:
                 raise Refused('maintenance_original_window_changed')
             return p
 
-    def close_restore(self, request_id):
+    def close_restore(self, request_id, *, recover=False):
         c=self.coordinator
         with c.locked():
             plan,token=self._plan(request_id);doc=self._load(request_id,plan)
-            # Only an explicit first close initiates service restoration. Other
-            # states remain query-only; unknown command effects are not replayed.
             if doc['state']=='completed':
                 self._retire(doc,plan)
                 return self.view(doc)
-            if doc['state']!='maintenance_open':return self.view(doc)
-            c.admission.verify_frozen(token);self._database(plan)
-            self._window_matches(request_id,plan)
-            c.lifecycle.check(plan,c.lifecycle.stopped_snapshot(plan))
+            if doc['state']!='maintenance_open' and not recover:return self.view(doc)
+            # Recovery never opens a new window or repeats drain/stop commands.
+            if len(doc['events'])<2:raise Refused('maintenance_issued_window_unproven')
+            self._database(plan)
             try:
-                self._record(doc,plan,'window-close-intent',{'window_id':request_id})
-                previous=self.window.reconcile
-                self.window.reconcile=lambda wid:settle_window(c.admission.db,wid,
-                    expected_server_uuid=plan['admission']['server_uuid'])
-                try:closed=self.window.close(request_id,expected_binding=self.binding(plan))
-                finally:self.window.reconcile=previous
-                self._record(doc,plan,'window-closed',closed)
+                if len(doc['events'])==2:
+                    c.admission.verify_frozen(token)
+                    self._window_matches(request_id,plan)
+                    c.lifecycle.check(plan,c.lifecycle.stopped_snapshot(plan))
+                    self._record(doc,plan,'window-close-intent',{'window_id':request_id})
+                if len(doc['events'])==3:
+                    c.admission.verify_frozen(token)
+                    c.lifecycle.check(plan,c.lifecycle.stopped_snapshot(plan))
+                    previous=self.window.reconcile
+                    self.window.reconcile=lambda wid:settle_window(c.admission.db,wid,
+                        expected_server_uuid=plan['admission']['server_uuid'])
+                    try:closed=self.window.close(request_id,expected_binding=self.binding(plan))
+                    finally:self.window.reconcile=previous
+                    self._record(doc,plan,'window-closed',closed)
                 with self.window.closed_guard(request_id,expected_binding=self.binding(plan)) as closed_proof:
                     def proof():
                         closed_proof();c.admission.verify_frozen(token);self._database(plan)
                         return True
                     def record(phase,data):
                         proof();self._record(doc,plan,phase,data)
-                    restored=c.lifecycle.restore(plan,record,proof)
-                    self._record(doc,plan,'gate-release-intent',{'window_id':request_id})
+                    phases={e['phase'] for e in doc['events']}
+                    if 'services-restored' not in phases:
+                        proof()
+                        restored=c.lifecycle.restore(plan,record,proof,events=tuple(doc['events']))
+                    else:
+                        restored=c.lifecycle.stopped_snapshot(plan)
+                        for e in doc['events']:
+                            if e['phase']=='service-restored':restored[e['data']['service']]=e['data']['state']
                     def restored_proof():
                         closed_proof();self._database(plan)
                         health=self.health()
@@ -162,8 +173,18 @@ class MaintenanceSession:
                             if c.host.service_process(plan['identity'],restored[name][4])!=saved:
                                 raise Refused('maintenance_restored_process_changed')
                         return True
-                    released=c.admission.gate.release(token,verify_restored=restored_proof)
-                    self._record(doc,plan,'gate-released',released)
+                    if 'gate-release-intent' not in phases:
+                        proof();self._record(doc,plan,'gate-release-intent',{'window_id':request_id})
+                    # Check live processes even when release() returns its already
+                    # open receipt after an interrupted atomic file replacement.
+                    restored_proof()
+                    if 'gate-released' not in phases:
+                        released=c.admission.gate.release(token,verify_restored=restored_proof)
+                        self._record(doc,plan,'gate-released',released)
+                    else:
+                        released=next(e['data'] for e in doc['events'] if e['phase']=='gate-released')
+                        with c.admission.gate.locked(False):
+                            if c.admission.gate.read()!=released:raise Refused('maintenance_completion_gate_changed')
                     self._record(doc,plan,'session-completed',{'window_id':request_id})
                 self._retire(doc,plan)
                 return self.view(doc)

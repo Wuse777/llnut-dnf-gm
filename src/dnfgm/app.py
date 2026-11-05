@@ -20,7 +20,7 @@ from .native_monitor import NativeMonitor
 from .native_operations import NativeOperations
 from .inventory_operations import InventoryOperations
 from .character_maintenance import CharacterMaintenance, CharacterMaintenancePreview
-from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm, MaintenanceClose
+from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm, MaintenanceClose, MaintenanceRecover
 from .models import InventoryPreview
 from .support_models import ProfileSave, CaseCreate, CaseUpdate, CaseEntry, CaseLink, CaseStatus, Category
 from .models import NativePreview, SchedulePreview, ActivateSchedule, ScheduleControl
@@ -483,6 +483,11 @@ def create_app(settings=None, database=None):
     def maintenance_close(data:MaintenanceClose,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
         key=user(request,True,True);limits.check('maintenance-close:'+key,6)
         return maintenance.close(key,op,data.model_dump())
+
+    @app.post(API+'/maintenance/requests/{op}/recover')
+    def maintenance_recover(data:MaintenanceRecover,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('maintenance-recover:'+key,6)
+        return maintenance.recover(key,op,data.model_dump())
 
     @app.post(API+'/maintenance/requests/{op}/cancel')
     def maintenance_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):

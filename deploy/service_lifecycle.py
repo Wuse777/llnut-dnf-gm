@@ -310,43 +310,78 @@ class ServiceLifecycle:
         if h.identity()!=identity or h.services()!=states:raise Refused('maintenance_observation_changed')
         return observed
 
-    def restore(self, plan, record, check_closed):
-        """No arbitrary resume boolean: root must re-read its closed-window proof.
+    def restore(self, plan, record, check_closed, *, events=()):
+        """Continue an explicit restore from a validated durable event prefix.
 
-        Caller journals this invocation exactly once. Any uncertain start keeps
-        ownership/freeze and requires observation, never restart-all or replay.
+        A persisted start intent is never sent twice. If its effect cannot be
+        observed as the expected live process, retain the freeze for inspection.
+        Only harmless startup-marker writes can be reconciled idempotently.
         """
         if not callable(record) or not callable(check_closed):raise Refused('maintenance_restore_authority_required')
-        h = self.host;cycle = validate_cycle(plan);cid = plan['identity']['container_id']
-        expected = self.stopped_snapshot(plan)
+        h=self.host;cycle=validate_cycle(plan);identity=plan['identity'];cid=identity['container_id']
+        latest={e['data']['service']:e for e in events if 'service' in e['data']}
+        expected=self.stopped_snapshot(plan)
+        # Reconstruct all already-started services before any new command. This
+        # also rejects unexpected starts of a later service or changed processes.
+        for name,entry in cycle['entries'].items():
+            event=latest.get(name);phase=event['phase'] if event else None
+            if phase=='service-restored':
+                expected[name]=event['data']['state']
+                if h.service_process(identity,expected[name][4])!=event['data']['process']:
+                    raise Refused('maintenance_restored_process_changed')
+            elif phase:
+                actual=list(h.services()[name]);marked=[False,False,entry['before'][2],True,-1]
+                if phase=='restore-marker-intent':
+                    if actual not in (expected[name],marked):raise Refused('maintenance_restore_unexpected_state')
+                elif phase=='restore-marker-applied':
+                    if actual!=marked:raise Refused('maintenance_restore_unexpected_state')
+                elif phase in ('restore-start-intent','restore-start-sent'):
+                    if (not actual[0] or not actual[1] or actual[2]!=entry['before'][2] or actual[4]<=0):
+                        raise Refused('maintenance_start_outcome_unproven')
+                    if h.service_process(identity,actual[4])['program_sha256']!=entry['process']['program_sha256']:
+                        raise Refused('maintenance_restored_program_changed')
+                else:raise Refused('maintenance_session_transition_invalid')
+                expected[name]=actual
         self.check(plan,expected)
         for name in cycle['start_order']:
             if check_closed() is not True:raise Refused('maintenance_close_not_proven')
             entry=cycle['entries'][name];directory='/run/service/'+checked_name(name)
+            event=latest.get(name);phase=event['phase'] if event else None
+            if phase=='service-restored':continue
             self.check(plan,expected,target=name)
-            record('restore-marker-intent', {'service':name,'normally_up':entry['before'][2]})
-            if entry['before'][2]:h.command(['docker','exec',cid,'rm','-f','--',directory+'/down'])
-            else:h.command(['docker','exec',cid,'touch',directory+'/down'])
-            previous=copy.deepcopy(expected);expected[name][2]=entry['before'][2]
-            self.settle(plan,previous,expected,name)
-            record('restore-marker-applied', {'service':name})
-            if check_closed() is not True:raise Refused('maintenance_close_not_proven')
-            record('restore-start-intent', {'service':name})
-            h.command(['docker','exec',cid,'s6-svc','-u',directory])
-            record('restore-start-sent', {'service':name})
+            if phase is None:
+                record('restore-marker-intent',{'service':name,'normally_up':entry['before'][2]})
+                phase='restore-marker-intent'
+            if phase=='restore-marker-intent':
+                if expected[name][2]!=entry['before'][2]:
+                    if entry['before'][2]:h.command(['docker','exec',cid,'rm','-f','--',directory+'/down'])
+                    else:h.command(['docker','exec',cid,'touch',directory+'/down'])
+                    previous=copy.deepcopy(expected);expected[name][2]=entry['before'][2]
+                    self.settle(plan,previous,expected,name)
+                record('restore-marker-applied',{'service':name});phase='restore-marker-applied'
+            if phase=='restore-marker-applied':
+                if check_closed() is not True:raise Refused('maintenance_close_not_proven')
+                record('restore-start-intent',{'service':name})
+                h.command(['docker','exec',cid,'s6-svc','-u',directory])
+                record('restore-start-sent',{'service':name})
+            elif phase=='restore-start-intent':
+                # A matching running process proves the required state, not that
+                # a lost command response arrived. No new start is issued here.
+                record('restore-start-sent',{'service':name,'reconciled':True})
             wait='-U' if entry['contract']['notification-fd']!='absent' else '-u'
             h.command(['docker','exec',cid,'s6-svwait',wait,'-t',str(START_TIMEOUT*1000),directory],START_TIMEOUT+5)
             actual=h.services()[name]
             if (not actual[0] or not actual[1] or actual[2]!=entry['before'][2] or actual[4]<=0
                     or wait=='-U' and not actual[3]):raise Refused('maintenance_restored_service_not_ready')
-            process=h.service_process(plan['identity'],actual[4])
+            process=h.service_process(identity,actual[4])
             if process['program_sha256']!=entry['process']['program_sha256']:
                 raise Refused('maintenance_restored_program_changed')
             expected[name]=list(actual);self.check(plan,expected,target=name)
-            record('service-restored', {'service':name,'process':process,'state':list(actual)})
+            record('service-restored',{'service':name,'process':process,'state':list(actual)})
         if check_closed() is not True:raise Refused('maintenance_close_not_proven')
         self.check(plan,expected)
-        record('services-restored', {'services':cycle['start_order'],'ordinary_writes_open':False})
+        if not any(e['phase']=='services-restored' for e in events):
+            record('services-restored',{'services':cycle['start_order'],'ordinary_writes_open':False})
         return expected
 
 
