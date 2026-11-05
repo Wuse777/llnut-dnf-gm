@@ -66,7 +66,8 @@
     "docker": "docker.service",
     "dnf": "dnf.service",
     "mihomo": "mihomo.service",
-    "cliproxyapi": "cliproxyapi.service"
+    "cliproxyapi": "cliproxyapi.service",
+    "nginx": "nginx.service"
   },
   "pvf_path": "/var/lib/dnf/data/Script.pvf",
   "program_path": "/var/lib/dnf/data/df_game_r",

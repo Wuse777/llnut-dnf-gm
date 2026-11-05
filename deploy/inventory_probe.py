@@ -62,9 +62,10 @@ def validate(cfg):
             or len(dormant)!=len(set(dormant)) or set(dormant)&set(residents)):
         raise Refused('maintenance_dormant_policy_invalid')
     services=cfg['protected_services']
-    if (not isinstance(services,dict) or set(services)!={'docker','dnf','mihomo','cliproxyapi'}
+    if (not isinstance(services,dict) or not {'docker','dnf','mihomo','cliproxyapi'}<=set(services)
+            or not set(services)<={'docker','dnf','mihomo','cliproxyapi','nginx'}
             or any(not isinstance(n,str) or not NAME.fullmatch(n) or n.startswith('dnf-gm') for n in services.values())
-            or len(set(services.values()))!=4):
+            or len(set(services.values()))!=len(services)):
         raise Refused('maintenance_config_invalid')
     if any(not path_ok(cfg[k]) for k in ('pvf_path','program_path')):
         raise Refused('maintenance_config_invalid')

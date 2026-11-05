@@ -34,3 +34,23 @@ def test_installation_preserves_switches_and_caps_connections(scene,tmp_path):
     final=json.loads(app.read_text())
     assert final['writes']==['currency','mail'] and final['db_connection_limit']==2
     assert stat.S_IMODE((outbox/'inbox').stat().st_mode)==0o770
+
+
+def test_policy_accepts_nginx_but_never_omits_existing_monitor_protection(scene,tmp_path):
+    import pytest
+    from inventory_probe import validate
+    from dnfgm.release_files import Refused
+    policy,*_=scene
+    policy['protected_services']['nginx']='nginx.service'
+    assert validate(policy)['protected_services']['nginx']=='nginx.service'
+    app=tmp_path/'app.json';monitor=tmp_path/'monitor.json';policy_path=tmp_path/'policy.json'
+    atomic_json(app,asdict(Settings(secret='synthetic-secret-'*3,db_password='synthetic-only',
+        maintenance_dir=str(tmp_path/'outbox'),image_digest=policy['image_digest'],
+        pvf_sha256=policy['pvf_sha256'],inventory_program_sha256=policy['program_sha256'])),mode=0o600)
+    atomic_json(monitor,{'core_services':['nginx']},mode=0o600)
+    policy['protected_services'].pop('nginx')
+    atomic_json(policy_path,policy,mode=0o600)
+    before=(app.read_bytes(),monitor.read_bytes())
+    with pytest.raises(Refused,match='maintenance_protected_service_omitted'):
+        configure(app=app,monitor=monitor,policy=policy_path,root=tmp_path/'outbox',state=tmp_path/'state',owner=os.geteuid(),app_gid=os.getegid())
+    assert before==(app.read_bytes(),monitor.read_bytes())

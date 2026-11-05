@@ -48,6 +48,9 @@ def configure(*, app=Path('/etc/dnf-gm/config.json'), monitor=Path('/etc/dnf-gm/
             or settings.inventory_program_sha256!=config['program_sha256']):
         raise Refused('maintenance_application_version_changed')
     old_monitor=read_private(monitor,(owner,),0o022)
+    normalize=lambda name:name.removesuffix('.service')
+    if not {normalize(n) for n in old_monitor[0]['core_services']} <= {normalize(n) for n in config['protected_services'].values()}:
+        raise Refused('maintenance_protected_service_omitted')
     updated_monitor={**old_monitor[0],'inventory_maintenance_enabled':True,
                      'core_services':list(config['protected_services'].values())}
     validate_monitor(updated_monitor);compatible(updated_monitor,config)
