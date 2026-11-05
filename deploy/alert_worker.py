@@ -95,6 +95,15 @@ def task_health(cfg):
         return {'state':'unknown'}
 
 
+def observer_policy(cfg):
+    from dnfgm.observer_policy import PATH
+    req=Request('http://127.0.0.1:8765'+PATH,headers={'Host':cfg['health_host'],'Authorization':'Bearer '+cfg['task_probe_token']})
+    with build_opener(ProxyHandler({}),NoRedirect()).open(req,timeout=2) as r:
+        body=r.read(4097)
+        if r.status!=200 or len(body)>4096:raise ValueError('Invalid policy response')
+        return json.loads(body)
+
+
 def notify(cfg, body):
     headers = {'Content-Type': 'application/json', 'User-Agent': 'dnf-gm-health/1'}
     if cfg.get('webhook_token'):
@@ -104,7 +113,7 @@ def notify(cfg, body):
         return 200 <= r.status < 300  # Never read/log arbitrary receiver response bodies.
 
 
-def run_once(cfg, *, root=ROOT, status_path=STATUS, clock=time.time, probe=health, send=notify, task_probe=task_health):
+def run_once(cfg, *, root=ROOT, status_path=STATUS, clock=time.time, probe=health, send=notify, task_probe=task_health, policy_probe=observer_policy):
     # The installer owns this directory and grants write access only to the
     # observer account. Do not silently create directories from untrusted paths.
     fd = os.open(root / 'worker.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
@@ -121,19 +130,31 @@ def run_once(cfg, *, root=ROOT, status_path=STATUS, clock=time.time, probe=healt
             status = read_json(status_path)
         except (OSError, ValueError, TypeError):
             status = None
-        gm_ok = probe(cfg)
-        tasks = task_probe(cfg) if cfg.get('task_health_enabled',False) else None
+        now = clock()
+        from dnfgm.observer_policy import resolve
+        def policy_fetch(config):
+            if not valid_token(config.get('task_probe_token')):raise ValueError('No policy token')
+            return policy_probe(config)
+        owner_policy,policy_source=resolve(cfg,root,now,policy_fetch)
+        enabled=set(owner_policy['enabled'])
+        gm_ok = probe(cfg) if 'health-alerts' in enabled else None
+        tasks = task_probe(cfg) if 'task-alerts' in enabled else None
         now = clock()
         backup=None
-        if cfg.get('backup_health_enabled',False):
+        if 'backup-alerts' in enabled:
             from dnfgm.backup_health import read_health
             backup=read_health('/var/lib/dnf-gm/backup-health.json',now)
-        observe(state, observations(status, gm_ok, now, cfg['thresholds'], backup, tasks), now)
+        values=observations(status, gm_ok, now, cfg['thresholds'], backup, tasks)
+        if 'health-alerts' not in enabled:
+            for k in ('collector','gm','core','memory','swap','disk'):values[k]={'bad':None,'sample':None,'disabled':True}
+        observe(state,values,now)
+        def report(value):
+            return {**public_view(value,now),'observer_policy':{**owner_policy,'source':policy_source}}
         def persist(value):
             atomic(root / 'private.json', value)
-            atomic(root / 'public.json', public_view(value, now), mode=0o644)
+            atomic(root / 'public.json', report(value), mode=0o644)
         delivery(state, now, bool(cfg.get('webhook_url')), lambda body: send(cfg, body), persist)
-        return public_view(state, now)
+        return report(state)
 
 
 if __name__ == '__main__':

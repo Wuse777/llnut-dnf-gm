@@ -493,10 +493,9 @@ def create_app(settings=None, database=None):
         limits.check('cleanup-dispatch:'+key,10)
         return cleanup.dispatch(op)
 
-    @app.get(API+'/internal/task-health')
-    def task_health_probe(request:Request):
+    def observer_auth(request:Request):
         import hmac
-        from .task_probe import valid_token, summary
+        from .task_probe import valid_token
         # Uvicorn is deployed with --no-proxy-headers. Never trust forwarded IPs;
         # the nginx internal-prefix deny is an additional, not sole, barrier.
         token = settings.task_probe_token
@@ -507,7 +506,21 @@ def create_app(settings=None, database=None):
         authorization = request.headers.get('authorization','')
         if not hmac.compare_digest(authorization.encode(),('Bearer '+token).encode()):
             raise HTTPException(404,'Not found')
+
+    @app.get(API+'/internal/task-health')
+    def task_health_probe(request:Request):
+        observer_auth(request)
+        from .task_probe import summary
         return summary(task_monitor.read())
+
+    @app.get(API+'/internal/observer-policy')
+    def observer_policy_probe(request:Request):
+        observer_auth(request)
+        from .observer_policy import SWITCHES
+        policy.refresh()
+        current=policy.view()
+        if current['state']!='managed':raise HTTPException(503,'Managed observer policy unavailable')
+        return {'revision':current['revision'],'checked_at':time.time(),'enabled':[k for k in SWITCHES if k in current['enabled']]}
 
     @app.get(API+'/task-health')
     def task_health(request:Request):

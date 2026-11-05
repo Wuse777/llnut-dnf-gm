@@ -273,9 +273,10 @@ def read_report(path, now):
             validate_event(event)
             history.append({k: event[k] for k in ('id','key','state','occurred_at')})
             history[-1]['label'] = LABELS[event['key']]
+        from .observer_policy import public as policy_public
         return {'state': 'ok' if recent(report['updated_at'], now) else 'stale',
                 'updated_at': report['updated_at'], 'as_of': now, 'rules': rules, 'history': history,
                 'notification': {k: n.get(k) for k in ('state','last_attempt','last_accepted','next_attempt','failures')},
-                'pending_count': report['pending_count']}
+                'pending_count': report['pending_count'], 'observer_policy':policy_public(report.get('observer_policy'))}
     except (OSError, ValueError, TypeError, KeyError, RecursionError):
         return unavailable(now)

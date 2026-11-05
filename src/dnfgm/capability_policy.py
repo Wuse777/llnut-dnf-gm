@@ -13,10 +13,10 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 WRITES=('currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','maintenance')
-SWITCHES=(*WRITES,'native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup')
-FLAGS={'native_monitor_enabled':'native-monitor','batch_worker_enabled':'batch-worker','schedule_worker_enabled':'schedule-worker','cleanup_enabled':'release-cleanup'}
-LABELS=dict(zip(SWITCHES,('余额调整','物品／金币邮件','封禁','解封','装备提前解锁','组合奖励','批量奖励','装备编辑','物品回收','快照恢复','网页维护申请','原生会话查询','公告','踢下线','批量执行器','定时执行器','旧GM产物清理')))
-Switch=Literal['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
+SWITCHES=(*WRITES,'native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup','health-alerts','backup-alerts','task-alerts')
+FLAGS={'native_monitor_enabled':'native-monitor','batch_worker_enabled':'batch-worker','schedule_worker_enabled':'schedule-worker','cleanup_enabled':'release-cleanup','health_alerts_enabled':'health-alerts','backup_alerts_enabled':'backup-alerts','task_alerts_enabled':'task-alerts'}
+LABELS=dict(zip(SWITCHES,('余额调整','物品／金币邮件','封禁','解封','装备提前解锁','组合奖励','批量奖励','装备编辑','物品回收','快照恢复','网页维护申请','原生会话查询','公告','踢下线','批量执行器','定时执行器','旧GM产物清理','核心与资源告警','备份与恢复证据告警','运营任务告警')))
+Switch=Literal['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup','health-alerts','backup-alerts','task-alerts']
 
 
 class PolicyUpdate(BaseModel):

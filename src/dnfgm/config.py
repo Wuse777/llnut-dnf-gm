@@ -28,6 +28,9 @@ class Settings:
     capability_evidence_file: str = ''
     backup_health_file: str = '/var/lib/dnf-gm/backup-health.json'
     task_probe_token: str = ''
+    health_alerts_enabled: bool = True
+    backup_alerts_enabled: bool = False
+    task_alerts_enabled: bool = False
     alert_file: str = '/var/lib/dnf-gm/alerts/public.json'
     telemetry_file: str = '/var/lib/dnf-gm/telemetry.sqlite'
     catalog_file: str = '/var/lib/dnf-gm/catalog.sqlite'
@@ -116,6 +119,8 @@ class Settings:
             raise ValueError('Absolute alert report path required')
         if not isinstance(self.telemetry_file, str) or not Path(self.telemetry_file).is_absolute():
             raise ValueError('Telemetry file must be an absolute maintenance path')
+        if any(type(getattr(self,k)) is not bool for k in ('health_alerts_enabled','backup_alerts_enabled','task_alerts_enabled')):
+            raise ValueError('Observer switches must be boolean')
         if type(self.cleanup_enabled) is not bool:
             raise ValueError('Cleanup enable flag must be boolean')
         for path in (self.cleanup_manifest, self.cleanup_dir, self.maintenance_dir):

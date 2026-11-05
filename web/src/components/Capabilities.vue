@@ -73,7 +73,7 @@ onUnmounted(()=>{alive=false;if(timer)clearInterval(timer)})
    </template>
   </section>
   <section v-if="data" class="panel capability-permissions"><div class="section-title"><div><h2>管理员功能开关</h2><p class="muted">网页内管理，无需编辑服务器配置</p></div><button type="button" :disabled="frozen||data.policy.revision==null" @click="all">全部开放</button></div>
-   <p class="field-hint">保存后不再限制测试账号；“全部开放”仅选择开关，核对后点击保存。关闭开关不会撤回已完成操作，也不取消已经开始的事务。</p>
+   <p class="field-hint">保存后不再限制测试账号；“全部开放”仅选择开关，核对后点击保存。关闭开关不会撤回已完成操作，也不取消已经开始的事务。告警开关约30秒同步，不停止观察器；GM不可用时沿用上次同步设置继续检查。</p>
    <fieldset :disabled="frozen||data.policy.revision==null"><legend class="sr-only">选择管理员功能</legend><div class="capability-switches"><label v-for="c in choices" :key="c.id"><input type="checkbox" :checked="enabled.includes(c.id)" :value="c.id" @change="toggle(c.id,$event)"><span>{{c.label}}</span></label></div><label for="capability-reason">权限调整原因<input id="capability-reason" v-model="reason" maxlength="200" :aria-invalid="!!reasonError" :aria-describedby="reasonError?'capability-reason-error':undefined" placeholder="例如：开放所有功能进行网页测试"></label><FieldError id="capability-reason-error" :message="reasonError"/><button type="button" class="primary" @click="preview">核对并保存权限</button></fieldset>
    <p v-if="data.policy.state==='unknown'" class="warning">权限记录当前不可读取，请修复数据库连接后刷新；不会把未知状态当作已开放。</p>
   </section>

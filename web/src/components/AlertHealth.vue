@@ -12,13 +12,14 @@ onUnmounted(()=>{alive=false;if(timer)clearInterval(timer)})
 </script>
 <template><section class="panel alert-health" aria-labelledby="alert-health-title">
  <div class="section-heading"><h2 id="alert-health-title">主动健康告警</h2><button :disabled="busy" @click="load">{{busy?'正在读取告警…':'刷新告警'}}</button></div>
- <p class="field-hint">独立观察器每30秒检查；连续异常／恢复确认后记录一次。同一故障不重复刷屏，未知数据不判定为恢复。这里只读，不会重启服务。任务规则需维护者单独启用；未启用不代表任务正常。</p>
+ <p class="field-hint">独立观察器每30秒检查；连续异常／恢复确认后记录一次。同一故障不重复刷屏，未知数据不判定为恢复。这里只读，不会重启服务。规则可在“功能与版本”中开关；未启用不代表任务正常。</p>
  <p v-if="error" class="submit-error" role="alert">{{error}}</p>
  <template v-if="data">
   <p v-if="data.state==='unavailable'" class="warning">告警观察器未启用或报告不可读，不能据此判断服务正常。需要维护者检查独立定时器。</p>
   <template v-else>
    <p :class="data.state==='stale'?'warning':'field-hint'">采集时间 {{date(data.updated_at)}}<span v-if="data.state==='stale'"> · 告警报告已过期，下面仅为历史状态</span></p>
    <div class="alert-rules"><article v-for="r in data.rules" :key="r.key" :class="{warning:(r.active&&r.observed!=='disabled')||r.observed==='unknown'||data.state==='stale'}"><strong>{{r.label}}</strong><p>{{status(r)}}</p><small v-if="r.changed_at">最近变化 {{date(r.changed_at)}}</small></article></div>
+   <p v-if="data.observer_policy" class="field-hint">网页告警策略 · {{data.observer_policy.source==='live'?'已同步':data.observer_policy.source==='cached'?'暂用上次同步配置，未因GM故障自动关闭':'安装默认配置'}}<span v-if="data.observer_policy.revision"> · 版本 {{data.observer_policy.revision}}</span>。在“功能与版本”调整核心资源、备份及运营任务三个告警开关，约30秒生效；不停止独立观察器。</p>
    <h3>通知渠道状态</h3><p>{{deliveryNames[data.notification.state]||'未知'}} · 待通知 {{data.pending_count}} 项</p>
    <p class="field-hint">最后尝试 {{date(data.notification.last_attempt)}} · 最后接受 {{date(data.notification.last_accepted)}}<span v-if="data.notification.state==='retrying'"> · 下次尝试 {{date(data.notification.next_attempt)}}</span></p>
    <p class="field-hint">通知失败时保留并合并最新状态；响应丢失可能重复通知，接收端可按事件编号去重。渠道地址和密钥不在网页展示。</p>
