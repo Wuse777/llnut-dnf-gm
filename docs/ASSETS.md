@@ -95,3 +95,5 @@ Create a polished ORIGINAL decorative background illustration for a Chinese fant
 ```
 
 素材仍不能代替缺失的匹配NPK；真实职业头像和道具图标未齐备的现状不变。
+
+生产发布：`20261105-artwork-5d26cc5`，2026-11-05。针对性导航测试1条及前端构建通过，公网桌面/手机只读冒烟通过；保护服务PID未改变，未修改玩家数据。
