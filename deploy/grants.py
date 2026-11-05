@@ -53,6 +53,8 @@ def bootstrap_sql(config,ph):
     sql += (Path(__file__).resolve().parents[1]/'migrations/014-operation-outcomes.sql').read_text()
     sql += (Path(__file__).resolve().parents[1]/'migrations/015-player-preferences.sql').read_text()
     sql += player_preferences_sql(user)
+    sql += (Path(__file__).resolve().parents[1]/'migrations/016-backup-schedule.sql').read_text()
+    sql += backup_schedule_sql(user)
     sql += gameplay_fence_sql(user)
     sql += reward_jobs_sql(user)
     sql += catalog_policy_sql(user)
@@ -211,3 +213,8 @@ def quest_repair_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     # Only active task IDs/progress; never grant completion/notification writes.
     columns=','.join(f'`play_{i}` , `play_{i}_trigger`' for i in range(1,21))
     return f'GRANT SELECT(quest_notify),UPDATE({columns}) ON taiwan_cain.new_charac_quest TO {user};\n'
+
+
+def backup_schedule_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return (f'GRANT SELECT,UPDATE(revision,enabled,hour,minute,retention_days,failure_alerts,updated_at) ON dnf_gm.backup_schedule TO {user};\n'
+            f'GRANT SELECT,INSERT,UPDATE(state,result_json,error_code,started_at,finished_at) ON dnf_gm.backup_runs TO {user};\n')

@@ -4,6 +4,7 @@ import {api,uncertainMessage} from '../api'
 import ReleaseCleanup from './ReleaseCleanup.vue'
 import AlertHealth from './AlertHealth.vue'
 import BackupHealth from './BackupHealth.vue'
+import BackupControls from './BackupControls.vue'
 import TaskHealth from './TaskHealth.vue'
 const emit=defineEmits<{reauth:[],task:[kind:string,id:string]}>()
 const data=ref<any>(null),windowSize=ref('24h'),before=ref(0),pages=ref<number[]>([]),busy=ref(false),error=ref('')
@@ -46,6 +47,7 @@ onBeforeUnmount(()=>{alive=false;generation++;if(timer)clearInterval(timer)})
  <template v-if="data"><p :class="data.fresh?'field-hint':'warning'">{{data.message}} · 最后采集 {{timestamp(data.updated_at)}}</p><div class="metrics ops-current"><article v-for="(label,key) in labels" :key="key"><span>{{label.replace('峰值','使用率').replace('最低值','')}}</span><strong>{{number(data.current?.fresh?data.current[key]:null)}}</strong><small>{{units[key]}} · {{data.current?.fresh?'实时采集':'当前快照过期/未知'}}</small></article></div><p class="field-hint">监控健康门槛：{{data.current?.core_ok===true?'本次通过':data.current?.core_ok===false?'本次未通过':'未知'}}；快照 {{timestamp(data.current?.collected_at)}}。故障后GM可能停止，停止期间网页也可能无法打开；恢复后可回看持久记录。</p></template>
  </section>
  <AlertHealth/>
+ <BackupControls @reauth="emit('reauth')"/>
  <BackupHealth/>
  <TaskHealth @inspect="(kind,id)=>emit('task',kind,id)"/>
  <template v-if="data">

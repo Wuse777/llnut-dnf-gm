@@ -26,7 +26,7 @@ class Settings:
     maintenance_dir: str = '/var/lib/dnf-gm/maintenance-requests'
     gameplay_gate_dir: str = ''  # Legacy installs only; full maintenance requires an installed gate.
     capability_evidence_file: str = ''
-    backup_health_file: str = '/var/lib/dnf-gm/backup-health.json'
+    backup_health_file: str = '/var/lib/dnf-gm/backup-evidence/health.json'
     task_probe_token: str = ''
     health_alerts_enabled: bool = True
     backup_alerts_enabled: bool = False

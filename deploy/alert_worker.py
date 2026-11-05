@@ -143,7 +143,9 @@ def run_once(cfg, *, root=ROOT, status_path=STATUS, clock=time.time, probe=healt
         backup=None
         if 'backup-alerts' in enabled:
             from dnfgm.backup_health import read_health
-            backup=read_health('/var/lib/dnf-gm/backup-health.json',now)
+            backup=read_health('/var/lib/dnf-gm/backup-evidence/health.json',now)
+            from dnfgm.backup_schedule import scheduler_status
+            backup['scheduler']=scheduler_status('/var/lib/dnf-gm/maintenance-requests/backup-scheduler.json',now)
         values=observations(status, gm_ok, now, cfg['thresholds'], backup, tasks)
         if 'health-alerts' not in enabled:
             for k in ('collector','gm','core','memory','swap','disk'):values[k]={'bad':None,'sample':None,'disabled':True}

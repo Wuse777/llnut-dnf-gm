@@ -26,6 +26,7 @@ from .character_quests import CharacterQuests
 from .quest_operations import QuestOperations,QuestPreview
 from .character_progression import CharacterProgression
 from .player_preferences import PlayerPreferences,PlayerTarget,PlayerFavorite
+from .backup_schedule import BackupSchedule,BackupPolicy,BackupRequest
 from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm, MaintenanceClose, MaintenanceRecover
 from .models import InventoryPreview
 from .support_models import ProfileSave, CaseCreate, CaseUpdate, CaseEntry, CaseLink, CaseStatus, Category
@@ -155,10 +156,10 @@ def create_app(settings=None, database=None):
     @app.get(API+'/health')
     def health():
         with db.connect() as c, c.cursor() as q:
-            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 15')
+            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 16')
             versions={row['version'] for row in q.fetchall()}
-            if versions != set(range(1,16)):
-                raise HTTPException(503,'管理库迁移未完成，需要完成015玩家收藏迁移及此前迁移')
+            if versions != set(range(1,17)):
+                raise HTTPException(503,'管理库迁移未完成，需要完成016备份计划迁移及此前迁移')
             from .gameplay_transactions import inspect_protocol
             try:inspect_protocol(q)
             except Exception:raise HTTPException(503,'管理库事务屏障不可核验；不会自动修复或开启维护') from None
@@ -708,6 +709,33 @@ def create_app(settings=None, database=None):
         key=user(request)
         limits.check('task-health:'+key,15)
         return task_monitor.read()
+
+    backups=BackupSchedule(db,settings)
+
+    @app.get(API+'/backups')
+    def backup_schedule(request:Request,page:int=Query(1,ge=1,le=10000)):
+        key=user(request);limits.check('backup-schedule:'+key,30)
+        return backups.view(page)
+
+    @app.post(API+'/backups/policy')
+    def backup_policy(request:Request,data:BackupPolicy):
+        key=user(request,True,True);limits.check('backup-policy:'+key,10)
+        return backups.update(data.model_dump())
+
+    @app.get(API+'/backups/policy/requests/{request_id}')
+    def backup_policy_result(request:Request,request_id:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        user(request)
+        return backups.policy_result(request_id)
+
+    @app.post(API+'/backups/runs')
+    def request_backup(request:Request,data:BackupRequest):
+        key=user(request,True,True);limits.check('backup-request:'+key,6)
+        return backups.request(data.model_dump())
+
+    @app.get(API+'/backups/runs/{run_id}')
+    def backup_result(request:Request,run_id:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        user(request)
+        return backups.detail(run_id)
 
     @app.get(API+'/backup-health')
     def backup_health(request:Request):

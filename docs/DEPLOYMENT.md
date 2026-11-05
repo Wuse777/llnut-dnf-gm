@@ -1,3 +1,9 @@
+## 2026-11-06 在线备份升级注意
+
+新版本需要管理库迁移001–016以及`backup_schedule_sql`精确权限。已有实例走`deploy/upgrade-release.py`升级：先保留私有管理库备份，停止GM自身的DB工作器并持有维护锁，再迁移/授权；不停止游戏、mihomo、cliproxyapi或共享Docker。安装器自动配置既有维护执行器的备份源，不新增常驻DB进程，网页直接控制计划。详见[备份说明](BACKUP-HEALTH.md)。
+
+更新时继续保留外部`/var/lib/dnf-gm/catalog.sqlite`及其指纹；不要从旧发布目录携带过期的内嵌`catalog.sqlite`覆盖已丰富索引。新备份凭据只存root私有`/etc/dnf-gm/backup.json`，不得加入发布目录或校验清单。
+
 ## 2026-11-05 单任务修复发布
 
 当前生产 `20261105-quest-repair-6ed2aa3`（源码 `6ed2aa3`）。任务检索与修复页增加名称搜索、前置状态及单槽清理；新增 `quest-clear` 已通过网页能力策略开启，24项开启、全部账号。仍必须由管理员在网页显式开启维护窗口，不在部署时停服或测试玩家写入。新增精确列授权使用 `quest_repair_sql`；管理库001–015不变。公网只读检查通过、维护窗口关闭、执行器就绪，受保护服务PID未变。详细边界见 [任务说明](CHARACTER-QUESTS.md) 和 [实施台账](ROADMAP-IMPLEMENTATION.md)。

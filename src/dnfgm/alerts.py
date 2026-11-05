@@ -73,6 +73,9 @@ def observations(status, gm_ok, now, thresholds, backup=None, tasks=None):
         for key in ('backup','restore'):result[key]['disabled']=True
     if backup is not None:
         result['backup'] = {'bad': backup.get('state')!='ok' or (backup.get('backup') or {}).get('state')!='recent', 'sample': now}
+        scheduler=backup.get('scheduler')
+        if isinstance(scheduler,dict) and scheduler.get('alerts_enabled') and scheduler.get('failure'):
+            result['backup']['bad']=True
         if backup.get('state')=='ok':
             result['restore'] = {'bad': (backup.get('restore') or {}).get('state')!='recent', 'sample': now}
     if tasks is None:

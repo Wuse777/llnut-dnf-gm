@@ -26,6 +26,7 @@ from maintenance_gate import WriteGateManager
 from maintenance_readiness import InstalledMonitor, MonitorHandshake
 from maintenance_session import MaintenanceSession, RestoredHealth
 from service_lifecycle import ServiceHost, ServiceLifecycle
+from backup_worker import BackupWorker
 
 APP=Path('/etc/dnf-gm/config.json')
 OUTBOX=Path('/var/lib/dnf-gm/maintenance-requests')
@@ -53,7 +54,9 @@ def build(*, initialize=False):
     if initialize:
         coordinator.initialize();window.initialize()
     session=MaintenanceSession(coordinator,window,RestoredHealth(host))
-    return ExecutionWorker(OUTBOX,coordinator,account.pw_uid,session,MonitorHandshake(installed))
+    worker=ExecutionWorker(OUTBOX,coordinator,account.pw_uid,session,MonitorHandshake(installed))
+    worker.backups=BackupWorker(db,settings)
+    return worker
 
 
 def main():
@@ -77,6 +80,14 @@ def main():
     while not stop.is_set():
         try:
             worker.tick();last_error=None
+            # Same thread and the same reserved connection slot, never concurrent.
+            try:worker.backups.tick()
+            except Exception:
+                try:
+                    with worker.backups.db.connect() as c,c.cursor() as q:backup_policy=worker.backups.control.policy(q)
+                    worker.backups.report(backup_policy,'error','backup_worker_failed',True)
+                except Exception:pass
+                print('Management backup observation failed; no game command sent.',flush=True)
         except Exception as error:
             code=error_code(error);now=time.monotonic()
             if code!=last_error or now-last_log>=60:

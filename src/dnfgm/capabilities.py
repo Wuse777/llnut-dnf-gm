@@ -17,7 +17,7 @@ SHA = re.compile(r'^[a-f0-9]{64}$')
 IMAGE = re.compile(r'^sha256:[a-f0-9]{64}$')
 REVISION = re.compile(r'^[a-f0-9]{7,40}(?:-dirty)?$')
 REFERENCE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$')
-REQUIRED_SCHEMA = set(range(1, 16))
+REQUIRED_SCHEMA = set(range(1, 17))
 # id, label, group, destination, activation switch, extra prerequisite note
 FEATURES = (
  ('maintenance','网页维护申请与执行记录','装备维护','maintenance','maintenance','退出会断开玩家；须具备完整退出、关窗与恢复执行器。入队或游戏退出不等于维护许可。'),
