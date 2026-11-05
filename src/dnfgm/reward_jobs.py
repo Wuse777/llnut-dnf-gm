@@ -4,6 +4,7 @@ Game changes, operation/audit, deduplication and target completion share ONE
 transaction. A durable executing marker precedes it. Abandoned executing targets
 are reconciled under the target row lock and never automatically replayed.
 """
+from contextlib import ExitStack
 import copy
 import hashlib
 import json
@@ -15,6 +16,7 @@ from pymysql.err import IntegrityError
 from fastapi import HTTPException
 from .service import Service, one, dump, character
 from .encoding import mysql_latin1_text
+from .write_gate import WriteGateClosed
 
 WORKER_LOCK='dnf_gm_reward_jobs_executor'
 
@@ -279,7 +281,7 @@ class RewardJobs:
     def step(self):
         """At most one target per call. No retries of unknown game writes."""
         try:
-            with self.db.connect() as c,c.cursor() as q:
+            with ExitStack() as gates,self.db.connect() as c,c.cursor() as q:
                 if not one(q,'SELECT GET_LOCK(%s,0) locked',(WORKER_LOCK,))['locked']:return False
                 try:
                     self.engines(q)
@@ -308,18 +310,24 @@ class RewardJobs:
                         failed=one(q,"SELECT COUNT(*) n FROM dnf_gm.reward_targets WHERE job_id=%s AND status<>'committed'",(job['id'],))['n']
                         q.execute("UPDATE dnf_gm.reward_jobs SET status=%s WHERE id=%s AND status='running'",('needs_attention' if failed else 'finished',job['id']))
                         c.commit();return True
+                    lease=gates.enter_context(self.service.write_gate.writer())
                     q.execute("UPDATE dnf_gm.reward_targets SET status='executing',attempts=attempts+1,last_attempt=%s WHERE job_id=%s AND ordinal=%s",(int(time.time()),job['id'],target['ordinal']))
+                    lease.check()
                     c.commit()  # Durable dispatch marker BEFORE any game mutation.
-                    self.execute_target(c,q,job,target)
+                    self.execute_target(c,q,job,target,lease)
                     return True
                 finally:
                     try:c.rollback();q.execute('SELECT RELEASE_LOCK(%s)',(WORKER_LOCK,))
                     except Exception:pass  # Closing a lost connection also releases it.
+        except WriteGateClosed:
+            # No new executing marker or retry count was committed. Keep queued
+            # work intact while the maintenance controller owns admission.
+            return False
         except AttemptError as error:
             self.record_failure(error)
             return True
 
-    def execute_target(self,c,q,job,target):
+    def execute_target(self,c,q,job,target,lease):
         attempted=False
         try:
             current=one(q,'SELECT status FROM dnf_gm.reward_jobs WHERE id=%s FOR UPDATE',(job['id'],))
@@ -353,6 +361,7 @@ class RewardJobs:
             self.service.economy.record(q,op)
             q.execute("UPDATE dnf_gm.operations SET status='committed',result_json=%s WHERE operation_id=%s",(dump(result),op))
             q.execute("UPDATE dnf_gm.reward_targets SET status='committed',error_type='',error_message='' WHERE job_id=%s AND ordinal=%s",(job['id'],target['ordinal']))
+            lease.check()
             attempted=True;c.commit()
         except Exception as error:
             raise AttemptError(target,error,attempted) from None

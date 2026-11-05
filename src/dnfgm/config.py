@@ -22,6 +22,7 @@ class Settings:
     cleanup_manifest: str = '/run/dnf-gm/cleanup.json'
     cleanup_dir: str = '/var/lib/dnf-gm/cleanup'
     maintenance_dir: str = '/var/lib/dnf-gm/maintenance-requests'
+    gameplay_gate_dir: str = ''  # Legacy installs only; full maintenance requires an installed gate.
     capability_evidence_file: str = ''
     backup_health_file: str = '/var/lib/dnf-gm/backup-health.json'
     task_probe_token: str = ''
@@ -116,6 +117,8 @@ class Settings:
         for path in (self.cleanup_manifest, self.cleanup_dir, self.maintenance_dir):
             if not isinstance(path, str) or not Path(path).is_absolute():
                 raise ValueError('Absolute maintenance cleanup paths required')
+        if not isinstance(self.gameplay_gate_dir,str) or (self.gameplay_gate_dir and (not Path(self.gameplay_gate_dir).is_absolute() or '..' in Path(self.gameplay_gate_dir).parts)):
+            raise ValueError('Game write gate must be an absolute installation path')
         # Deprecated compatibility key: old per-item caps no longer affect
         # startup, previews or issuance. No PVF-bound quantity overrides needed.
         return self

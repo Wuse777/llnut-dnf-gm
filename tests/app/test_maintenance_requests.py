@@ -20,6 +20,11 @@ BASE='/dnf-gm/api/v1/maintenance'
 def setup(env,tmp_path,monkeypatch):
     client,s,db,app=env
     monkeypatch.setattr(mod,'ROOT_UID',os.geteuid())
+    from dnfgm import write_gate
+    from maintenance_gate import WriteGateManager
+    monkeypatch.setattr(write_gate,'ROOT_UID',os.geteuid())
+    s.gameplay_gate_dir=str(tmp_path/'write-gate')
+    WriteGateManager(s.gameplay_gate_dir,owner=os.geteuid()).initialize()
     root=tmp_path/'transport';root.mkdir(mode=0o755)
     (root/'inbox').mkdir(mode=0o770);(root/'results').mkdir(mode=0o755)
     s.maintenance_dir=str(root);s.writes=(*s.writes,'maintenance');s.write_approvals['maintenance']=True
@@ -320,4 +325,20 @@ def test_confirm_and_cancel_race_has_exactly_one_durable_outcome(setup):
     with db.connect() as conn,conn.cursor() as q:
         q.execute("SELECT action FROM dnf_gm.audit WHERE action IN ('maintenance-confirm','maintenance-cancel')")
         assert [r['action'] for r in q.fetchall()]==['maintenance-'+phase]
+    assert not host.calls
+
+
+@pytest.mark.parametrize('state',['frozen','unknown','not_configured'])
+def test_prepared_request_cannot_offer_confirmation_without_open_gate(setup,state):
+    from maintenance_gate import WriteGateManager
+    c,s,db,app,worker,coordinator,host,root=setup
+    op,_=start(setup);detail=make_confirmable(setup,op)
+    assert detail['can_confirm']
+    if state=='not_configured':s.gameplay_gate_dir=''
+    elif state=='unknown':(Path(s.gameplay_gate_dir)/'state.json').unlink()
+    else:WriteGateManager(s.gameplay_gate_dir,owner=os.geteuid()).freeze(op,{**host.ident,'boot_id':'11111111-2222-3333-4444-555555555555'})
+    assert c.get(BASE).json()['write_gate']['state']==state
+    assert not c.get(BASE+'/requests/'+op).json()['can_confirm']
+    result=confirm(c,op,detail);assert result.status_code==409,result.text
+    assert not list((root/'inbox').glob('*.confirm.json'))
     assert not host.calls

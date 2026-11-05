@@ -4,6 +4,7 @@ Commit the dispatch claim before opening a socket. Any ambiguous commit aborts
 sending; a durable claim without a final result stays uncertain indefinitely.
 Confirming that original operation never sends again, including after restart.
 """
+from contextlib import ExitStack
 import hashlib
 import json
 import re
@@ -143,6 +144,10 @@ class NativeOperations:
             pass
 
     def confirm(self, session_hash, op, key, actor="owner"):
+        with ExitStack() as gates:
+            return self._confirm(session_hash,op,key,actor,gates)
+
+    def _confirm(self, session_hash, op, key, actor, gates):
         if not re.fullmatch(r'[A-Za-z0-9_-]{16,64}', key):
             raise HTTPException(422, '非法幂等键')
         committing = False
@@ -163,6 +168,7 @@ class NativeOperations:
                     raise HTTPException(409, '预览完整性校验失败')
                 if row['action'] != data['action'] or preview['image_digest'] != self.settings.image_digest:
                     raise HTTPException(409, '适配版本发生变化，请重新预览')
+                lease=gates.enter_context(self.service.write_gate.writer())
                 self.ready(data['action'], data['uid'])
                 self.engines(q)
                 if self.target(q, data['uid']) != preview['target']:
@@ -184,6 +190,7 @@ class NativeOperations:
                     result['ban_status'] = 'committed_login_test_pending'
                 q.execute("UPDATE dnf_gm.operations SET idempotency_key=%s,status='dispatching',result_json=%s WHERE operation_id=%s", (key, dump(result), op))
                 self.audit(q, op, data, {**result, 'stage': 'dispatch_claim'}, actor)
+                lease.check()
                 committing = True
                 c.commit()
         except Exception as error:
@@ -195,6 +202,7 @@ class NativeOperations:
         # uncertain claim. There is intentionally no background replay worker.
         try:
             self.ready(data['action'], data['uid'])
+            lease.check()
         except HTTPException:
             transport = {'transport_status': 'not_sent', 'effect_status': 'unknown',
                          'reason_code': 'readiness_changed_after_claim', 'automatic_retry_allowed': False}

@@ -13,6 +13,7 @@ import logging
 import time
 import uuid
 
+from .write_gate import WriteGateClosed
 from fastapi import HTTPException
 from pymysql.err import IntegrityError, OperationalError
 
@@ -279,6 +280,13 @@ class Schedules:
             return False
         now = int(self.clock())
         reconciled = self.reconcile_one(now)
+        try:
+            with self.jobs.service.write_gate.writer() as lease:
+                return self._dispatch_due(now,reconciled,lease)
+        except WriteGateClosed:
+            return reconciled
+
+    def _dispatch_due(self,now,reconciled,lease):
         dispatch = None
         committing = False
         try:
@@ -346,6 +354,7 @@ class Schedules:
                             q.execute("UPDATE dnf_gm.schedules SET next_due=%s,status='needs_attention',last_error=%s WHERE id=%s", (following, message, row['id']))
                         dispatch = None
                 self.audit(q, row['id'], 'trigger', {'run_id': rid, 'due_at': row['next_due'], 'triggered_at': now}, True)
+                lease.check()
                 committing = True
                 c.commit()
         except Exception as error:

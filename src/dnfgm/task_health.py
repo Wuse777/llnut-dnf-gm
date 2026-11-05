@@ -1,4 +1,5 @@
 """Bounded, read-only operational evidence; never retries or acknowledges rewards."""
+from .write_gate import GameplayWriteGate
 import threading
 import time
 
@@ -88,6 +89,8 @@ class TaskHealth:
     def _read(self):
         now, began = int(self.wall()), self.clock()
         issues, truncated = [], False
+        gate=GameplayWriteGate(self.settings).status()
+        frozen=gate['state']=='frozen'
         workers = {
             'rewards': self.pulse.snapshot('rewards', self.settings.batch_worker_enabled, self.alive()),
             'schedules': self.pulse.snapshot('schedules', self.settings.schedule_worker_enabled, self.alive()),
@@ -123,7 +126,8 @@ class TaskHealth:
                     if status == 'needs_attention' or row['last_error']:
                         issue('schedule', row['id'], 'schedule_error')
             rows = bounded(q, "id FROM dnf_gm.schedules WHERE status='active' AND next_due<=%s ORDER BY next_due,id", (now-120,))
-            for row in rows: issue('schedule', row['id'], 'overdue')
+            if not frozen:
+                for row in rows: issue('schedule', row['id'], 'overdue')
             for status in ('awaiting', 'running'):
                 rows = bounded(q, "schedule_id,id FROM dnf_gm.schedule_runs WHERE status=%s AND checked_at<=%s ORDER BY checked_at,id", (status, now-120))
                 for row in rows: issue('schedule', row['schedule_id'], 'unreconciled')
@@ -133,7 +137,10 @@ class TaskHealth:
                 jid = head[0]['id']
                 target = query(q, "ordinal FROM dnf_gm.reward_targets WHERE job_id=%s AND status='pending' ORDER BY ordinal LIMIT 1", (jid,))
                 signature = (jid, target[0]['ordinal'] if target else None)
-            progress = self.observe_head(signature)
+            if frozen:
+                self.observe_head(None)
+                progress='maintenance_frozen'
+            else:progress = self.observe_head(signature)
             if head:
                 if progress == 'stalled': issue('reward', jid, 'no_progress')
                 if workers['rewards']['state'] in ('disabled','stopped','failing','stalled'):
@@ -144,7 +151,9 @@ class TaskHealth:
             if schedule_id and workers['schedules']['state'] in ('disabled','stopped','failing','stalled'):
                 issue('schedule', schedule_id, 'worker_' + workers['schedules']['state'])
             c.rollback()
-        return {'state': 'attention' if issues else 'unknown' if truncated else 'observing' if (head and (progress!='advancing' or workers['rewards']['state']=='observing')) or (schedule_id and workers['schedules']['state']=='observing') else 'clear',
-                'checked_at': now, 'issues': issues, 'truncated': truncated, 'workers': workers,
+        current_gate=GameplayWriteGate(self.settings).status()
+        gate_unknown=gate['state']=='unknown' or current_gate!=gate
+        return {'state': 'attention' if issues else 'unknown' if truncated or gate_unknown else 'observing' if frozen or (head and (progress!='advancing' or workers['rewards']['state']=='observing')) or (schedule_id and workers['schedules']['state']=='observing') else 'clear',
+                'checked_at': now, 'issues': issues, 'truncated': truncated, 'workers': workers, 'write_gate':current_gate,
                 'progress': progress, 'head_job_id': head[0]['id'] if head else None,
                 'note': '管理任务状态，不代表游戏内效果；无自动重发。停滞判断需要连续观察120秒，超过90秒观察间隔重新计时。'}

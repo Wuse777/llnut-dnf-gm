@@ -12,7 +12,7 @@ function setup(){const w=mount(MaintenanceCenter);wrappers.push(w);return w}
 async function click(w:any,label:string){const b=w.findAll('button').find((b:any)=>b.text()===label);expect(b,`Missing button: ${label}`).toBeTruthy();await b.trigger('click');await flushPromises()}
 async function prepare(w:any){await flushPromises();await w.find('#maintenance-reason').setValue('修改测试装备');await w.find('.maintenance-request-form').trigger('submit');await flushPromises()}
 function posts(){return vi.mocked(api).mock.calls.filter(c=>c[1]==='POST')}
-beforeEach(()=>{sessionStorage.clear();ready={state:'ok',enabled:true,prepare_supported:true,execute_supported:true,message:'测试执行器状态'};record=initial();vi.mocked(api).mockReset();vi.spyOn(crypto,'randomUUID').mockReturnValue('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');vi.mocked(api).mockImplementation(async(path,method,body:any)=>{
+beforeEach(()=>{sessionStorage.clear();ready={write_gate:{state:'open'},state:'ok',enabled:true,prepare_supported:true,execute_supported:true,message:'测试执行器状态'};record=initial();vi.mocked(api).mockReset();vi.spyOn(crypto,'randomUUID').mockReturnValue('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');vi.mocked(api).mockImplementation(async(path,method,body:any)=>{
  if(path==='/maintenance')return {...ready}
  if(path==='/maintenance/requests'&&method==='POST'){expect(JSON.parse(sessionStorage.getItem(storage)!).id).toBe(body.request_id);return {...record}}
  if(path.startsWith('/maintenance/requests?')||path==='/maintenance/requests')return {items:[],next_cursor:null}
@@ -46,3 +46,6 @@ describe('web maintenance workflow',()=>{
  })
  it('renders hostile reason as text, not HTML',async()=>{record={...initial(),reason:'<img src=x onerror=alert(1)>'};sessionStorage.setItem(storage,JSON.stringify({id}));const w=setup();await flushPromises();expect(w.text()).toContain('<img src=x');expect(w.find('img').exists()).toBe(false)})
 })
+it.each(['open','frozen','unknown','not_configured'])('shows %s write admission independently of feature permission without an override',async(state)=>{ready.write_gate={state,operation_id:state==='frozen'?id:''};const w=setup();await flushPromises();const status=w.find('.maintenance-write-gate');expect(status.exists()).toBe(true);expect(status.text()).toContain({open:'普通写入已开放',frozen:'维护冻结中',unknown:'状态未知',not_configured:'尚未安装维护写入屏障'}[state]!);if(state==='frozen'){expect(status.text()).toContain(id);expect(status.text()).toContain('功能权限无需重新开启')}expect(status.find('button').exists()).toBe(false);expect(posts()).toHaveLength(0)})
+
+it('removes a previously offered confirmation when status refresh finds a frozen gate',async()=>{const w=setup();await prepare(w);record=planned();await click(w,'只查询原申请');expect(w.findAll('button').some((b:any)=>b.text()==='核对并确认维护')).toBe(true);ready.write_gate={state:'frozen',operation_id:id};await click(w,'刷新执行器状态');expect(w.findAll('button').some((b:any)=>b.text()==='核对并确认维护')).toBe(false);expect(posts()).toHaveLength(1)})

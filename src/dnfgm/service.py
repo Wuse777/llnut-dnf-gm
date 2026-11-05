@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 import hashlib
 import json
 import time
@@ -10,6 +11,7 @@ from . import equipment_unlock as unlock
 from . import unlock_center
 from .limits import MAIL_GOLD_MAX
 from .mail_center import MailCenter
+from .write_gate import GameplayWriteGate
 from .economy import Economy
 from .character_detail import INFO_COLUMNS, ATTRIBUTES, decode_container, profession
 
@@ -53,6 +55,7 @@ class Service:
         self.catalog = Catalog(settings, db)
         self.mail_center = MailCenter(db)
         self.economy = Economy(db)
+        self.write_gate = GameplayWriteGate(settings)
         from .support import SupportDesk
         self.support = SupportDesk(db)
 
@@ -306,7 +309,7 @@ class Service:
     def confirm(self, session_hash, op, key):
         commit_attempted = False
         try:
-            with self.db.connect() as c, c.cursor() as q:
+            with ExitStack() as gates, self.db.connect() as c, c.cursor() as q:
                 row = one(q, 'SELECT * FROM dnf_gm.operations WHERE operation_id=%s AND session_hash=%s FOR UPDATE', (op,session_hash))
                 if not row:
                     raise HTTPException(404, '操作不存在')
@@ -337,8 +340,10 @@ class Service:
                     commit_attempted = True
                     c.commit()
                     return result
+                lease=gates.enter_context(self.write_gate.writer())
                 if action == 'unlock-batch':
                     result=unlock_center.UnlockCenter(self).confirm(q,row,data,preview,key)
+                    lease.check()
                     commit_attempted=True
                     c.commit()
                     return result
@@ -386,6 +391,7 @@ class Service:
                           (op,action,data['uid'],data['reason'],dump(data),dump(result)))
                 if action in ('currency','mail','reward'):self.economy.record(q,op)
                 q.execute("UPDATE dnf_gm.operations SET status='committed',result_json=%s WHERE operation_id=%s", (dump(result),op))
+                lease.check()
                 commit_attempted = True
                 c.commit()
                 return result

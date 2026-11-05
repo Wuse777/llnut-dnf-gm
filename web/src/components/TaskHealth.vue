@@ -20,6 +20,8 @@ onUnmounted(()=>{alive=false;if(timer)clearInterval(timer)})
   <p v-else-if="data.state==='observing'" class="notice">正在观察执行进展，暂未发现下列异常；不能据此认定任务已经完成。</p>
   <p v-else class="notice">本次检查未发现待处理异常，不代表奖励在游戏内已生效。</p>
   <p class="field-hint">最后核对 {{new Date(data.checked_at*1000).toLocaleString('zh-CN',{hour12:false})}}。页面隐藏时暂停轮询；启用独立任务观察后仍会持续检查。所有观察来源合计超过90秒中断时重新计时。</p>
+  <p v-if="data.write_gate?.state==='frozen'" class="notice">维护已冻结新奖励和定时触发；等待本身不视为停滞。已失败、待确认的操作及执行器故障仍需处理。完成维护后重新观察进度，不自动补发错过的期次。</p>
+  <p v-else-if="data.write_gate?.state==='unknown'" class="warning">维护写入屏障无法核验；新的游戏写入已保护，任务异常仍照常展示。</p>
   <p v-if="data.truncated" class="warning">至少一类候选记录超过50条，列表不完整。请到原任务列表继续排查。</p>
   <div v-if="data.workers" class="toolbar"><span v-for="(worker,key) in data.workers" :key="key" class="pill">{{key==='rewards'?'奖励执行器':'计划执行器'}}：{{states[worker.state]||'未知'}}<template v-if="worker.failures"> · 连续失败 {{worker.failures}} 次</template></span></div>
   <ul v-if="data.issues?.length" class="task-issues"><li v-for="(item,i) in data.issues" :key="i">

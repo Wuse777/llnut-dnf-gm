@@ -14,6 +14,7 @@ from fastapi import HTTPException
 import pymysql
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
+from .write_gate import GameplayWriteGate
 from .catalog import snapshot
 from .release_files import Refused, canonical, read_json, atomic_json
 
@@ -87,6 +88,7 @@ class MaintenanceRequests:
                 result['message']='可生成只读维护计划；完整退出、关窗与恢复执行器尚未接通，不能确认停服。'
         except (OSError,ValueError,TypeError,KeyError,AttributeError):
             pass
+        result['write_gate']=GameplayWriteGate(self.settings).status()
         return result
 
     def ready(self, execute=False):
@@ -94,6 +96,8 @@ class MaintenanceRequests:
         state = self.status()
         if not state['prepare_supported'] or execute and not state['execute_supported']:
             raise HTTPException(409,state['message'])
+        if execute and state['write_gate']['state']!='open':
+            raise HTTPException(409,'完整维护需要已安装且开放的写入屏障；当前不可核验或已有维护冻结，请核对原申请')
         live = snapshot(self.settings)
         if (not live.get('fresh') or live.get('core_ok') is not True
                 or live.get('mem_available_mib',0)<256 or live.get('swap_free_mib',0)<1536
@@ -152,7 +156,8 @@ class MaintenanceRequests:
         if receipt:
             if (row['status']=='preparing' and receipt['state']=='prepared'
                     and type(receipt.get('expires_at')) in (int,float) and receipt['expires_at']>time.time()
-                    and receipt.get('can_confirm') is True and self.enabled() and current['execute_supported']):
+                    and receipt.get('can_confirm') is True and self.enabled() and current['execute_supported']
+                    and current['write_gate']['state']=='open'):
                 result['can_confirm']=True
             if receipt['state'] != 'prepared':
                 result['can_cancel']=False

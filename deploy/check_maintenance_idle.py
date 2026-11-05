@@ -14,10 +14,16 @@ from dnfgm.release_files import Refused
 from maintenance_drain import DrainCoordinator, STATE, TERMINAL_NO_EFFECT
 
 RUNTIME = Path('/run/dnf-gm/maintenance')
+GATE = Path('/var/lib/dnf-gm/write-gate')
 
 
-def assert_idle(*, state=STATE, runtime=RUNTIME, owner=0):
+def assert_idle(*, state=STATE, runtime=RUNTIME, gate=GATE, owner=0):
     state, runtime = Path(state), Path(runtime)
+    if os.path.lexists(gate):
+        from maintenance_gate import WriteGateManager
+        manager=WriteGateManager(gate,owner=owner)
+        with manager.locked(False):
+            if manager.read()['state']!='open':raise Refused('maintenance_game_writes_frozen')
     if os.path.lexists(runtime):
         directory(runtime, owner)
         if os.path.lexists(runtime / 'permit.json'):

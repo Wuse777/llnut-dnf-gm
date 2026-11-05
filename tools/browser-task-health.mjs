@@ -23,7 +23,7 @@ await page.context().route('**/dnf-gm/api/v1/**',async route=>{
  else if(p==='/release-cleanups')d={enabled:false,state:'disabled'};
  else if(p==='/alerts'||p==='/backup-health')d={state:'unavailable'};
  else if(p==='/task-health'){
-  d={state:mode,checked_at:now,truncated:mode==='unknown',workers:{rewards:{state:'failing',failures:2},schedules:{state:'disabled',failures:0}},issues:mode==='attention'?[{kind:'reward',id,ordinal:1,code:'uncertain'},{kind:'schedule',id:other,code:'overdue'}]:[]};
+  d={write_gate:{state:'frozen'},state:mode,checked_at:now,truncated:mode==='unknown',workers:{rewards:{state:'failing',failures:2},schedules:{state:'disabled',failures:0}},issues:mode==='attention'?[{kind:'reward',id,ordinal:1,code:'uncertain'},{kind:'schedule',id:other,code:'unreconciled'}]:[]};
   if(mode==='error'){status=503;d={detail:'合成任务检查失败'}}
  }
  else if(p.startsWith('/reward-jobs')){
@@ -40,7 +40,7 @@ await page.context().route('**/dnf-gm/api/v1/**',async route=>{
 try{
  await page.emulateMedia({reducedMotion:'reduce'});await page.goto('http://127.0.0.1:'+fixture.address().port+'/dnf-gm/');
  async function open(){if(await page.getByRole('button',{name:'打开导航',exact:true}).isVisible())await page.getByRole('button',{name:'打开导航',exact:true}).click();await page.locator('nav').getByRole('button',{name:'运维诊断',exact:true}).click();await page.locator('.task-health').getByRole('button',{name:'刷新任务状态',exact:true}).waitFor()}
- await open();let section=page.locator('.task-health');await section.getByText(/提交结果待核对/).waitFor();await section.scrollIntoViewIfNeeded();await section.screenshot({path:output+'/desktop.png'});
+ await open();let section=page.locator('.task-health');await section.getByText(/提交结果待核对/).waitFor();await section.getByText(/维护已冻结新奖励和定时触发/).waitFor();await section.scrollIntoViewIfNeeded();await section.screenshot({path:output+'/desktop.png'});
  await page.setViewportSize({width:390,height:844});await section.scrollIntoViewIfNeeded();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await section.screenshot({path:output+'/mobile.png'});
  await section.getByRole('button',{name:'查看原任务',exact:true}).click();await page.getByRole('button',{name:'只核对已取消任务的中断目标（不重发）',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'重新排队未提交目标',exact:true}).count(),0);
  await open();await section.getByRole('button',{name:'查看原计划',exact:true}).click();await page.getByText('合成定时计划',{exact:true}).first().waitFor();assert(calls.some(c=>c.path==='/schedules/'+other));

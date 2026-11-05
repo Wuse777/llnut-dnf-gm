@@ -12,7 +12,7 @@ const output=process.env.DNF_GM_BROWSER_OUTPUT||'outputs/maintenance';await mkdi
 const browser=await chromium.launch({headless:true,...(process.env.CHROME_EXECUTABLE?{executablePath:process.env.CHROME_EXECUTABLE}:{})});
 const page=await browser.newPage({viewport:{width:1440,height:1000}}),calls=[],errors=[];page.on('pageerror',e=>errors.push(e.message));
 const id='a'.repeat(32),fingerprint='b'.repeat(64);let record=null,failLookup=false;
-const ready={state:'ok',enabled:true,prepare_supported:true,execute_supported:true,message:'合成完整执行器，仅验证界面，不连接游戏服务器。'};
+const ready={write_gate:{state:'open'},state:'ok',enabled:true,prepare_supported:true,execute_supported:true,message:'合成完整执行器，仅验证界面，不连接游戏服务器。'};
 await page.route('**/dnf-gm/api/v1/**',async route=>{
  const r=route.request(),p=new URL(r.url()).pathname.split('/api/v1')[1];calls.push({path:p,method:r.method()});let d,status=200;
  if(p==='/auth/methods')d={totp_required:false};else if(p==='/auth/me')d={csrf:'synthetic',username:'admin'};
@@ -52,7 +52,10 @@ try{
  await page.locator('.maintenance-request-result').scrollIntoViewIfNeeded();await page.screenshot({path:output+'/mobile-result.png'});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  failLookup=true;await page.getByRole('button',{name:'只查询原申请',exact:true}).click();await page.getByText('当前查询尚未确认；下方仅显示上次记录，不代表执行器仍在运行。',{exact:true}).waitFor();
  assert.equal(await page.getByRole('button',{name:'核对并确认维护',exact:true}).count(),0);assert.equal(calls.filter(c=>c.method==='POST').length,3);
- failLookup=false;await page.reload();await page.getByRole('button',{name:'打开导航',exact:true}).click();await page.locator('nav').getByRole('button',{name:'维护中心',exact:true}).click();await page.getByText('从历史或刷新恢复的申请只做查询，不自动恢复确认按钮。尚未确认的计划可以取消后重新申请。',{exact:true}).waitFor();
+ failLookup=false;ready.write_gate={state:'frozen',operation_id:id};await page.reload();await page.getByRole('button',{name:'打开导航',exact:true}).click();await page.locator('nav').getByRole('button',{name:'维护中心',exact:true}).click();await page.getByText('从历史或刷新恢复的申请只做查询，不自动恢复确认按钮。尚未确认的计划可以取消后重新申请。',{exact:true}).waitFor();
+ await page.locator('.maintenance-write-gate').getByText('维护冻结中',{exact:true}).waitFor();
+ await page.locator('.maintenance-write-gate').scrollIntoViewIfNeeded();await page.screenshot({path:output+'/mobile-write-freeze.png'});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ assert.equal(await page.locator('.maintenance-write-gate button').count(),0);
  assert.equal(calls.filter(c=>c.method==='POST').length,3);assert.equal(errors.length,0,JSON.stringify(errors));
  console.log(JSON.stringify({passed:true,desktop:true,mobile:true,reloadGetOnly:true,postPaths:calls.filter(c=>c.method==='POST').map(c=>c.path),screenshots:output}));
 }finally{await browser.close();await new Promise(r=>fixture.close(r))}
