@@ -15,6 +15,10 @@ BASE=$(cd "$(dirname "$0")/.." && pwd)
 [[ -f /etc/dnf-gm/config.json && -f /etc/dnf-gm/monitor.json ]] || { echo 'Provision config and review monitor.json first' >&2; exit 1; }
 [[ -f "$BASE/SHA256SUMS" ]] || { echo 'Missing release checksums' >&2; exit 1; }
 (cd "$BASE" && sha256sum --check --strict SHA256SUMS >/dev/null)
+# A prior executor may have exited while a game drain still owns maintenance.
+# Refuse before stopping GM/monitor or replacing the interpreter/current release.
+PYTHON=${PYTHON_BIN:-python3.12}
+"$PYTHON" "$BASE/deploy/check_maintenance_idle.py"
 getent passwd dnfgm >/dev/null
 # Published code must not be mutable by the web application.
 chown -hR root:root "$BASE"
@@ -33,7 +37,6 @@ fi
 for UNIT in dnf-gm-monitor.service dnf-gm.service; do
  if systemctl cat "$UNIT" >/dev/null 2>&1; then systemctl stop "$UNIT"; fi
 done
-PYTHON=${PYTHON_BIN:-python3.12}
 "$PYTHON" -m venv /opt/dnf-gm/venv
 /opt/dnf-gm/venv/bin/python -m pip install --no-index --find-links "$BASE/wheels" -r "$BASE/requirements.lock"
 # Allow only the configured DB IPv4 to the sandbox; do not open all private networks.

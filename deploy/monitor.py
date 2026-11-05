@@ -147,6 +147,10 @@ class Collector:
                 if (not all(services[name] for name in cfg['core_services'])
                         or services.get('auxiliary_core') is False):
                     window = {**window, 'verified': False, 'reason': 'non_game_core_failed'}
+                elif window.get('authority') == 'drain-transition' and services.get('dnf_gateway') is not True:
+                    # Game-only drain does not stop the login gateway. Its failure
+                    # cannot be waived as if a full writer-stopped permit existed.
+                    window = {**window, 'verified': False, 'reason': 'maintenance_gateway_failed'}
             status['maintenance'] = window
         return status
 

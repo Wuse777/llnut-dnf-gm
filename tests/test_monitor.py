@@ -301,3 +301,26 @@ def test_runtime_does_not_autorecover_from_collector_failure_into_maintenance(mo
     with pytest.raises(End):runtime.run(collect,disk_path=str(tmp_path))
     assert all(reason is None and recovered is False for reason,recovered in calls)
     assert json.loads(runtime.DEST.read_text())['core_ok'] is False
+
+
+@pytest.mark.parametrize('gateway_ok', [True, False])
+@pytest.mark.parametrize('auxiliary_ok', [True, False])
+def test_drain_transition_never_waives_gateway_or_auxiliary_failure(monkeypatch,tmp_path,gateway_ok,auxiliary_ok):
+    cfg=json.loads((DEPLOY/'monitor.example.json').read_text())
+    pvf=tmp_path/'Script.pvf';pvf.write_bytes(b'synthetic');cfg['pvf_path']=str(pvf)
+    def command(args,*,probe):
+        if probe=='container_state':return SimpleNamespace(returncode=0,stdout='{"Running":true,"OOMKilled":false}|sha256:test')
+        if probe=='dnf_components':return SimpleNamespace(returncode=0,stdout='\n'.join(n+'=down' for n in cfg['components']))
+        return SimpleNamespace(returncode=0)
+    class Window:
+        def status(self):return {'active':True,'verified':True,'authority':'drain-transition','collected_at':990,'expires_at':1100}
+    class Response:
+        status=200 if gateway_ok else 503
+        def __enter__(self):return self
+        def __exit__(self,*a):pass
+    monkeypatch.setattr(monitor,'command',command)
+    monkeypatch.setattr(monitor,'build_opener',lambda *a:SimpleNamespace(open=lambda *a,**k:Response()))
+    data=monitor.Collector(cfg,auxiliary=lambda:auxiliary_ok,maintenance=Window())()
+    assert data['core_ok'] is False
+    assert data['maintenance']['verified'] is (gateway_ok and auxiliary_ok)
+    assert runtime.protection_health(data,1000) is (gateway_ok and auxiliary_ok)

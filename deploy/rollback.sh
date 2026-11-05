@@ -12,6 +12,8 @@ flock -x 9
 PREVIOUS=$(readlink -f /opt/dnf-gm/previous)
 [[ "$PREVIOUS" == /opt/dnf-gm/releases/* && -f "$PREVIOUS/deploy/install.sh" ]] || exit 1
 BASE=$(cd "$(dirname "$0")/.." && pwd)
+# Preserve the running version and monitor while any game maintenance is active.
+/opt/dnf-gm/venv/bin/python "$BASE/deploy/check_maintenance_idle.py"
 # Quiesce the only GM writer before checking stored request compatibility. The
 # monitor cannot auto-start it during a failed or interrupted rollback.
 INHIBIT_OWNED=false

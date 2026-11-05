@@ -221,12 +221,21 @@ class MonitorWindow:
                 or not set(monitor_cfg['components'])<=set(cfg['components'])
                 or not {normalize(n) for n in monitor_cfg['core_services']} <= {normalize(n) for n in cfg['protected_services'].values()}):
             raise Refused('maintenance_monitor_config_mismatch')
+        self.monitored_components=tuple(monitor_cfg['components'])
         self.manager=WindowManager(ROOT,probe)
         self.fence=MaintenanceFence(ROOT,**{k:cfg[k] for k in ('image_digest','pvf_sha256','program_sha256')})
 
     def status(self):
         if not os.path.lexists(self.manager.root/'permit.json'):
-            return {'active':False,'verified':False}
+            from game_drain import Host
+            from maintenance_drain import DrainCoordinator, DrainMonitor, STATE, GLOBAL_LOCK
+            if not os.path.lexists(STATE):
+                return {'active':False,'verified':False}
+            try:
+                return DrainMonitor(DrainCoordinator(STATE,Host(self.manager.probe),lock_path=GLOBAL_LOCK),
+                                    required_components=self.monitored_components).status()
+            except Exception:
+                return {'active':True,'verified':False,'reason':'maintenance_transition_unavailable'}
         try:
             self.manager.refresh()
             return {'active':True,'verified':True,**self.fence.check()}

@@ -39,7 +39,7 @@ def test_prepare_is_readonly_and_drain_never_kills_restarts_or_claims_permit():
     assert not host.calls
     result=adapter.execute(plan,lambda stage,data:events.append((stage,data)))
     assert result['state']=='game_drained' and result['maintenance_permit'] is False
-    assert [e[0] for e in events]==['drain-started','inhibit-intent','signal-intent','signal-sent','game-drained','drain-finished']
+    assert [e[0] for e in events]==['drain-started','inhibit-intent','inhibit-applied','marker-intent','marker-applied','signal-intent','signal-sent','game-drained','drain-finished']
     assert all('/run/service/mysql' not in a and 'systemctl' not in a for a in host.calls)
     assert all(not any(x in a for x in ('-D','-d','-k','-K','restart','stop')) for a in host.calls if a[3]=='s6-svc')
     assert host.calls[2][3:]==['s6-svc','-2','/run/service/game_siroco11']
@@ -59,7 +59,7 @@ def test_unknown_program_does_not_guess_signal_protocol():
     assert not h.calls
 
 
-@pytest.mark.parametrize('stage',['drain-started','inhibit-intent','signal-intent'])
+@pytest.mark.parametrize('stage',['drain-started','inhibit-intent','inhibit-applied','marker-intent','marker-applied','signal-intent'])
 def test_failed_durable_intent_prevents_its_signal(stage):
     h=FakeHost();d=GameDrain(h);plan=d.prepare()
     def record(actual,data):

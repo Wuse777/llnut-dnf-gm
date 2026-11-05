@@ -113,6 +113,7 @@ class GameDrain:
             elif row[0] or row[1] or row[4]!=-1:raise Refused('maintenance_game_state_unstable')
         plan={'version':1,'identity':identity,'protocol':PROGRAMS[identity['program_sha256']],
               'games':active,'components':list(h.cfg['components']),'dependencies':dependencies,
+              'services_before':{name:list(row) for name,row in states.items()},
               'warning':'将断开游戏内玩家并等待存档退出；超时不强杀、不自动重发。'}
         plan['fingerprint']=hashlib.sha256(canonical(plan)).hexdigest()
         return plan
@@ -137,7 +138,10 @@ class GameDrain:
             # The down marker also inhibits restart after a supervisor failure.
             record('inhibit-intent',{'service':name})
             h.command(['docker','exec',cid,'s6-svc','-O',directory])
+            record('inhibit-applied',{'service':name})
+            record('marker-intent',{'service':name})
             h.command(['docker','exec',cid,'touch',directory+'/down'])
+            record('marker-applied',{'service':name})
             current_states=h.services();current=current_states[name]
             if self.dependencies(current_states)!=expected['dependencies']:
                 raise Refused('maintenance_drain_dependencies_changed')
