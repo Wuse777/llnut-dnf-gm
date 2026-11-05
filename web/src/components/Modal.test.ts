@@ -12,3 +12,10 @@ it('traps focus, handles Escape and restores focus to the trigger',async()=>{
 it('does not allow Escape to dismiss an in-flight submission',async()=>{
  const w=mount(Modal,{props:{title:'提交',busy:true}});document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));expect(w.emitted('close')).toBeUndefined();w.unmount()
 })
+
+it('does not trap keyboard users in hidden groups or inactive tabs and includes source links',async()=>{
+ const w=mount(Modal,{attachTo:document.body,props:{title:'导航'},slots:{default:'<button id="visible">可见</button><button tabindex="-1" id="inactive">其他页签</button><div style="display:none"><button id="hidden">隐藏页操作</button></div><a href="https://example.com" id="source">素材出处</a><div hidden><input id="hidden-last"></div>'}})
+ try{(w.get('#source').element as HTMLElement).focus();document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));expect(document.activeElement).toBe(w.get('button[aria-label="关闭对话框"]').element)
+ document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));expect(document.activeElement).toBe(w.get('#source').element)
+ }finally{w.unmount()}
+})
