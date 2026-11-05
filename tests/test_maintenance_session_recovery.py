@@ -50,3 +50,35 @@ def test_unproven_start_is_not_replayed(worker):
     atomic_json(w.root/'inbox'/(RID+'.recover.json'),value,mode=0o600);w.tick()
     assert receipt(w)['error']=='maintenance_start_outcome_unproven'
     assert h.calls==before and c.admission.gate.read()['state']=='frozen'
+
+@pytest.mark.parametrize('stage',['before_session','before_permit','after_permit'])
+def test_prewindow_recovery_restores_without_new_permit_or_stop_replay(worker,stage):
+    w,c,h,_=worker
+    send(worker,'prepare');w.tick()
+    original_open=w.session.open
+    original_issue=w.session.window.issue
+    def fail_open(rid):raise OSError('interrupted before session')
+    def fail_issue(**kwargs):
+        if stage=='after_permit':original_issue(**kwargs)
+        raise OSError('interrupted window response')
+    if stage=='before_session':w.session.open=fail_open
+    else:w.session.window.issue=fail_issue
+    send(worker,'confirm');w.tick()
+    w.session.open=original_open;w.session.window.issue=original_issue
+    assert c._load(RID)['state']=='writers_stopped'
+    state=c.status(RID);assert state['recovery_available']
+    proof=SessionMonitor(c,w.session.window.root).status()
+    assert proof['verified'] and proof['maintenance_permit'] is False
+    before=copy.deepcopy(h.calls)
+    def never_issue(**kwargs):raise AssertionError('recovery must not issue a permit')
+    w.session.window.issue=never_issue
+    value=packet(worker[3],'recover',fingerprint=state['fingerprint'],
+        recovery={'recovery_id':'d'*32,'revision':state['revision']})
+    path=w.root/'inbox'/(RID+'.recover.json');atomic_json(path,value,mode=0o600)
+    w.tick()
+    if path.exists():w.tick()  # A crash may leave the original confirm packet ahead of recovery.
+    assert receipt(w)['state']=='completed',receipt(w)
+    assert c.admission.gate.read()['state']=='open'
+    assert not (w.session.window.root/'permit.json').exists()
+    assert all(call[3:5] not in (['s6-svc','-2'],['s6-svc','-t'],['s6-svc','-O']) for call in h.calls[len(before):])
+    after=copy.deepcopy(h.calls);atomic_json(path,value,mode=0o600);w.tick();assert h.calls==after

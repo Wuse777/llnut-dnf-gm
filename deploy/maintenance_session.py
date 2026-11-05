@@ -6,8 +6,9 @@ are connected. Service commands never replay after a durable start intent.
 """
 import copy
 import hashlib
+import os
 
-from dnfgm.inventory_fence import BOUND_FIELDS, _read
+from dnfgm.inventory_fence import BOUND_FIELDS, _read, validate_permit
 from dnfgm.inventory_reconcile import settle_window
 from dnfgm.release_files import Refused, canonical, read_json
 from maintenance_drain import error_code
@@ -51,13 +52,15 @@ class MaintenanceSession:
 
     def _record(self, doc, plan, phase, data):
         steps=self.steps(plan);i=len(doc['events'])
+        if i==0 and phase=='window-abort-intent':steps[0]=(phase,None)
+        if i==1 and phase=='window-not-issued':steps[1]=(phase,None)
         if i>=len(steps) or (phase,data.get('service'))!=steps[i]:
             raise Refused('maintenance_session_transition_invalid')
         at,mono=self.coordinator._now()
         updated=copy.deepcopy(doc);updated['events'].append({'phase':phase,'data':copy.deepcopy(data),'at':at,'monotonic':mono})
         updated['error']=None
         if phase=='window-issued':updated['state']='maintenance_open'
-        elif phase=='window-close-intent':updated['state']='closing'
+        elif phase in ('window-not-issued','window-close-intent'):updated['state']='closing'
         elif phase=='window-closed':updated['state']='restoring'
         elif phase=='session-completed':updated['state']='completed'
         self._save(updated)
@@ -122,18 +125,39 @@ class MaintenanceSession:
     def close_restore(self, request_id, *, recover=False):
         c=self.coordinator
         with c.locked():
-            plan,token=self._plan(request_id);doc=self._load(request_id,plan)
+            plan,token=self._plan(request_id)
+            try:doc=self._load(request_id,plan)
+            except FileNotFoundError:
+                if not recover:raise
+                doc={'version':1,'request_id':request_id,'fingerprint':plan['fingerprint'],
+                     'state':'opening','events':[],'error':None}
+                self._save(doc)
             if doc['state']=='completed':
                 self._retire(doc,plan)
                 return self.view(doc)
             if doc['state']!='maintenance_open' and not recover:return self.view(doc)
             # Recovery never opens a new window or repeats drain/stop commands.
-            if len(doc['events'])<2:raise Refused('maintenance_issued_window_unproven')
+            if len(doc['events'])<2:
+                # The drain receipt proves all writers stopped. Do NOT repeat
+                # stops or issue a window: reconcile a persisted permit, or
+                # create only a closed tombstone and restore the original plan.
+                c.admission.verify_frozen(token);self._database(plan)
+                c.lifecycle.check(plan,c.lifecycle.stopped_snapshot(plan))
+                if not doc['events']:
+                    if os.path.lexists(self.window.root/'permit.json'):
+                        raise Refused('maintenance_window_without_intent')
+                    self._record(doc,plan,'window-abort-intent',{'window_id':request_id})
+                if os.path.lexists(self.window.root/'permit.json'):
+                    if doc['events'][0]['phase']!='window-issue-intent':raise Refused('maintenance_window_without_intent')
+                    permit=self._window_matches(request_id,plan)
+                    validate_permit(permit,permit.get('created_at'),permit.get('created_monotonic'))
+                    self._record(doc,plan,'window-issued',{'state':'issued','id':request_id,'expires_at':permit['expires_at']})
+                else:self._record(doc,plan,'window-not-issued',{'window_id':request_id})
             self._database(plan)
             try:
                 if len(doc['events'])==2:
                     c.admission.verify_frozen(token)
-                    self._window_matches(request_id,plan)
+                    if doc['events'][1]['phase']=='window-issued':self._window_matches(request_id,plan)
                     c.lifecycle.check(plan,c.lifecycle.stopped_snapshot(plan))
                     self._record(doc,plan,'window-close-intent',{'window_id':request_id})
                 if len(doc['events'])==3:
@@ -142,7 +166,9 @@ class MaintenanceSession:
                     previous=self.window.reconcile
                     self.window.reconcile=lambda wid:settle_window(c.admission.db,wid,
                         expected_server_uuid=plan['admission']['server_uuid'])
-                    try:closed=self.window.close(request_id,expected_binding=self.binding(plan))
+                    try:
+                        close=self.window.close_unissued if doc['events'][1]['phase']=='window-not-issued' else self.window.close
+                        closed=close(request_id,expected_binding=self.binding(plan))
                     finally:self.window.reconcile=previous
                     self._record(doc,plan,'window-closed',closed)
                 with self.window.closed_guard(request_id,expected_binding=self.binding(plan)) as closed_proof:

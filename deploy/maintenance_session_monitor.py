@@ -136,6 +136,51 @@ class SessionMonitor:
                 'phase':session['state'],'maintenance_permit':False,'recovery_required':True,
                 'collected_at':now,'expires_at':now+30,'services':services}
 
+    def prewindow(self, request_id, raw, session):
+        """Fresh all-writers-stopped evidence, including a lost issue receipt.
+
+        Grants visibility for explicit restoration only, never game-write access.
+        Partial drains and live writers deliberately do not qualify.
+        """
+        c=self.c;plan=raw['plan'];now,mono=c._now()
+        if raw['state']!='writers_stopped':raise Refused('maintenance_writers_not_stopped')
+        if now<raw['started_at'] or mono<raw['started_monotonic']:raise Refused('maintenance_evidence_stale')
+        before=plan['services_before'];games=set(plan['service_cycle']['games'])
+        if any(n not in before or (n not in games and (before[n][:3]!=[True,True,True] or before[n][4]<1)) for n in self.required_components):
+            raise Refused('maintenance_preexisting_component_failure')
+        gate=c.admission.gate if c.admission else WriteGateManager('/var/lib/dnf-gm/write-gate',owner=c.owner)
+        frozen=raw['events'][1]['data']
+        with gate.locked(False):
+            if gate.read()!=frozen:raise Refused('maintenance_restore_gate_changed')
+        def optional(name,limit):
+            try:return _read(self.runtime,name,c.owner,limit)
+            except FileNotFoundError:return None
+        permit=optional('permit.json',4096);closed=optional('closed.json',MAX_CLOSE_BYTES)
+        if permit:
+            if not session or not session['events'] or session['events'][0]['phase']!='window-issue-intent':
+                raise Refused('maintenance_window_without_intent')
+            validate_permit(permit,permit.get('created_at'),permit.get('created_monotonic'))
+            if permit['id']!=request_id or not bound_to_plan({k:permit[k] for k in BOUND_FIELDS},plan):
+                raise Refused('maintenance_original_window_changed')
+        elif closed and closed.get('id')==request_id:
+            if not bound_to_plan(closed.get('binding'),plan):raise Refused('maintenance_original_window_changed')
+        elif closed and closed.get('safe_to_resume') is not True:
+            raise Refused('maintenance_previous_close_unresolved')
+        services=self.observe(plan,session or {'events':[]})
+        if any(row['state']!='down_waiting_restore' for row in services):raise Refused('maintenance_restore_unexpected_state')
+        try:after_session=load(c.root,c.owner,request_id,plan)
+        except FileNotFoundError:after_session=None
+        if (c._active()!=request_id or c._load(request_id)!=raw or after_session!=session
+                or optional('permit.json',4096)!=permit or optional('closed.json',MAX_CLOSE_BYTES)!=closed):
+            raise Refused('maintenance_restore_journal_changed')
+        with gate.locked(False):
+            if gate.read()!=frozen:raise Refused('maintenance_restore_gate_changed')
+        after,after_mono=c._now()
+        if not (0<=after-now<=20 and 0<=after_mono-mono<=20):raise Refused('maintenance_evidence_stale')
+        return {'active':True,'verified':True,'authority':'recovery-only','request_id':request_id,
+                'phase':'prewindow-recovery','maintenance_permit':False,'recovery_required':True,
+                'collected_at':now,'expires_at':now+30,'services':services}
+
     def status(self):
         c=self.c
         if not os.path.lexists(c.root):return None
@@ -146,8 +191,10 @@ class SessionMonitor:
         try:session=load(c.root,c.owner,request_id,plan)
         except FileNotFoundError:
             if raw['state']=='completed':raise Refused('maintenance_completion_missing')
-            return None
+            return self.prewindow(request_id,raw,None)
         if raw['state']=='completed':return {'active':False,'verified':False,'recorded_state':'completed'}
+        if len(session['events'])<2 or len(session['events'])<=3 and session['events'][1]['phase']=='window-not-issued':
+            return self.prewindow(request_id,raw,session)
         closing=next((e for e in session['events'] if e['phase']=='window-close-intent'),None)
         if closing is None:return None
         if session['state'] in ('needs_review','completed'):

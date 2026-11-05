@@ -310,7 +310,7 @@ class DrainCoordinator:
         if doc['version']==3 and doc['state'] in ('writers_stopped','completed'):
             from maintenance_session_state import load as load_session
             try:session=load_session(self.root,self.owner,request_id,doc['plan'])
-            except FileNotFoundError:return result
+            except FileNotFoundError:return {**result,'recovery_available':doc['state']=='writers_stopped'}
             states={'opening':'running','closing':'resuming','restoring':'resuming'}
             result['state']=states.get(session['state'],session['state'])
             if session['state']=='completed' and doc['state']!='completed':
@@ -321,8 +321,7 @@ class DrainCoordinator:
                 **({'reconciled':True} if e['data'].get('reconciled') is True else {})} for i,e in enumerate(session['events']))
             result.update(revision=len(result['events']),phase=result['events'][-1]['phase'],
                 error=session['error'],window_requires_live_check=session['state']=='maintenance_open',
-                recovery_available=doc['state']!='completed' and len(session['events'])>=2
-                    and session['state'] not in ('opening','maintenance_open'))
+                recovery_available=doc['state']!='completed' and session['state']!='maintenance_open')
         return result
 
     def cancel(self, request_id):

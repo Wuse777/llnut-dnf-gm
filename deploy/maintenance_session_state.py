@@ -52,11 +52,16 @@ def validate(doc,request_id,plan):
                 or doc['digest']!=hashlib.sha256(canonical({k:v for k,v in doc.items() if k!='digest'})).hexdigest()
                 or not isinstance(doc['events'],list) or len(doc['events'])>512):raise ValueError()
         expected=steps(plan);count=len(doc['events'])
+        if count and doc['events'][0].get('phase')=='window-abort-intent':expected[0]=('window-abort-intent',None)
+        if count>=2 and doc['events'][1].get('phase')=='window-not-issued':expected[1]=('window-not-issued',None)
+        if expected[0][0]=='window-abort-intent' and count>=2 and expected[1][0]!='window-not-issued':raise ValueError()
+        if doc['state']=='maintenance_open' and expected[1][0]=='window-not-issued':raise ValueError()
+        if doc['state']=='closing' and count==2 and expected[1][0]!='window-not-issued':raise ValueError()
         if count>len(expected):raise ValueError()
         if (doc['state']=='completed' and count!=len(expected)
                 or doc['state']=='maintenance_open' and count!=2
                 or doc['state']=='opening' and count>1
-                or doc['state']=='closing' and count!=3
+                or doc['state']=='closing' and count not in (2,3)
                 or doc['state']=='restoring' and not 4<=count<len(expected)):raise ValueError()
         for event,(phase,name) in zip(doc['events'],expected):
             if (set(event)!={'phase','data','at','monotonic'}
@@ -64,7 +69,7 @@ def validate(doc,request_id,plan):
                     or event['phase']!=phase or not isinstance(event['data'],dict)
                     or event['data'].get('service')!=name):raise ValueError()
             data=event['data']
-            if phase in ('window-issue-intent','window-close-intent','gate-release-intent','session-completed'):
+            if phase in ('window-issue-intent','window-abort-intent','window-not-issued','window-close-intent','gate-release-intent','session-completed'):
                 if data!={'window_id':request_id}:raise ValueError()
             elif phase=='window-issued':
                 if (set(data)!={'state','id','expires_at'} or data['state']!='issued' or data['id']!=request_id
