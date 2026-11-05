@@ -42,6 +42,7 @@ def bootstrap_sql(config,ph):
     sql += character_rename_sql(user)
     sql += character_rescue_sql(user)
     sql += character_skills_sql(user)
+    sql += character_skill_reset_sql(user)
     sql += character_levels_sql(user)
     sql += character_quests_sql(user)
     sql += quest_repair_sql(user)
@@ -169,7 +170,7 @@ def initialize_owner_capabilities_sql():
     # Installation-time explicit owner activation; does not overwrite later web
     # choices. No game rows, rewards, schedules or maintenance windows created.
     import json
-    switches=['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','char-fatigue','char-rename','char-rescue','quest-clear','char-sp-tp','char-level','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
+    switches=['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','char-fatigue','char-rename','char-rescue','quest-clear','char-sp-tp','char-skill-reset','char-level','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
     enabled=json.dumps(sorted(switches),separators=(',',':'))
     return ("START TRANSACTION;\nSELECT revision FROM dnf_gm.capability_policy WHERE id=1 FOR UPDATE;\n"
             "INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) "
@@ -232,3 +233,9 @@ def character_levels_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     from dnfgm.character_levels import WRITABLE
     return (f'GRANT SELECT(element_resist,spec_property),UPDATE({",".join(WRITABLE)}) ON taiwan_cain.charac_info TO {user};\n'
             f'GRANT UPDATE(exp) ON taiwan_cain.charac_stat TO {user};\n')
+
+
+def character_skill_reset_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return (f'GRANT SELECT(expert_job) ON taiwan_cain.charac_info TO {user};\n'
+            f'GRANT SELECT(expert_job_exp) ON taiwan_cain.charac_stat TO {user};\n'
+            f'GRANT UPDATE(skill_slot,skill_slot_2nd,skill_slot_lethe,skill_slot_lethe_2nd) ON taiwan_cain_2nd.skill TO {user};\n')

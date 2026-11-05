@@ -16,7 +16,7 @@ it('validates next to fields, submits the fixed target, and never repeats uncert
   if(method===undefined&&path.endsWith(id))return {...result,status:'committed'}
   throw new Error(path)
  })
- const w=mount(CharacterSkills,{props:{characNo:900001}})
+ const w=mount(CharacterSkills,{global:{stubs:{CharacterSkillReset:true}},props:{characNo:900001}})
  try{
  await flushPromises()
  const click=async(text:string)=>{const b=w.findAll('button').find(x=>x.text()===text);expect(b).toBeTruthy();await b!.trigger('click');await flushPromises()}

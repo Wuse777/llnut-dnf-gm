@@ -7,7 +7,7 @@
 - 当前清风1031程序与PVF版本，PvE技能树一、二的剩余SP和TP。
 - 原生 `DB_LoadEtc::GetUserSkill`／`DB_SaveSkill::SaveSkill` SQL及 `SkillSlot` 访问函数核对了映射：SP为 `remain_sp`／`remain_sp_2nd`，TP（原生SFP）为 `remain_sfp_1st`／`remain_sfp_2nd`。
 - SP范围0–1,073,741,823（原生升级路径的SP上界），TP范围0–2,147,483,647（原生有符号整型范围）；不是物品数量限制，原有物品发放规则不变。
-- 不清空已学技能，不返还已用点数，不修改洗点、技能指令、公平决斗存档，也不改角色等级／职业。**技能重置、等级维护仍是独立未完成功能**。
+- 不清空已学技能，不返还已用点数，不修改洗点、技能指令、公平决斗存档，也不改角色等级／职业。实际清空／重建技能请使用同页上方的[已学技能重置](CHARACTER-SKILL-RESET.md)；等级／经验使用[关联维护入口](CHARACTER-PROGRESSION.md)。这三个入口独立预览、提交和审计。
 
 ## 操作
 

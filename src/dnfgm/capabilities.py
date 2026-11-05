@@ -42,6 +42,7 @@ FEATURES = (
  ('char-rename','角色改名','角色维护','accounts','char-rename','显式维护窗口内同步角色与关联名称缓存，保留UID、角色编号及历史文字。'),
  ('quest-clear','单任务槽清理','角色维护','accounts','quest-clear','显式维护窗口内清理一个指定进行中槽；保留完成标记、紧急任务、通知和其他任务。'),
  ('char-sp-tp','SP／TP技能点维护','角色维护','accounts','char-sp-tp','显式维护窗口内设置两套PvE技能树剩余SP／TP；保留已学技能和公平决斗存档。'),
+ ('char-skill-reset','PvE技能重置','角色维护','accounts','char-skill-reset','显式维护窗口重建选中PvE树已学技能、赠送技能与SP／TP；保持职业与公平决斗存档。'),
  ('char-level','等级／经验维护','角色维护','accounts','char-level','显式维护窗口同步两处经验、成长差额和剩余技能点；保留职业、已学技能与任务，不冒充在线原生升级。'),
  ('char-rescue','卡死位置救援','角色维护','accounts','char-rescue','显式维护窗口内重置选角、登录与返回城镇，不修改任务或物品，不是在线瞬移。'),
  ('mail-center','完整邮件与操作追踪','记录与维护','mail-center',None,'区分已投递、数据库领取标记与记录缺失。'),

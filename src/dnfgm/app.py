@@ -26,6 +26,7 @@ from .character_quests import CharacterQuests
 from .quest_operations import QuestOperations,QuestPreview
 from .character_progression import CharacterProgression
 from .character_skills import CharacterSkills, SkillPointsPreview
+from .character_skill_reset import CharacterSkillReset, SkillResetPreview
 from .character_levels import CharacterLevels, LevelPreview
 from .player_preferences import PlayerPreferences,PlayerTarget,PlayerFavorite
 from .backup_schedule import BackupSchedule,BackupPolicy,BackupRequest
@@ -110,6 +111,7 @@ def create_app(settings=None, database=None):
     quest_ops = QuestOperations(service)
     progression_reader = CharacterProgression(service)
     skill_ops = CharacterSkills(service)
+    skill_reset_ops = CharacterSkillReset(service)
     level_ops = CharacterLevels(service)
     player_preferences = PlayerPreferences(db)
     maintenance = MaintenanceRequests(db,settings)
@@ -138,6 +140,7 @@ def create_app(settings=None, database=None):
     app.state.character_rename = rename_ops
     app.state.character_rescue = rescue_ops
     app.state.character_skills = skill_ops
+    app.state.character_skill_reset = skill_reset_ops
     app.state.character_levels = level_ops
     app.state.quest_operations = quest_ops
     app.state.maintenance = maintenance
@@ -537,6 +540,36 @@ def create_app(settings=None, database=None):
     def skills_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
         key=user(request,True,True);limits.check('character-skills-cancel:'+key,12)
         return skill_ops.cancel(op)
+
+    @app.get(API+'/character-skill-reset/characters/{charac_no}')
+    def character_skill_reset_read(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
+        key=user(request);limits.check('character-skill-reset-read:'+key,30)
+        return skill_reset_ops.read(charac_no)
+
+    @app.get(API+'/character-skill-reset/operations')
+    def skill_reset_history(request:Request,uid:int=Query(0,ge=0,le=2147483647),charac_no:int=Query(0,ge=0,le=2147483647),page:int=Query(1,ge=1,le=10000)):
+        key=user(request);limits.check('character-skill-reset-history:'+key,30)
+        return skill_reset_ops.history(uid,charac_no,page)
+
+    @app.post(API+'/character-skill-reset/preview')
+    def skill_reset_preview(data:SkillResetPreview,request:Request):
+        key=user(request,True,True);limits.check('character-skill-reset-preview:'+key,12)
+        return skill_reset_ops.preview(key,data.model_dump())
+
+    @app.get(API+'/character-skill-reset/operations/{op}')
+    def skill_reset_detail(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request);limits.check('character-skill-reset-detail:'+key,30)
+        return skill_reset_ops.detail(op)
+
+    @app.post(API+'/character-skill-reset/operations/{op}/confirm')
+    def skill_reset_confirm(data:Confirm,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('character-skill-reset-confirm:'+key,10)
+        return skill_reset_ops.confirm(key,op,data.idempotency_key)
+
+    @app.post(API+'/character-skill-reset/operations/{op}/cancel-preview')
+    def skill_reset_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('character-skill-reset-cancel:'+key,12)
+        return skill_reset_ops.cancel(op)
 
     @app.get(API+'/character-levels/characters/{charac_no}')
     def character_levels_read(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
