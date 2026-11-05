@@ -135,7 +135,7 @@ def run_once(cfg, *, root=ROOT, status_path=STATUS, clock=time.time, probe=healt
         def policy_fetch(config):
             if not valid_token(config.get('task_probe_token')):raise ValueError('No policy token')
             return policy_probe(config)
-        owner_policy,policy_source=resolve(cfg,root,now,policy_fetch)
+        owner_policy,policy_source=resolve(cfg,root,now,policy_fetch,clock=clock)
         enabled=set(owner_policy['enabled'])
         gm_ok = probe(cfg) if 'health-alerts' in enabled else None
         tasks = task_probe(cfg) if 'task-alerts' in enabled else None

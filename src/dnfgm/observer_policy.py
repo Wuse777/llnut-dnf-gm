@@ -20,14 +20,15 @@ def validate(value,now=None):
     return {'revision':value['revision'],'checked_at':stamp,'enabled':sorted(enabled)}
 
 
-def resolve(cfg,root,now,fetch):
+def resolve(cfg,root,now,fetch,*,clock=None):
     from .alerts import read_json,atomic
     cache=root/'policy.json'
     try:previous=validate(read_json(cache))
     except FileNotFoundError:previous=None
     # A corrupt cache must not silently re-enable disabled notifications.
     try:
-        current=validate(fetch(cfg),now)
+        response=fetch(cfg)
+        current=validate(response,clock() if clock else now)
         if previous and (current['revision']<previous['revision'] or (current['revision']==previous['revision'] and current['enabled']!=previous['enabled'])):
             raise ValueError('Policy revision regressed')
     except (OSError,ValueError,TypeError,KeyError):

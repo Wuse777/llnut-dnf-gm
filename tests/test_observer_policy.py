@@ -26,3 +26,12 @@ def test_disabled_groups_do_not_probe_or_report_false_recovery(tmp_path):
     assert result['history']==[]
     public=alerts.read_report(tmp_path/'public.json',100)
     assert public['observer_policy']=={'revision':3,'checked_at':100,'enabled':[],'source':'live'}
+
+
+def test_freshness_is_checked_after_response_not_before_http_request(tmp_path):
+    clock=[100.0]
+    def fetch(_):
+        clock[0]=100.2
+        return {'revision':1,'checked_at':100.1,'enabled':['health-alerts']}
+    policy,source=resolve({},tmp_path,100,fetch,clock=lambda:clock[0])
+    assert source=='live' and policy['revision']==1
