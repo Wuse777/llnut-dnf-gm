@@ -81,3 +81,17 @@ new-version/
 ## 2026-11-05 生产界面更新
 
 `5962f8b` 已部署分组穿戴格子和默认格子视图，未知扩展槽位仍保留，不猜测用途。首页使用随源码发布的原创 SVG 几何装饰，不是从 DNF 提取的素材。真实匹配的 NPK 图标/职业头像仍未安装，缺图状态继续明确显示。
+
+## 2026-11-05 原创城镇插画与角色导航
+
+首页和登录页使用原创蓝调城镇插画，不是官方DNF图片、物品图标或职业肖像。生成工具为内置 ImageGen；原始2048×683 PNG保留在维护电脑生成目录，不作为运行依赖。源码保存压缩后的 `web/src/assets/town-dusk.webp`（1600像素宽，约51KB）与 `town-dusk-small.webp`（800像素宽，约14KB），通过Vite输出带摘要URL。后处理仅等比例缩小及WebP编码，没有增加游戏素材。首页图片使用空alt、装饰语义和暗色遮罩；手机选择小图，控件及字体保留CPAMC主题变量；没有新增动画。
+
+角色详情14个入口按角色资料、装备与仓储、维护与排查、邮件与记录分组；手机使用分组下拉菜单。保留方向键/Home/End、操作忙碌状态及原确认规则。修复任务、改名、救援页重复tabpanel ID及误显示空容器错误的问题。没有修改业务API、权限或物品数量规则。
+
+### 最终生成提示词
+
+```text
+Create a polished ORIGINAL decorative background illustration for a Chinese fantasy action-RPG server administration web dashboard. This is a project UI asset, NOT a screenshot or interface mockup. Panoramic composition, approximately 3:1 wide aspect ratio if possible. Quiet deserted medieval fantasy town at blue-hour dusk, finely hand-painted 2D side-scrolling action RPG atmosphere, weathered stone gate, modest timber rooftops, distant monumental floating stone ruins, a small warm amber magic crystal near the gate, desaturated charcoal-blue and slate, restrained warm copper light. No characters needed. Keep the LEFT 55 percent dark, very low contrast, almost empty atmospheric sky and soft distant silhouettes so white interface text can be overlaid by code. Put the detailed architecture and warm focal light only in the RIGHT 40 percent. Elegant understated professional tool aesthetic, not a flashy game advertisement, no neon, no saturated purple, no confetti. Subtle painterly textures, beautiful controlled lighting, crisp artistic background, absolutely no text, logos, UI widgets, numbers, buttons, watermarks, or recognizable copyrighted character designs. It should feel inspired by classic dungeon-fighting games but remain an original fictional environment. No frame or border.
+```
+
+素材仍不能代替缺失的匹配NPK；真实职业头像和道具图标未齐备的现状不变。

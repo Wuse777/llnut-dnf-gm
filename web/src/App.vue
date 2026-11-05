@@ -320,7 +320,7 @@ onUnmounted(()=>clearInterval(timer))
 
 <template>
 <div v-if="initializing" class="login-shell"><section class="login-card" role="status"><span class="spinner"/> 正在恢复安全会话…</section></div>
-<div v-else-if="!logged" class="login-shell">
+<div v-else-if="!logged" class="login-shell login-illustrated">
   <div class="login-theme"><select aria-label="界面主题" :value="theme" @change="applyTheme(($event.target as HTMLSelectElement).value)"><option value="light">浅色 · 暖灰</option><option value="white">纯白</option><option value="dark">深色</option><option value="system">跟随系统</option></select></div>
   <form class="login-card" @submit.prevent="login"><div class="login-mark">G</div><h1>DNF GM 控制台</h1><p>清风 1031 · 服务器管理</p><label>管理员账号<input v-model="username" autocomplete="username" required></label><label>管理员密码<input v-model="password" type="password" autocomplete="current-password" required></label><label v-if="totpRequired">动态验证码 / 恢复码<input v-model="code" autocomplete="one-time-code" required></label><button class="primary full" :disabled="busy">{{busy?'正在认证…':'安全登录 →'}}</button><p v-if="error" role="alert" class="error">{{error}}</p><small>独立管理员 · 密码登录 · 操作审计</small></form>
 </div>

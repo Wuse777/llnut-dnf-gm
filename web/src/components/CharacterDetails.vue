@@ -26,7 +26,14 @@ const unlockBusy=ref(false),unlockVisited=ref(false),unlockPending=ref(false)
 const root=ref<HTMLElement|null>(null)
 const data=ref<any>(null),loading=ref(false),error=ref(''),section=ref('basic'),search=ref(''),kind=ref(''),page=ref(1)
 let generation=0
-const tabs=[['basic','基本信息'],['attributes','属性存档'],['equipment','穿戴装备'],['backpack','背包道具'],['warehouse','角色仓库'],['account_warehouse','账号仓库'],['unlock','装备解锁'],['manage','装备维护'],['fatigue','角色维护'],['rename','角色改名'],['rescue','位置救援'],['quests','任务排查'],['mail','角色邮件'],['activity','管理记录']]
+const tabGroups=[
+ {label:'角色资料',tabs:[['basic','基本信息'],['attributes','属性存档']]},
+ {label:'装备与仓储',tabs:[['equipment','穿戴装备'],['backpack','背包道具'],['warehouse','角色仓库'],['account_warehouse','账号仓库'],['unlock','装备解锁']]},
+ {label:'维护与排查',tabs:[['manage','装备维护'],['fatigue','角色维护'],['rename','角色改名'],['rescue','位置救援'],['quests','任务排查']]},
+ {label:'邮件与记录',tabs:[['mail','角色邮件'],['activity','管理记录']]}
+]
+const tabs=tabGroups.flatMap(group=>group.tabs)
+const separatePanels=['manage','fatigue','rename','rescue','quests']
 const navigationLocked=computed(()=>actionBusy.value||inventoryPending.value||fatiguePending.value||renamePending.value||rescuePending.value||unlockPending.value)
 function shortcut(action:string){if(navigationLocked.value||!data.value?.account||data.value.character.delete_flag)return;emit('action',{action,uid:data.value.character.uid,charac_no:props.characNo})}
 function mailDraft(value:any){if(!navigationLocked.value)emit('draft',value)}
@@ -75,9 +82,9 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
     </details>
     <p v-if="data.account_online?.login_status===1" class="warning">所属账号在线；不代表当前角色在线。背包、仓库、金币和属性可能等待游戏进程保存，刷新网页不会强制保存。</p>
     <p v-if="data.catalog_state!=='ok'" class="submit-error" role="status">物品索引不可用或版本不匹配：仍显示存档编号，但物品名称、等级及职业名称可能未知。</p>
-    <label class="character-mobile-section">查看内容<select :value="section" :disabled="actionBusy" aria-label="切换角色详情内容" @change="tab(($event.target as HTMLSelectElement).value)"><option v-for="[id,label] in tabs" :key="id" :value="id">{{label}}</option></select></label>
-    <div class="operation-tabs detail-tabs" role="tablist" aria-label="角色详情分类" @keydown="tabKey"><button v-for="[id,label] in tabs" :id="'character-tab-'+id" :key="id" role="tab" :disabled="actionBusy" :aria-selected="section===id" :tabindex="section===id?0:-1" :aria-controls="'character-section-'+id" :class="{active:section===id}" @click="tab(id)">{{label}}<span v-if="id==='equipment'||id==='backpack'"> · {{data[id].state==='ok'?data[id].items.length:'未知'}}</span></button></div>
-    <section v-show="!['manage','fatigue'].includes(section)" :id="['manage','fatigue'].includes(section)?undefined:'character-section-'+section" role="tabpanel" :aria-labelledby="'character-tab-'+section" tabindex="0">
+    <label class="character-mobile-section">查看内容<select :value="section" :disabled="actionBusy" aria-label="切换角色详情内容" @change="tab(($event.target as HTMLSelectElement).value)"><optgroup v-for="group in tabGroups" :key="group.label" :label="group.label"><option v-for="[id,label] in group.tabs" :key="id" :value="id">{{label}}</option></optgroup></select></label>
+    <div class="detail-tabs" role="tablist" aria-label="角色详情分类" @keydown="tabKey"><div v-for="group in tabGroups" :key="group.label" class="detail-tab-group" role="presentation"><span class="detail-group-label" aria-hidden="true">{{group.label}}</span><button v-for="[id,label] in group.tabs" :id="'character-tab-'+id" :key="id" role="tab" :disabled="actionBusy" :aria-selected="section===id" :tabindex="section===id?0:-1" :aria-controls="'character-section-'+id" :class="{active:section===id}" @click="tab(id)">{{label}}<span v-if="id==='equipment'||id==='backpack'"> · {{data[id].state==='ok'?data[id].items.length:'未知'}}</span></button></div></div>
+    <section v-show="!separatePanels.includes(section)" :id="separatePanels.includes(section)?undefined:'character-section-'+section" role="tabpanel" :aria-labelledby="'character-tab-'+section" tabindex="0">
      <UnlockRequests v-if="unlockVisited" v-show="section==='unlock'" :charac-no="characNo" @busy="unlockBusy=$event" @pending="unlockPending=$event" @reauth="emit('reauth')" @expired="emit('expired')"/>
      <MailCenter v-if="section==='mail'" :uid="data.character.uid" :charac-no="characNo" locked-target @draft="mailDraft"/>
      <CharacterActivity v-if="section==='activity'" :charac-no="characNo" :busy="navigationLocked" @inspect="inspect" @expired="emit('expired')"/>
@@ -89,7 +96,7 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
       <p class="field-hint">下列是数据库字段原始存档值，不是游戏内最终面板。速度未擅自换算为百分比；力量、智力、体力、精神及元素抗性等未确认字段映射，暂不猜测显示。</p>
       <dl class="character-facts attribute-grid"><div v-for="a in data.attributes" :key="a.key"><dt>{{a.label}}<small>{{a.key}}</small></dt><dd>{{number(a.value)}}</dd></div></dl>
      </template>
-     <template v-else-if="['unlock','manage','fatigue','mail','activity'].includes(section)"></template>
+     <template v-else-if="['unlock',...separatePanels,'mail','activity'].includes(section)"></template>
      <template v-else>
       <div v-if="section==='warehouse'||section==='account_warehouse'" class="warehouse-summary">
        <p class="field-hint">{{storageNotes[section]}}所属 UID：{{container.owner_uid??data.character.uid}}<span v-if="section==='warehouse'"> · 角色 #{{data.character.charac_no}}</span></p>
@@ -130,6 +137,8 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
 </template>
 
 <style scoped>
+.detail-tabs{display:grid;grid-template-columns:.9fr 1.25fr 1.15fr 1fr;gap:12px;margin:16px 0 20px;padding:16px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:12px}.detail-tab-group{display:flex;flex-direction:column;gap:3px;min-width:0}.detail-group-label{font-size:11px;color:var(--text-secondary);padding:0 8px 8px;letter-spacing:.04em}.detail-tab-group button{text-align:left;background:transparent;border:1px solid transparent;padding:7px 9px;font-size:12px;white-space:normal}.detail-tab-group button.active{background:var(--bg-tertiary);border-color:var(--border-color);font-weight:600;color:var(--text-primary)}.detail-tab-group button:hover:not(:disabled){background:var(--bg-secondary)}.detail-tab-group button:focus-visible{outline:2px solid var(--primary-color);outline-offset:1px}
+
 .character-mobile-section{display:none}.character-guidance{margin:12px 0}.character-guidance summary{cursor:pointer;color:var(--text-secondary)}@media(max-width:768px){.character-mobile-section{display:grid;gap:8px;margin:16px 0}.detail-tabs{display:none}.character-identity{display:grid;grid-template-columns:48px minmax(0,1fr);gap:8px 12px}.character-identity>:first-child{grid-row:1/3}.character-identity>.status-badge{grid-column:2;justify-self:start}.character-identity h3{font-size:20px}}
 .character-shortcuts{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.character-shortcuts button{flex:1 1 150px}
 </style>

@@ -79,3 +79,12 @@ it('keeps role shortcuts and mail/activity queries bound to the current identity
  const w=mount(CharacterDetails,{props:{characNo:4},attachTo:document.body})
  try{await flushPromises();await w.findAll('button').find(b=>b.text()==='给此角色发奖励')!.trigger('click');expect(w.emitted('action')?.[0]).toEqual([{action:'mail',uid:3,charac_no:4}]);await tab(w,'角色邮件');expect(calls.at(-1)).toContain('/mail-center?uid=3&charac_no=4');expect(w.get('[aria-label="邮件角色编号"]').attributes('disabled')).toBeDefined();await tab(w,'管理记录');expect(calls.at(-1)).toContain('/characters/4/activity?before=0');expect(w.text()).toContain('已到记录末尾')}finally{w.unmount()}
 })
+
+it('groups navigation and gives diagnostic panels unique IDs without fake missing-container errors',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(fixture()))))
+ const w=mount(CharacterDetails,{props:{characNo:4},global:{stubs:{CharacterActivity:{template:'<div>管理记录内容</div>'},CharacterQuests:{template:'<div>任务查询内容</div>'},CharacterRename:{template:'<div>改名入口</div>'},CharacterRescue:{template:'<div>救援入口</div>'}}}})
+ try{await flushPromises();expect(w.findAll('.detail-tab-group')).toHaveLength(4);expect(w.findAll('optgroup')).toHaveLength(4)
+ for(const [label,id] of [['任务排查','quests'],['角色改名','rename'],['位置救援','rescue']]){await tab(w,label);expect(w.findAll('#character-section-'+id)).toHaveLength(1);expect(w.text()).not.toContain('未返回此容器记录')}
+ await w.get('#character-tab-rescue').trigger('keydown',{key:'End'});await flushPromises();expect(w.get('#character-tab-activity').attributes('aria-selected')).toBe('true')
+ }finally{w.unmount()}
+})
