@@ -275,7 +275,19 @@ class Service:
         with self.db.connect() as c, c.cursor() as q:
             row = one(q, 'SELECT operation_id,action,status,request_json,preview_json,result_json,expires_at FROM dnf_gm.operations WHERE operation_id=%s', (op,))
             if not row:
-                raise HTTPException(404, '操作不存在')
+                # Capability changes have their own transaction/receipt, not a
+                # game-operation preview. Audit lookup must still resolve the
+                # original ID without creating a confirmable game operation.
+                policy = one(q, '''SELECT r.result_json,r.created_at,a.reason,a.request_json
+                    FROM dnf_gm.capability_requests r JOIN dnf_gm.audit a
+                      ON a.operation_id=r.request_id AND a.action='capability-policy'
+                    WHERE r.request_id=%s LIMIT 1''', (op,))
+                if not policy:
+                    raise HTTPException(404, '操作不存在')
+                return {'operation_id':op,'action':'capability-policy','status':'committed',
+                        'request':{**json.loads(policy['request_json']),'reason':policy['reason']},
+                        'preview':None,'expires_at':None,'created_at':policy['created_at'],
+                        'result':json.loads(policy['result_json']),'failure_attempts':[]}
             row['request'] = json.loads(row.pop('request_json'))
             q.execute('SELECT error_type,created_at FROM dnf_gm.failures WHERE operation_id=%s ORDER BY id DESC LIMIT 20', (op,))
             row['failure_attempts'] = q.fetchall()

@@ -26,16 +26,19 @@ def check(q, target):
         if data.get('schema_version') != 1 or not isinstance(modes, list) or any(not isinstance(m, str) for m in modes):
             raise IncompatibleRollback('Invalid target release feature manifest')
         supported = set(modes)
-    if 'accounts' in supported:
-        return
-    q.execute("SELECT COUNT(*) n FROM information_schema.TABLES WHERE TABLE_SCHEMA='dnf_gm' AND TABLE_NAME='schedules'")
-    if not q.fetchone()['n']:
-        return
-    # Native JSON validation fails closed on malformed stored requests. Includes
-    # historical definitions because old UIs can copy/reactivate them.
-    q.execute("SELECT 1 AS found FROM dnf_gm.schedules WHERE JSON_UNQUOTE(JSON_EXTRACT(request_json, '$.reward_job.targets.mode'))='accounts' LIMIT 1")
-    if q.fetchone():
-        raise IncompatibleRollback('Target cannot read account-list schedules. Use a compatible release; preserve tasks and audit history.')
+    if 'accounts' not in supported:
+        q.execute("SELECT COUNT(*) n FROM information_schema.TABLES WHERE TABLE_SCHEMA='dnf_gm' AND TABLE_NAME='schedules'")
+        if q.fetchone()['n']:
+            q.execute("SELECT 1 AS found FROM dnf_gm.schedules WHERE JSON_UNQUOTE(JSON_EXTRACT(request_json, '$.reward_job.targets.mode'))='accounts' LIMIT 1")
+            if q.fetchone():
+                raise IncompatibleRollback('Target cannot read account-list schedules. Use a compatible release; preserve tasks and audit history.')
+    if not manifest.exists() or data.get('web_capability_policy') != 1:
+        q.execute("SELECT COUNT(*) n FROM information_schema.TABLES WHERE TABLE_SCHEMA='dnf_gm' AND TABLE_NAME='capability_policy'")
+        if q.fetchone()['n']:
+            q.execute('SELECT revision FROM dnf_gm.capability_policy WHERE id=1')
+            row=q.fetchone()
+            if row and row['revision']>0:
+                raise IncompatibleRollback('Target ignores web-managed permissions. Use a policy-aware release; do not delete permission history.')
 
 
 def main():

@@ -82,6 +82,10 @@ class Guard:
 def create_app(settings=None, database=None):
     settings = settings or load_settings()
     db = database or Database(settings)
+    from .capability_policy import RuntimeSettings, CapabilityPolicy, PolicyWorker, PolicyUpdate
+    settings = RuntimeSettings(settings)
+    policy = CapabilityPolicy(db,settings)
+    policy.refresh(force=True)
     service, limits = Service(db,settings), Limits()
     jobs = RewardJobs(db,settings,service)
     cleanup = ReleaseCleanup(db,settings)
@@ -94,13 +98,14 @@ def create_app(settings=None, database=None):
     task_monitor = TaskHealth(db,settings,pulse,lambda: bool(getattr(app.state,"worker",None) and app.state.worker.thread.is_alive()))
     @asynccontextmanager
     async def lifespan(app):
-        worker = JobWorker(OperationsWorker(schedules,jobs,settings,pulse),settings.batch_worker_interval) if (settings.batch_worker_enabled or settings.schedule_worker_enabled) else None
+        worker = JobWorker(PolicyWorker(policy,OperationsWorker(schedules,jobs,settings,pulse)),settings.batch_worker_interval)
         app.state.worker = worker
         if worker: worker.start()
         try: yield
         finally:
             if worker: worker.stop()
     app = FastAPI(title='DNF GM', docs_url=None, redoc_url=None, openapi_url=None,lifespan=lifespan)
+    app.state.capability_policy = policy
     app.state.task_health = task_monitor
     app.state.worker = None
     app.state.schedules = schedules
@@ -122,15 +127,17 @@ def create_app(settings=None, database=None):
 
     def user(request, write=False, recent=False):
         csrf = request.headers.get('x-csrf-token','') if write else None
-        return session(db,settings,request.cookies.get(COOKIE),csrf,recent)[0]
+        key=session(db,settings,request.cookies.get(COOKIE),csrf,recent)[0]
+        policy.refresh(force=write)
+        return key
 
     @app.get(API+'/health')
     def health():
         with db.connect() as c, c.cursor() as q:
-            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 11')
+            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 12')
             versions={row['version'] for row in q.fetchall()}
-            if versions != set(range(1,12)):
-                raise HTTPException(503,'管理库迁移未完成，需要完成011发放统计迁移（包含此前迁移）')
+            if versions != set(range(1,13)):
+                raise HTTPException(503,'管理库迁移未完成，需要完成012网页权限迁移（包含此前迁移）')
         return {'ok':True,'version':'0.3.1'}
 
     @app.get(API+'/ready')
@@ -190,6 +197,23 @@ def create_app(settings=None, database=None):
     def overview(request:Request):
         user(request)
         return service.overview()
+
+    @app.get(API+'/capabilities')
+    def capability_report(request:Request):
+        key=user(request);limits.check('capabilities:'+key,15)
+        from .capabilities import report
+        policy.refresh(force=True)
+        return {**report(settings,db),'policy':policy.view()}
+
+    @app.post(API+'/capabilities/policy')
+    def update_capability_policy(data:PolicyUpdate,request:Request):
+        key=user(request,write=True,recent=True);limits.check('capability-policy:'+key,15)
+        return policy.update(data.model_dump())
+
+    @app.get(API+'/capabilities/policy/requests/{rid}')
+    def capability_receipt(request:Request,rid:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request);limits.check('capability-receipt:'+key,60)
+        return policy.receipt(rid)
 
     @app.get(API+'/accounts')
     def accounts(request:Request,q:str=Query('',max_length=80),page:int=Query(1,ge=1,le=10000)):

@@ -42,6 +42,8 @@ def bootstrap_sql(config,ph):
     sql += support_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/011-economy-ledger.sql').read_text()
     sql += economy_sql(user)
+    sql += (Path(__file__).resolve().parents[1]/'migrations/012-capabilities.sql').read_text()
+    sql += capability_policy_sql(user)
     sql += reward_jobs_sql(user)
     sql += catalog_policy_sql(user)
     sql += mail_gold_sql(user)
@@ -142,3 +144,20 @@ def support_sql(user="'dnf_gm_app'@'127.0.0.1'"):
 
 def economy_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     return ''.join(f'GRANT SELECT,INSERT ON dnf_gm.{table} TO {user};\n' for table in ('economy_operations','economy_values'))
+
+
+def capability_policy_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return (f'GRANT SELECT,UPDATE(revision,enabled_json,updated_at) ON dnf_gm.capability_policy TO {user};\n'
+            f'GRANT SELECT,INSERT ON dnf_gm.capability_requests TO {user};\n')
+
+
+def initialize_owner_capabilities_sql():
+    # Installation-time explicit owner activation; does not overwrite later web
+    # choices. No game rows, rewards, schedules or maintenance windows created.
+    import json
+    switches=['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
+    enabled=json.dumps(sorted(switches),separators=(',',':'))
+    return ("START TRANSACTION;\nSELECT revision FROM dnf_gm.capability_policy WHERE id=1 FOR UPDATE;\n"
+            "INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) "
+            "SELECT 'owner-capabilities-initial','maintenance','capability-policy','安装时按所有者要求开放已实现功能','{}','{\"account_scope\":\"all\",\"revision\":1}' FROM dnf_gm.capability_policy WHERE id=1 AND revision=0;\n"
+            f"UPDATE dnf_gm.capability_policy SET revision=1,enabled_json='{enabled}',updated_at=UNIX_TIMESTAMP() WHERE id=1 AND revision=0;\nCOMMIT;\n")

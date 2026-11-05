@@ -229,3 +229,24 @@ it('hides background notices while character modal is open so footer actions sta
 it('can save a pure-gold mail draft as a template with its message',async()=>{
  const {w,calls}=testApp();await flushPromises();await click(w,'邮件发放');await w.find('#mail-gold').setValue(50000);await w.find('#mail-message').setValue('Gold reward');expect(w.text()).not.toContain('金币不保存到礼包模板');await click(w,'另存为礼包模板');expect((w.find('#gift-gold').element as HTMLInputElement).value).toBe('50000');expect((w.find('#gift-message').element as HTMLInputElement).value).toBe('Gold reward');await w.find('#gift-name').setValue('纯金币奖励');await click(w,'创建礼包模板');expect(calls.find(x=>x.path==='/gift-templates'&&x.method==='POST')?.body).toMatchObject({gold:50000,message:'Gold reward',items:[]});expect(calls.some(x=>x.path.startsWith('/operations/'))).toBe(false);w.unmount()
 })
+
+it('resolves an administrator policy audit receipt without offering game confirmation',async()=>{
+ const rid='c'.repeat(32);const calls:string[]=[]
+ vi.stubGlobal('fetch',vi.fn(async(url,opts)=>{
+  const path=String(url);calls.push((opts?.method||'GET')+' '+path)
+  let d:any={}
+  if(path.endsWith('/auth/methods'))d={totp_required:false}
+  else if(path.endsWith('/auth/me'))d={csrf:'fixture',public:true}
+  else if(path.endsWith('/overview'))d={counts:{},server:{fresh:false,services:{}},enabled_writes:[],test_uids:[]}
+  else if(path.includes('/audit?'))d={items:[{operation_id:rid,action:'capability-policy',actor:'owner',reason:'测试权限',created_at:'2026-11-05'}]}
+  else if(path.endsWith('/operations/'+rid))d={operation_id:rid,action:'capability-policy',status:'committed',preview:null,result:{revision:2,enabled:['mail'],account_scope:'all'}}
+  return new Response(JSON.stringify(d))
+ }))
+ const w=mount(App,{attachTo:document.body});await flushPromises();await click(w,'操作审计')
+ await w.find('#lookup-id').setValue(rid);await click(w,'只查询，不重放')
+ expect(w.find('.lookup-result').text()).toContain('管理员权限已保存')
+ expect(w.find('.lookup-result').text()).toContain('修订 2')
+ expect(w.text()).not.toContain('确认执行一次')
+ expect(calls.filter(c=>!c.startsWith('GET'))).toEqual([])
+ w.unmount()
+})

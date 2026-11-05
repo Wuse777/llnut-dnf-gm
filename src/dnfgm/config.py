@@ -21,6 +21,7 @@ class Settings:
     cleanup_enabled: bool = False
     cleanup_manifest: str = '/run/dnf-gm/cleanup.json'
     cleanup_dir: str = '/var/lib/dnf-gm/cleanup'
+    capability_evidence_file: str = ''
     backup_health_file: str = '/var/lib/dnf-gm/backup-health.json'
     task_probe_token: str = ''
     alert_file: str = '/var/lib/dnf-gm/alerts/public.json'
@@ -98,7 +99,7 @@ class Settings:
             raise ValueError('Batch worker requires explicit batch-reward activation')
         if not isinstance(self.assets_dir,str) or (self.assets_dir and not Path(self.assets_dir).is_absolute()):
             raise ValueError('Assets directory must be empty or an absolute private path')
-        for path in (self.upgrade_catalog_file, self.upgrade_assets_dir):
+        for path in (self.upgrade_catalog_file, self.upgrade_assets_dir, self.capability_evidence_file):
             if not isinstance(path, str) or (path and not Path(path).is_absolute()):
                 raise ValueError('Upgrade inputs must be absolute maintenance paths')
         if not isinstance(self.upgrade_image_digest, str) or (self.upgrade_image_digest and (not self.upgrade_image_digest.startswith('sha256:') or len(self.upgrade_image_digest)!=71 or any(c not in '0123456789abcdef' for c in self.upgrade_image_digest[7:]))):
