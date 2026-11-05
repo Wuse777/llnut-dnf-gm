@@ -41,6 +41,7 @@ def bootstrap_sql(config,ph):
     sql += character_maintenance_sql(user)
     sql += character_rename_sql(user)
     sql += character_rescue_sql(user)
+    sql += character_skills_sql(user)
     sql += character_quests_sql(user)
     sql += quest_repair_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/010-support-desk.sql').read_text()
@@ -167,7 +168,7 @@ def initialize_owner_capabilities_sql():
     # Installation-time explicit owner activation; does not overwrite later web
     # choices. No game rows, rewards, schedules or maintenance windows created.
     import json
-    switches=['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','char-fatigue','char-rename','char-rescue','quest-clear','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
+    switches=['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','char-fatigue','char-rename','char-rescue','quest-clear','char-sp-tp','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
     enabled=json.dumps(sorted(switches),separators=(',',':'))
     return ("START TRANSACTION;\nSELECT revision FROM dnf_gm.capability_policy WHERE id=1 FOR UPDATE;\n"
             "INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) "
@@ -218,3 +219,8 @@ def quest_repair_sql(user="'dnf_gm_app'@'127.0.0.1'"):
 def backup_schedule_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     return (f'GRANT SELECT,UPDATE(revision,enabled,hour,minute,retention_days,failure_alerts,updated_at) ON dnf_gm.backup_schedule TO {user};\n'
             f'GRANT SELECT,INSERT,UPDATE(state,result_json,error_code,started_at,finished_at) ON dnf_gm.backup_runs TO {user};\n')
+
+
+def character_skills_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    from dnfgm.character_skills import POINTS, SCALARS, BLOBS
+    return f'GRANT SELECT({",".join(("charac_no",*SCALARS,*BLOBS))}),UPDATE({",".join(POINTS)}) ON taiwan_cain_2nd.skill TO {user};\n'

@@ -25,6 +25,7 @@ from .character_rescue import CharacterRescue, RescuePreview
 from .character_quests import CharacterQuests
 from .quest_operations import QuestOperations,QuestPreview
 from .character_progression import CharacterProgression
+from .character_skills import CharacterSkills, SkillPointsPreview
 from .player_preferences import PlayerPreferences,PlayerTarget,PlayerFavorite
 from .backup_schedule import BackupSchedule,BackupPolicy,BackupRequest
 from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm, MaintenanceClose, MaintenanceRecover
@@ -107,6 +108,7 @@ def create_app(settings=None, database=None):
     quest_reader = CharacterQuests(service)
     quest_ops = QuestOperations(service)
     progression_reader = CharacterProgression(service)
+    skill_ops = CharacterSkills(service)
     player_preferences = PlayerPreferences(db)
     maintenance = MaintenanceRequests(db,settings)
     schedules = Schedules(db, settings, jobs, native_ops)
@@ -133,6 +135,7 @@ def create_app(settings=None, database=None):
     app.state.character_maintenance = character_ops
     app.state.character_rename = rename_ops
     app.state.character_rescue = rescue_ops
+    app.state.character_skills = skill_ops
     app.state.quest_operations = quest_ops
     app.state.maintenance = maintenance
     app.add_middleware(Guard, settings=settings)
@@ -500,6 +503,36 @@ def create_app(settings=None, database=None):
     def character_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
         key=user(request,True,True);limits.check('character-maintenance-cancel:'+key,12)
         return character_ops.cancel(op)
+
+    @app.get(API+'/character-skills/characters/{charac_no}')
+    def character_skills_read(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
+        key=user(request);limits.check('character-skills-read:'+key,30)
+        return skill_ops.read(charac_no)
+
+    @app.get(API+'/character-skills/operations')
+    def skills_history(request:Request,uid:int=Query(0,ge=0,le=2147483647),charac_no:int=Query(0,ge=0,le=2147483647),page:int=Query(1,ge=1,le=10000)):
+        key=user(request);limits.check('character-skills-history:'+key,30)
+        return skill_ops.history(uid,charac_no,page)
+
+    @app.post(API+'/character-skills/preview')
+    def skills_preview(data:SkillPointsPreview,request:Request):
+        key=user(request,True,True);limits.check('character-skills-preview:'+key,12)
+        return skill_ops.preview(key,data.model_dump())
+
+    @app.get(API+'/character-skills/operations/{op}')
+    def skills_detail(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request);limits.check('character-skills-detail:'+key,30)
+        return skill_ops.detail(op)
+
+    @app.post(API+'/character-skills/operations/{op}/confirm')
+    def skills_confirm(data:Confirm,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('character-skills-confirm:'+key,10)
+        return skill_ops.confirm(key,op,data.idempotency_key)
+
+    @app.post(API+'/character-skills/operations/{op}/cancel-preview')
+    def skills_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('character-skills-cancel:'+key,12)
+        return skill_ops.cancel(op)
 
     @app.get(API+'/character-renames/characters/{charac_no}')
     def rename_maintenance_read(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):

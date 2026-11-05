@@ -251,3 +251,24 @@ CREATE TABLE taiwan_cain.account_cargo (
  cargo blob NOT NULL,
  occ_time datetime NOT NULL DEFAULT '0000-00-00 00:00:00'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+-- Synthetic QF1031 PvE skill archive; no real learned-skill data.
+CREATE TABLE taiwan_cain_2nd.skill (
+ charac_no int NOT NULL PRIMARY KEY,
+ remain_sp int unsigned NOT NULL DEFAULT 0,
+ sp_garbage int unsigned NOT NULL DEFAULT 0,
+ used_sp int unsigned NOT NULL DEFAULT 0,
+ skill_slot blob NOT NULL,
+ request_sp blob NOT NULL,
+ remain_sp_2nd int unsigned NOT NULL DEFAULT 0,
+ skill_slot_2nd blob NOT NULL,
+ request_sp_2nd blob NOT NULL,
+ remain_sfp_2nd int unsigned NOT NULL DEFAULT 0,
+ remain_sfp_1st int unsigned NOT NULL DEFAULT 0,
+ skill_slot_lethe blob NOT NULL,
+ skill_slot_lethe_2nd blob NOT NULL,
+ lethe_flag tinyint NOT NULL DEFAULT 0,
+ lethe_flag_2nd tinyint NOT NULL DEFAULT 0,
+ skill_command blob NOT NULL,
+ script_version tinyint NOT NULL DEFAULT 0
+) ENGINE=InnoDB;
