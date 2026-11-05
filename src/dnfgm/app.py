@@ -20,6 +20,7 @@ from .native_monitor import NativeMonitor
 from .native_operations import NativeOperations
 from .inventory_operations import InventoryOperations
 from .character_maintenance import CharacterMaintenance, CharacterMaintenancePreview
+from .character_rename import CharacterRename, RenamePreview
 from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm, MaintenanceClose, MaintenanceRecover
 from .models import InventoryPreview
 from .support_models import ProfileSave, CaseCreate, CaseUpdate, CaseEntry, CaseLink, CaseStatus, Category
@@ -95,6 +96,7 @@ def create_app(settings=None, database=None):
     native_ops = NativeOperations(service, native_monitor)
     inventory_ops = InventoryOperations(service)
     character_ops = CharacterMaintenance(service)
+    rename_ops = CharacterRename(service)
     maintenance = MaintenanceRequests(db,settings)
     schedules = Schedules(db, settings, jobs, native_ops)
     from .task_health import TaskHealth, WorkerPulse
@@ -118,6 +120,7 @@ def create_app(settings=None, database=None):
     app.state.native_operations = native_ops
     app.state.inventory_operations = inventory_ops
     app.state.character_maintenance = character_ops
+    app.state.character_rename = rename_ops
     app.state.maintenance = maintenance
     app.add_middleware(Guard, settings=settings)
     app.state.db, app.state.settings, app.state.service = db,settings,service
@@ -453,6 +456,36 @@ def create_app(settings=None, database=None):
     def character_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
         key=user(request,True,True);limits.check('character-maintenance-cancel:'+key,12)
         return character_ops.cancel(op)
+
+    @app.get(API+'/character-renames/characters/{charac_no}')
+    def rename_maintenance_read(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
+        key=user(request);limits.check('character-renames-read:'+key,30)
+        return rename_ops.read(charac_no)
+
+    @app.get(API+'/character-renames/operations')
+    def rename_history(request:Request,uid:int=Query(0,ge=0,le=2147483647),charac_no:int=Query(0,ge=0,le=2147483647),page:int=Query(1,ge=1,le=10000)):
+        key=user(request);limits.check('character-renames-history:'+key,30)
+        return rename_ops.history(uid,charac_no,page)
+
+    @app.post(API+'/character-renames/preview')
+    def rename_preview(data:RenamePreview,request:Request):
+        key=user(request,True,True);limits.check('character-renames-preview:'+key,12)
+        return rename_ops.preview(key,data.model_dump())
+
+    @app.get(API+'/character-renames/operations/{op}')
+    def rename_detail(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request);limits.check('character-renames-detail:'+key,30)
+        return rename_ops.detail(op)
+
+    @app.post(API+'/character-renames/operations/{op}/confirm')
+    def rename_confirm(data:Confirm,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('character-renames-confirm:'+key,10)
+        return rename_ops.confirm(key,op,data.idempotency_key)
+
+    @app.post(API+'/character-renames/operations/{op}/cancel-preview')
+    def rename_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('character-renames-cancel:'+key,12)
+        return rename_ops.cancel(op)
 
     @app.get(API+'/maintenance')
     def maintenance_status(request:Request):

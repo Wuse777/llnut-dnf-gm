@@ -6,6 +6,8 @@ import GameImage from './GameImage.vue'
 import InventoryGrid from './InventoryGrid.vue'
 import InventoryEditor from './InventoryEditor.vue'
 import CharacterMaintenance from './CharacterMaintenance.vue'
+import CharacterRename from './CharacterRename.vue'
+const renameBusy=ref(false),renamePending=ref(false),renameVisited=ref(false)
 import MailCenter from './MailCenter.vue'
 import CharacterActivity from './CharacterActivity.vue'
 const fatigueBusy=ref(false),fatiguePending=ref(false),fatigueVisited=ref(false)
@@ -15,14 +17,14 @@ const props=withDefaults(defineProps<{characNo:number,initialSection?:string}>()
 const emit=defineEmits<{close:[],reauth:[],expired:[],action:[value:{action:string,uid:number,charac_no:number}],draft:[value:any],inspect:[id:string]}>()
 const inventoryPending=ref(false),inventoryStale=ref(false)
 const inventoryBusy=ref(false),inventoryVisited=ref(false),inventorySelection=ref<{container:string,slot:number}|null>(null)
-const actionBusy=computed(()=>unlockBusy.value||inventoryBusy.value||fatigueBusy.value)
+const actionBusy=computed(()=>unlockBusy.value||inventoryBusy.value||fatigueBusy.value||renameBusy.value)
 function manageItem(item:any){if(inventoryPending.value||actionBusy.value){section.value='manage';return}inventorySelection.value={container:section.value==='backpack'?'inventory':section.value,slot:item.slot};inventoryVisited.value=true;section.value='manage'}
 const unlockBusy=ref(false),unlockVisited=ref(false),unlockPending=ref(false)
 const root=ref<HTMLElement|null>(null)
 const data=ref<any>(null),loading=ref(false),error=ref(''),section=ref('basic'),search=ref(''),kind=ref(''),page=ref(1)
 let generation=0
-const tabs=[['basic','基本信息'],['attributes','属性存档'],['equipment','穿戴装备'],['backpack','背包道具'],['warehouse','角色仓库'],['account_warehouse','账号仓库'],['unlock','装备解锁'],['manage','装备维护'],['fatigue','角色维护'],['mail','角色邮件'],['activity','管理记录']]
-const navigationLocked=computed(()=>actionBusy.value||inventoryPending.value||fatiguePending.value||unlockPending.value)
+const tabs=[['basic','基本信息'],['attributes','属性存档'],['equipment','穿戴装备'],['backpack','背包道具'],['warehouse','角色仓库'],['account_warehouse','账号仓库'],['unlock','装备解锁'],['manage','装备维护'],['fatigue','角色维护'],['rename','角色改名'],['mail','角色邮件'],['activity','管理记录']]
+const navigationLocked=computed(()=>actionBusy.value||inventoryPending.value||fatiguePending.value||renamePending.value||unlockPending.value)
 function shortcut(action:string){if(navigationLocked.value||!data.value?.account||data.value.character.delete_flag)return;emit('action',{action,uid:data.value.character.uid,charac_no:props.characNo})}
 function mailDraft(value:any){if(!navigationLocked.value)emit('draft',value)}
 function inspect(id:string){if(!navigationLocked.value)emit('inspect',id)}
@@ -50,14 +52,14 @@ const pages=computed(()=>Math.max(1,Math.ceil(filtered.value.length/30)))
 const visible=computed(()=>filtered.value.slice((page.value-1)*30,page.value*30))
 const kinds=computed(()=>Array.from(new Map(items.value.map((i:any)=>[String(i.type),i.type_name])).entries()) as [string,string][])
 watch([section,search,kind],()=>{page.value=1})
-watch(section,async()=>{if(section.value==='unlock')unlockVisited.value=true;if(section.value==='manage')inventoryVisited.value=true;if(section.value==='fatigue')fatigueVisited.value=true;await nextTick();root.value?.closest('.modal-body')?.scrollTo?.({top:0})},{immediate:true})
+watch(section,async()=>{if(section.value==='unlock')unlockVisited.value=true;if(section.value==='manage')inventoryVisited.value=true;if(section.value==='fatigue')fatigueVisited.value=true;if(section.value==='rename')renameVisited.value=true;await nextTick();root.value?.closest('.modal-body')?.scrollTo?.({top:0})},{immediate:true})
 function tabKey(e:KeyboardEvent){if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const n=tabs.findIndex(t=>t[0]===section.value),index=e.key==='Home'?0:e.key==='End'?tabs.length-1:(n+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tab(tabs[index][0]);void nextTick(()=>root.value?.querySelector<HTMLButtonElement>('#character-tab-'+section.value)?.focus())}
 function tab(id:string){if(actionBusy.value)return;section.value=id;search.value='';kind.value=''}
 </script>
 <template>
  <Modal title="角色详情" :busy="actionBusy" @close="emit('close')">
   <div ref="root" class="character-detail" data-testid="character-detail">
-   <div class="section-title character-toolbar"><span class="pill">角色详情 · #{{characNo}}</span><button :disabled="loading||actionBusy||unlockPending||inventoryPending||fatiguePending||section==='unlock'||section==='manage'||section==='fatigue'" @click="load">{{loading?'正在读取…':'刷新角色存档'}}</button></div>
+   <div class="section-title character-toolbar"><span class="pill">角色详情 · #{{characNo}}</span><button :disabled="loading||actionBusy||unlockPending||inventoryPending||fatiguePending||renamePending||section==='unlock'||section==='manage'||section==='fatigue'||section==='rename'" @click="load">{{loading?'正在读取…':'刷新角色存档'}}</button></div>
    <p v-if="inventoryStale" class="notice" role="status">存档操作已提交；下方角色资料仍是旧快照。结束操作后切换到物品页，点击“刷新角色存档”。</p>
    <p v-if="loading" role="status" class="empty"><span class="spinner"/> 正在读取角色资料、装备、背包与仓库…</p>
    <div v-else-if="error" class="submit-error" role="alert"><b>无法读取角色详情</b><p>{{error}}</p><button @click="load">重试查询</button></div>
@@ -114,6 +116,7 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
      </template>
     </section>
    </template>
+   <section v-if="renameVisited" v-show="section==='rename'" id="character-section-rename" role="tabpanel" aria-labelledby="character-tab-rename" tabindex="0"><CharacterRename :key="characNo" :charac-no="characNo" @busy="renameBusy=$event" @pending="renamePending=$event" @changed="inventoryStale=true" @reauth="emit('reauth')" @expired="emit('expired')"/></section>
    <section v-if="fatigueVisited" v-show="section==='fatigue'" id="character-section-fatigue" role="tabpanel" aria-labelledby="character-tab-fatigue" tabindex="0"><CharacterMaintenance :key="characNo" :charac-no="characNo" @busy="fatigueBusy=$event" @pending="fatiguePending=$event" @changed="inventoryStale=true" @reauth="emit('reauth')" @expired="emit('expired')"/></section>
    <section v-if="inventoryVisited" v-show="section==='manage'" id="character-section-manage" role="tabpanel" aria-labelledby="character-tab-manage" tabindex="0"><InventoryEditor :key="characNo" :charac-no="characNo" :selection="inventorySelection" @busy="inventoryBusy=$event" @pending="inventoryPending=$event" @changed="inventoryStale=true" @reauth="emit('reauth')" @expired="emit('expired')"/></section>
   </div>

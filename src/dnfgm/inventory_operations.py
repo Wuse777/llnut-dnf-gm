@@ -171,6 +171,9 @@ class InventoryOperations:
         if not row or row['action'] not in cls.actions:raise HTTPException(404,'存档操作不存在')
         return row
 
+    def expected_target(self,data,saved,after):
+        return saved['target']
+
     def apply_archive(self,q,data,before,after):
         schema,table,colkey,column,value=self.coordinate(data)
         q.execute(f'UPDATE `{schema}`.`{table}` SET `{column}`=%s WHERE `{colkey}`=%s AND `{column}`=%s',(after,value,before))
@@ -229,7 +232,7 @@ class InventoryOperations:
                 q.execute("INSERT INTO dnf_gm.audit(operation_id,actor,action,target_uid,reason,request_json,result_json) VALUES(%s,'owner',%s,%s,%s,%s,%s)",(op,data['action'],data['uid'],data['reason'],dump(data),dump(result)))
                 q.execute("UPDATE dnf_gm.operations SET status='committed',idempotency_key=%s,result_json=%s WHERE operation_id=%s",(key,dump(result),op))
                 self.require_enabled(data['action'],data['uid'])
-                if self.target(q,data['charac_no'],data['uid'],True)!=saved['target']:
+                if self.target(q,data['charac_no'],data['uid'],True)!=self.expected_target(data,saved,after):
                     raise HTTPException(409,'目标身份在提交前发生变化')
                 lease.check()
                 committing=True;c.commit()
