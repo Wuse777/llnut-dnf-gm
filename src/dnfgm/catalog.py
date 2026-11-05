@@ -19,6 +19,9 @@ def snapshot(settings):
         age = time.time() - d['collected_at']
         if age < -5 or age > 45:
             return {'fresh': False, 'state': 'unknown', 'reason': '采集快照已过期', 'collected_at': d.get('collected_at')}
+        # Installed-monitor identity is only consumed by the root handshake.
+        # Never expose release paths, boot/PID identity or config hashes to web.
+        d.pop('maintenance_monitor', None)
         return {**d, 'fresh': True}
     except (OSError, ValueError, KeyError, TypeError):
         return {'fresh': False, 'state': 'unknown', 'reason': '无有效采集快照'}

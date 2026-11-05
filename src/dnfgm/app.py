@@ -19,7 +19,7 @@ from .release_cleanup import ReleaseCleanup
 from .native_monitor import NativeMonitor
 from .native_operations import NativeOperations
 from .inventory_operations import InventoryOperations
-from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm
+from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm, MaintenanceClose
 from .models import InventoryPreview
 from .support_models import ProfileSave, CaseCreate, CaseUpdate, CaseEntry, CaseLink, CaseStatus, Category
 from .models import NativePreview, SchedulePreview, ActivateSchedule, ScheduleControl
@@ -438,6 +438,11 @@ def create_app(settings=None, database=None):
     def maintenance_confirm(data:MaintenanceConfirm,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
         key=user(request,True,True);limits.check('maintenance-confirm:'+key,6)
         return maintenance.confirm(key,op,data.model_dump())
+
+    @app.post(API+'/maintenance/requests/{op}/close')
+    def maintenance_close(data:MaintenanceClose,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('maintenance-close:'+key,6)
+        return maintenance.close(key,op,data.model_dump())
 
     @app.post(API+'/maintenance/requests/{op}/cancel')
     def maintenance_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):

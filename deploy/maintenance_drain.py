@@ -49,10 +49,11 @@ def digest(value):
 
 class DrainCoordinator:
     def __init__(self, root, host, *, lock_path=None, owner=0,
-                 clock=time.time, monotonic=time.monotonic, writer=atomic_json, admission=None, lifecycle=None):
+                 clock=time.time, monotonic=time.monotonic, writer=atomic_json, admission=None, lifecycle=None, before_commands=None):
         self.root = Path(root)
         self.admission = admission
         self.lifecycle = lifecycle
+        self.before_commands = before_commands
         self.host = host
         self.owner = owner
         self.clock, self.monotonic, self.writer = clock, monotonic, writer
@@ -385,6 +386,7 @@ class DrainCoordinator:
                 record('write-gate-frozen', token)
                 proof = self.admission.drain(doc['plan']['admission'], token)
                 record('database-drained', proof)
+                if self.before_commands is not None:self.before_commands(doc['plan'])
                 GameDrain(self.host).execute(doc['plan'], record)
                 if doc['version']==3:self.lifecycle.stop(doc['plan'],record)
             except Exception as error:

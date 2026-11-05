@@ -5,6 +5,8 @@ After=network.target
 Type=simple
 User=root
 Slice=dnf-gm.slice
+Environment=PYTHONPATH=/opt/dnf-gm/current/src
+Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStart=/opt/dnf-gm/venv/bin/python /opt/dnf-gm/current/deploy/monitor.py
 Restart=on-failure
 RestartSec=15

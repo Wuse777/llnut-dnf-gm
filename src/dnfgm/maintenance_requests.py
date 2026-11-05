@@ -19,10 +19,11 @@ from .catalog import snapshot
 from .release_files import Refused, canonical, read_json, atomic_json
 
 ACTION = 'maintenance'
+CLOSE_ACTION = 'maint-close'
 ROOT_UID = 0
 ID = re.compile(r'^[a-f0-9]{32}$')
 SHA = re.compile(r'^[a-f0-9]{64}$')
-PHASES = ('prepare', 'confirm', 'cancel', 'observe')
+PHASES = ('prepare', 'confirm', 'cancel', 'observe', 'close')
 STATES = {'prepared','running','needs_review','game_drained','writers_stopped','cancelled','expired','rejected',
           'maintenance_open','resuming','completed'}
 PUBLIC_FIELDS = {'state','fingerprint','created_at','expires_at','updated_at','revision','phase',
@@ -44,6 +45,17 @@ class MaintenanceConfirm(BaseModel):
     acknowledge_disconnect: StrictBool
 
 
+class MaintenanceClose(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    idempotency_key: str = Field(min_length=16, max_length=64, pattern=r'^[A-Za-z0-9_-]+$')
+    fingerprint: str = Field(pattern=r'^[a-f0-9]{64}$')
+    acknowledge_restore: StrictBool
+
+
+def close_id(op):
+    return hashlib.sha256(('maintenance-close:'+op).encode('ascii')).hexdigest()[:32]
+
+
 def request_hash(request):
     return hashlib.sha256(canonical(request)).hexdigest()
 
@@ -53,7 +65,7 @@ def packet(request, phase, *, fingerprint=None):
         raise Refused('maintenance_phase_invalid')
     data = {'version':1, 'operation_id':request['operation_id'], 'phase':phase,
             'request':request, 'request_sha256':request_hash(request)}
-    if phase == 'confirm':
+    if phase in ('confirm','close'):
         data['fingerprint'] = fingerprint
     return data
 
@@ -85,7 +97,9 @@ class MaintenanceRequests:
                           execute_supported=doc.get('execute_supported') is True,
                           message='退出会影响当前游戏玩家；入队与进程退出均不等于装备维护已完成。')
             if not result['execute_supported']:
-                result['message']='可生成只读维护计划；完整退出、关窗与恢复执行器尚未接通，不能确认停服。'
+                result['message']=('完整执行器暂未通过监控、版本或资源核验；保留原申请，不会发送新命令。'
+                    if doc.get('executor_protocol')==1 else
+                    '可生成只读维护计划；完整退出、关窗与恢复执行器尚未接通，不能确认停服。')
         except (OSError,ValueError,TypeError,KeyError,AttributeError):
             pass
         result['write_gate']=GameplayWriteGate(self.settings).status()
@@ -144,7 +158,7 @@ class MaintenanceRequests:
         result={'operation_id':row['operation_id'],'action':ACTION,'status':row['status'],
                 'reason':request['reason'],'created_at':row['created_at'],'result':None,
                 'can_confirm':False,'can_cancel':row['status']=='preparing',
-                'retry_dispatch_allowed':False}
+                'retry_dispatch_allowed':False,'can_close':False,'close_requested':False}
         try:
             result['result']=self.receipt(row)
         except (OSError,ValueError,TypeError,KeyError):
@@ -167,10 +181,19 @@ class MaintenanceRequests:
         result['can_observe']=bool(receipt and receipt['state'] not in ('cancelled','expired','rejected','completed') and current['state']=='ok')
         result['worker_fresh']=current['state']=='ok'
         result['executor_message']=current['message']
-        phase='cancel' if row['status']=='cancelled' else 'confirm' if row['status']=='queued' else 'prepare'
+        close = self.close_record(row)
+        result['close_requested'] = close is not None
+        if close: result['close_operation_id'] = close['operation_id']
+        result['can_close'] = bool(not close and row['status']=='queued' and receipt
+            and receipt['state']=='maintenance_open' and current['state']=='ok'
+            and current['execute_supported']
+            and receipt.get('fingerprint')==json.loads(row['preview_json']).get('fingerprint'))
+        phase='close' if close else 'cancel' if row['status']=='cancelled' else 'confirm' if row['status']=='queued' else 'prepare'
         result['dispatch_phase']=phase
         needs_dispatch=(receipt is None or phase=='confirm' and receipt['state']=='prepared'
-                        or phase=='cancel' and receipt['state']!='cancelled')
+                        or phase=='cancel' and receipt['state']!='cancelled'
+                        or phase=='close' and receipt['state']=='maintenance_open')
+        if phase=='close': needs_dispatch=bool(receipt and receipt['state']=='maintenance_open' and current['state']=='ok' and current['execute_supported'])
         result['retry_dispatch_allowed']=needs_dispatch and not (Path(self.settings.maintenance_dir)/'inbox'/(row['operation_id']+'.'+phase+'.json')).exists()
         return result
 
@@ -256,6 +279,71 @@ class MaintenanceRequests:
             raise
         return self.dispatch(op)
 
+    @staticmethod
+    def close_payload(row):
+        return {'operation_id':row['operation_id'], 'request_sha256':row['fingerprint'],
+                'fingerprint':json.loads(row['preview_json']).get('fingerprint'),
+                'acknowledge_restore':True}
+
+    def close_record(self, row):
+        """A parent link alone is not authority: verify its atomic child/audit."""
+        linked=json.loads(row['result_json'] or '{}').get('close_operation_id')
+        if not linked:return None
+        expected=self.close_payload(row)
+        with self.db.connect() as c,c.cursor() as q:
+            q.execute('SELECT * FROM dnf_gm.operations WHERE operation_id=%s',(close_id(row['operation_id']),))
+            child=q.fetchone()
+            q.execute('SELECT action,request_json FROM dnf_gm.audit WHERE operation_id=%s',(linked,))
+            audit=q.fetchone()
+        if (linked!=close_id(row['operation_id']) or not child or not audit
+                or child['action']!=CLOSE_ACTION or child['status']!='queued'
+                or child['fingerprint']!=request_hash(expected) or not child['idempotency_key']
+                or json.loads(child['request_json'])!=expected or audit['action']!='maintenance-close'
+                or json.loads(audit['request_json'])!=expected):
+            raise HTTPException(409,'结束维护申请绑定不一致，请查询原编号；不会投递恢复命令')
+        return child
+
+    def close(self, session, op, data):
+        d=MaintenanceClose(**data).model_dump()
+        if d['acknowledge_restore'] is not True:
+            raise HTTPException(422,'请明确确认关闭装备维护窗口并恢复原游戏组件')
+        attempted=False
+        try:
+            with self.db.connect() as c,c.cursor() as q:
+                self.engines(q);row=self.row(q,op,True)
+                # Sole owner may recover from a new authenticated session; the
+                # original eight-hour preview session must not strand recovery.
+                expected=self.close_payload(row);child_id=close_id(op)
+                if row['status']!='queued' or expected['fingerprint']!=d['fingerprint']:
+                    raise HTTPException(409,'原维护状态或计划指纹不匹配，不能结束维护')
+                q.execute('SELECT * FROM dnf_gm.operations WHERE operation_id=%s FOR UPDATE',(child_id,))
+                child=q.fetchone()
+                if child:
+                    if (child['action']!=CLOSE_ACTION or child['idempotency_key']!=d['idempotency_key']
+                            or child['fingerprint']!=request_hash(expected)
+                            or json.loads(child['request_json'])!=expected):
+                        raise HTTPException(409,'结束维护已使用其他编号或内容，请查询原申请')
+                else:
+                    current=self.status()
+                    try:r=self.receipt(row)
+                    except (OSError,ValueError,TypeError,KeyError):r=None
+                    if (not r or r['state']!='maintenance_open' or r.get('fingerprint')!=d['fingerprint']
+                            or current['state']!='ok' or not current['execute_supported']):
+                        raise HTTPException(409,'当前维护窗口或执行器不可核验，请查询原申请；不会恢复服务')
+                    now=int(time.time());payload=canonical(expected).decode()
+                    q.execute("INSERT INTO dnf_gm.operations(operation_id,session_hash,idempotency_key,fingerprint,action,request_json,preview_json,status,created_at,expires_at) VALUES(%s,%s,%s,%s,%s,%s,'{}','queued',%s,%s)",
+                              (child_id,session,d['idempotency_key'],request_hash(expected),CLOSE_ACTION,payload,now,now))
+                    q.execute("INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) VALUES(%s,'owner','maintenance-close',%s,%s,%s)",
+                              (child_id,self.request(row)['reason'],payload,json.dumps({'state':'queued','operation_id':op,'close_operation_id':child_id})))
+                    result=json.loads(row['result_json'] or '{}');result['close_operation_id']=child_id
+                    q.execute('UPDATE dnf_gm.operations SET result_json=%s WHERE operation_id=%s',(json.dumps(result),op))
+                    attempted=True;c.commit()
+        except Exception as error:
+            if attempted:raise HTTPException(503,'结束维护保存结果待确认，请查询原申请编号；不会自动重发') from None
+            if isinstance(error,pymysql.IntegrityError):raise HTTPException(409,'确认编号已用于其他操作') from None
+            raise
+        return self.dispatch(op)
+
     def cancel(self, op):
         # Safety cancellation stays available when the capability is switched off.
         with self.db.connect() as c,c.cursor() as q:
@@ -281,13 +369,20 @@ class MaintenanceRequests:
         phase=state['dispatch_phase']
         receipt=state['result']
         if receipt and ((phase=='prepare') or (phase=='confirm' and receipt['state']!='prepared')
-                        or (phase=='cancel' and receipt['state']=='cancelled')):
+                        or (phase=='cancel' and receipt['state']=='cancelled')
+                        or (phase=='close' and receipt['state']!='maintenance_open')):
             return state
         # Disabling new control prevents an undispatched confirmation from being
         # issued, but never prevents cancelling or reading an old request.
-        if phase!='cancel':self.require_enabled()
+        if phase=='close':
+            if not self.close_record(row) or not receipt or receipt['state']!='maintenance_open':
+                raise HTTPException(409,'未找到可恢复的原维护申请')
+            current=self.status()
+            if current['state']!='ok' or not current['execute_supported']:
+                raise HTTPException(409,'执行器状态不可核验，请保留原结束维护编号')
+        elif phase!='cancel':self.require_enabled()
         request=self.request(row)
-        fingerprint=json.loads(row['preview_json']).get('fingerprint') if phase=='confirm' else None
+        fingerprint=json.loads(row['preview_json']).get('fingerprint') if phase in ('confirm','close') else None
         value=packet(request,phase,fingerprint=fingerprint)
         self.enqueue(op,phase,value)
         return self.detail(op)

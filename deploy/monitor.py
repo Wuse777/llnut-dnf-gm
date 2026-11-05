@@ -50,8 +50,9 @@ def validate(cfg):
 
 
 class Collector:
-    def __init__(self, cfg, auxiliary=None, maintenance=None):
+    def __init__(self, cfg, auxiliary=None, maintenance=None, attestation=None):
         self.cfg, self.auxiliary = cfg, auxiliary
+        self.attestation = attestation
         self.cached_sig = self.pvf_sha = None
         self.native_sig = self.native_sha = None
         self.maintenance = maintenance
@@ -154,6 +155,8 @@ class Collector:
                     # original gate token, target state and durable signal intent.
                     window = {**window, 'verified': False, 'reason': 'maintenance_gateway_failed'}
             status['maintenance'] = window
+        if self.attestation is not None:
+            status['maintenance_monitor'] = self.attestation()
         return status
 
 
@@ -170,7 +173,11 @@ def main():
         from monitor_runtime import event
         event('telemetry_unavailable')
     try:
-        run(Collector(cfg), disk_path=cfg['disk_path'], min_memory=cfg['min_memory_mib'], min_swap=cfg['min_swap_free_mib'], telemetry=recorder)
+        collector = Collector(cfg)
+        if cfg.get('inventory_maintenance_enabled', False):
+            from maintenance_readiness import InstalledMonitor, MonitorAttestation
+            collector.attestation = MonitorAttestation(InstalledMonitor(), cfg)
+        run(collector, disk_path=cfg['disk_path'], min_memory=cfg['min_memory_mib'], min_swap=cfg['min_swap_free_mib'], telemetry=recorder)
     finally:
         if recorder:
             recorder.close()

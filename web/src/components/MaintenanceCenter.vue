@@ -7,13 +7,16 @@ const emit=defineEmits<{expired:[],reauth:[],navigate:[tab:string]}>()
 const state=ref<any>(null),detail=ref<any>(null),history=ref<any[]>([]),cursor=ref<string|null>('')
 const reason=ref(''),reasonError=ref(''),error=ref(''),busy=ref(false),historyBusy=ref(false),id=ref(''),lookup=ref('')
 const fresh=ref(false),attempted=ref(false),restored=ref(false),dialog=ref(false),ack=ref(false),ackError=ref(''),key=ref('')
+const closeDialog=ref(false),closeAck=ref(false),closeError=ref(''),closeKey=ref(''),closeAttempted=ref(false)
 const storage='dnf-gm.maintenance-pending'
 let alive=true,timer:ReturnType<typeof setInterval>|undefined
-const names:Record<string,string>={cancelling:'取消已保存 · 等待释放原计划',preparing:'等待只读计划',prepared:'计划已生成 · 尚未执行',queued:'确认已入队 · 未证明开始',running:'已记录执行开始 · 需核对进度',needs_review:'执行结果待核对',writers_stopped:'游戏写入组件已退出 · 尚未签发维护窗口',game_drained:'游戏退出阶段完成 · 尚非完整维护窗口',maintenance_open:'维护窗口已建立',resuming:'正在核对并恢复服务',completed:'维护流程已结束',cancelled:'预览已取消',expired:'计划已过期',rejected:'执行器已拒绝'}
+const names:Record<string,string>={close_queued:'结束维护已入队 · 等待关窗与恢复',cancelling:'取消已保存 · 等待释放原计划',preparing:'等待只读计划',prepared:'计划已生成 · 尚未执行',queued:'确认已入队 · 未证明开始',running:'已记录执行开始 · 需核对进度',needs_review:'执行结果待核对',writers_stopped:'游戏写入组件已退出 · 尚未签发维护窗口',game_drained:'游戏退出阶段完成 · 尚非完整维护窗口',maintenance_open:'维护窗口已建立',resuming:'正在核对并恢复服务',completed:'维护流程已结束',cancelled:'预览已取消',expired:'计划已过期',rejected:'执行器已拒绝'}
 const phases:Record<string,string>={'window-issue-intent':'已记录维护窗口签发意向','window-issued':'维护窗口签发已记录','window-close-intent':'已记录关闭维护窗口意向','window-closed':'窗口已关闭并完成数据库核对','restore-marker-intent':'已记录恢复原启动标记意向','restore-marker-applied':'原启动标记已恢复','restore-start-intent':'已记录组件启动意向','restore-start-sent':'组件启动命令已返回','service-restored':'组件已按原计划恢复','services-restored':'原活动组件恢复阶段完成','gate-release-intent':'已记录解除普通写入冻结意向','gate-released':'普通写入冻结已解除','session-completed':'窗口与恢复接续记录完成','writers-stop-started':'开始退出其余游戏写入组件','writer-inhibit-intent':'已记录组件禁止自动重启意向','writer-inhibit-applied':'组件禁止重启命令已返回','writer-marker-intent':'已记录组件停止标记意向','writer-marker-applied':'组件停止标记命令已返回','writer-signal-intent':'已记录组件退出信号意向','writer-signal-sent':'组件退出信号命令已返回','writer-stopped':'组件已按计划退出','writers-stopped':'游戏写入组件退出阶段完成','freeze-intent':'已记录冻结新写入意向','write-gate-frozen':'普通游戏写入已冻结','database-drained':'已核对原数据库普通写事务结束','drain-started':'开始游戏退出阶段','inhibit-intent':'已记录禁止自动重启意向','inhibit-applied':'禁止自动重启命令已返回','marker-intent':'已记录停止标记意向','marker-applied':'停止标记命令已返回','signal-intent':'已记录退出信号意向','signal-sent':'退出信号命令已返回','game-drained':'游戏进程已正常退出','drain-finished':'游戏退出阶段记录完成'}
 const terminal=computed(()=>['cancelled','expired','rejected','completed'].includes(detail.value?.result?.state))
 const canConfirm=computed(()=>fresh.value&&detail.value?.can_confirm&&state.value?.write_gate?.state==='open'&&!attempted.value&&!restored.value&&!busy.value)
+const canClose=computed(()=>fresh.value&&detail.value?.can_close&&!closeAttempted.value&&!busy.value)
 const displayedState=computed(()=>{const result=detail.value?.result?.state,status=detail.value?.status;
+ if(detail.value?.close_requested&&result==='maintenance_open')return 'close_queued';
  if(status==='queued'&&(!result||result==='prepared'))return 'queued';
  if(status==='cancelled'&&!['cancelled','expired','rejected','completed'].includes(result))return 'cancelling';
  return result||status})
@@ -22,7 +25,7 @@ const observationNames:Record<string,string>={down_waiting_restore:'组件保持
 const active=computed(()=>!!id.value&&!terminal.value)
 function date(value:any){return typeof value==='number'?new Date(value*1000).toLocaleString('zh-CN',{hour12:false}):'未知'}
 function fail(e:unknown){error.value=uncertainMessage(e);if(e instanceof ApiError){if(e.status===401)emit('expired');if(e.status===403&&e.message.includes('重新认证'))emit('reauth')}}
-function save(requestId:string){try{sessionStorage.setItem(storage,JSON.stringify({id:requestId}));return true}catch{error.value='浏览器无法保存待核对编号，本次未提交。请允许会话存储后再操作。';return false}}
+function save(requestId:string){try{sessionStorage.setItem(storage,JSON.stringify({id:requestId,...(closeKey.value?{closeKey:closeKey.value}:{})}));return true}catch{error.value='浏览器无法保存待核对编号，本次未提交。请允许会话存储后再操作。';return false}}
 function forget(){try{sessionStorage.removeItem(storage)}catch{}}
 async function loadState(){try{const result=await api('/maintenance');if(alive)state.value=result}catch(e){if(alive){state.value=null;fail(e)}}}
 async function loadHistory(reset=false){if(historyBusy.value)return;historyBusy.value=true;const at=reset?'':cursor.value;if(at===null){historyBusy.value=false;return}
@@ -32,23 +35,34 @@ async function inspect(target=id.value){if(busy.value)return;if(!/^[a-f0-9]{32}$
  if(active.value&&id.value!==target){error.value='请先核对当前未结束的申请；不会替换或丢弃原编号。';return}
  busy.value=true;error.value='';fresh.value=false
  try{const result=await api('/maintenance/requests/'+target);if(!alive)return
- if(target!==id.value){restored.value=true;attempted.value=true;id.value=target;save(target)}
- detail.value=result;fresh.value=true;if(terminal.value)forget()
+ if(target!==id.value){restored.value=true;attempted.value=true;closeKey.value='';closeAttempted.value=false;id.value=target;save(target)}
+ detail.value=result;fresh.value=true;closeAttempted.value=!!result.close_requested;if(terminal.value)forget()
  }catch(e){if(alive)fail(e)}finally{if(alive)busy.value=false}}
 async function prepare(){if(busy.value||active.value)return;reasonError.value='';error.value=''
  if(reason.value.trim().length<2){reasonError.value='请填写至少两个字的维护原因。';return}
- const next=crypto.randomUUID().replaceAll('-','');if(!save(next))return
+ const next=crypto.randomUUID().replaceAll('-','');closeKey.value='';closeAttempted.value=false;if(!save(next))return
  id.value=next;attempted.value=true;restored.value=false;detail.value=null;fresh.value=false;busy.value=true
  try{const result=await api('/maintenance/requests','POST',{request_id:next,reason:reason.value.trim()});if(alive){detail.value=result;fresh.value=true;attempted.value=false;key.value=crypto.randomUUID().replaceAll('-','')}}
  catch(e){if(alive){fail(e);error.value+='；编号已保留，请只查询原申请，不要重复新建。'}}
  finally{if(alive){busy.value=false;void loadHistory(true)}}}
 function openConfirm(){if(!canConfirm.value)return;ack.value=false;ackError.value='';dialog.value=true}
 async function confirm(){if(!canConfirm.value)return;if(!ack.value){ackError.value='请先确认会断开当前游戏玩家。';return}
- if(!save(id.value))return
+ if(!save(id.value)){ackError.value=error.value;return}
  const fingerprint=detail.value.result.fingerprint;attempted.value=true;dialog.value=false;busy.value=true;error.value='';fresh.value=false
  try{const result=await api('/maintenance/requests/'+id.value+'/confirm','POST',{idempotency_key:key.value,fingerprint,acknowledge_disconnect:true});if(alive){detail.value=result;fresh.value=true}}
  catch(e){if(alive){fail(e);error.value+='；确认结果可能未知，只查询原编号，不自动重发。'}}
  finally{if(alive){busy.value=false;void loadHistory(true)}}}
+function openClose(){if(!canClose.value)return;closeAck.value=false;closeError.value='';closeDialog.value=true}
+async function closeMaintenance(){if(!canClose.value)return
+ if(!closeAck.value){closeError.value='请先确认关闭装备维护窗口并恢复原游戏组件。';return}
+ if(!closeKey.value)closeKey.value=crypto.randomUUID().replaceAll('-','')
+ if(!save(id.value)){closeError.value=error.value;return}
+ const fingerprint=detail.value.result.fingerprint
+ closeAttempted.value=true;closeDialog.value=false;busy.value=true;error.value='';fresh.value=false
+ try{const result=await api('/maintenance/requests/'+id.value+'/close','POST',{idempotency_key:closeKey.value,fingerprint,acknowledge_restore:true});if(alive){detail.value=result;fresh.value=true;if(terminal.value)forget()}}
+ catch(e){if(alive){fail(e);error.value+='；结束维护结果待核对，编号已保留，请只查询原申请，不自动重发。'}}
+ finally{if(alive){busy.value=false;void loadHistory(true)}}
+}
 async function cancel(){if(busy.value||!detail.value?.can_cancel)return;busy.value=true;error.value='';fresh.value=false
  try{const result=await api('/maintenance/requests/'+id.value+'/cancel','POST');if(alive){detail.value=result;fresh.value=true;attempted.value=true;if(terminal.value)forget()}}
  catch(e){if(alive)fail(e)}finally{if(alive){busy.value=false;void loadHistory(true)}}}
@@ -58,9 +72,9 @@ async function dispatch(){if(busy.value||!detail.value?.retry_dispatch_allowed)r
 async function observe(){if(busy.value||!detail.value?.can_observe)return;busy.value=true;error.value=''
  try{const result=await api('/maintenance/requests/'+id.value+'/observe','POST');if(alive){detail.value=result;fresh.value=true}}
  catch(e){if(alive)fail(e)}finally{if(alive)busy.value=false}}
-function reset(){if(busy.value||active.value)return;forget();id.value='';detail.value=null;lookup.value='';attempted.value=false;restored.value=false;fresh.value=false;error.value=''}
+function reset(){if(busy.value||active.value)return;forget();closeKey.value='';closeAttempted.value=false;id.value='';detail.value=null;lookup.value='';attempted.value=false;restored.value=false;fresh.value=false;error.value=''}
 onMounted(async()=>{void loadState();void loadHistory(true)
- try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(/^[a-f0-9]{32}$/.test(saved?.id)){id.value=saved.id;attempted.value=true;restored.value=true;await inspect(saved.id)}}catch{}
+ try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(/^[a-f0-9]{32}$/.test(saved?.id)){id.value=saved.id;closeKey.value=/^[a-f0-9]{32}$/.test(saved.closeKey)?saved.closeKey:'';closeAttempted.value=!!closeKey.value;attempted.value=true;restored.value=true;await inspect(saved.id)}}catch{}
  timer=setInterval(()=>{if(!document.hidden&&!busy.value){if(active.value)void inspect();void loadState()}},10000)
 })
 onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
@@ -85,7 +99,7 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
    <p v-if="detail.status==='cancelled'&&!terminal" class="notice">取消已保存，正在等待执行器释放原计划；这不是停服后的恢复。</p>
    <p v-if="detail.result?.window_requires_live_check" class="notice">窗口签发记录不代表现在仍然有效；装备提交前会重新核对实时许可。</p>
    <p v-if="detail.result?.error" class="submit-error">执行记录：{{detail.result.error}}。不要换编号重复执行。</p>
-   <p v-if="restored" class="field-hint">从历史或刷新恢复的申请只做查询，不自动恢复确认按钮。尚未确认的计划可以取消后重新申请。</p>
+   <p v-if="restored" class="field-hint">从历史或刷新恢复后，不会自动执行。尚未确认的计划可以取消；已经开启的维护窗口可以核对后明确结束维护并恢复服务。</p>
    <section v-if="detail.result?.ordinary_outcomes" class="maintenance-observation" aria-label="维护前结果核对">
     <h4>维护前结果核对</h4>
     <p>中断奖励：确认已提交 {{detail.result.ordinary_outcomes.rewards_committed}} 项 · 确认未提交 {{detail.result.ordinary_outcomes.rewards_failed}} 项</p>
@@ -102,11 +116,19 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
    </section>
    <ol v-if="detail.result?.events?.length" class="maintenance-events"><li v-for="event in detail.result.events" :key="event.sequence"><b>{{phases[event.phase]||event.phase}}</b><span>{{event.service||'维护流程'}} · {{date(event.at)}}</span></li></ol>
   </template>
-  <div class="toolbar"><button :disabled="busy" @click="inspect()">只查询原申请</button><button v-if="detail?.can_observe" :disabled="busy||detail?.observation_pending" @click="observe">核对实际状态（只读）</button><button v-if="canConfirm" class="danger" @click="openConfirm">核对并确认维护</button><button v-if="detail?.can_cancel" :disabled="busy" @click="cancel">取消尚未执行的计划</button><button v-if="detail?.retry_dispatch_allowed&&!detail?.receipt_error" :disabled="busy" @click="dispatch">补投递原申请</button><button v-if="terminal" :disabled="busy" @click="reset">结束查看</button></div>
+  <div class="toolbar"><button :disabled="busy" @click="inspect()">只查询原申请</button><button v-if="detail?.can_observe" :disabled="busy||detail?.observation_pending" @click="observe">核对实际状态（只读）</button><button v-if="canConfirm" class="danger" @click="openConfirm">核对并确认维护</button><button v-if="canClose" class="primary" @click="openClose">结束维护并恢复服务</button><button v-if="detail?.can_cancel" :disabled="busy" @click="cancel">取消尚未执行的计划</button><button v-if="detail?.retry_dispatch_allowed&&!detail?.receipt_error" :disabled="busy" @click="dispatch">补投递原申请</button><button v-if="terminal" :disabled="busy" @click="reset">结束查看</button></div>
  </section>
  <form class="toolbar" @submit.prevent="inspect(lookup)" novalidate><input v-model="lookup" aria-label="维护申请编号" placeholder="粘贴32位原申请编号"><button :disabled="busy">按编号查询</button></form>
  <div class="section-title"><h3>维护申请历史</h3><button :disabled="historyBusy" @click="loadHistory(true)">刷新历史</button></div>
  <p v-if="!history.length" class="empty">尚无已读取的维护申请。</p><div class="table-wrap" v-else><table><thead><tr><th>申请时间</th><th>原因</th><th>提交状态</th><th>操作</th></tr></thead><tbody><tr v-for="row in history" :key="row.operation_id"><td>{{date(row.created_at)}}</td><td>{{row.reason}}</td><td>{{names[row.status]||row.status}}</td><td><button :disabled="busy" @click="inspect(row.operation_id)">查看记录</button></td></tr></tbody></table></div><button v-if="cursor" :disabled="historyBusy" @click="loadHistory()">加载更早申请</button>
+ <Modal v-if="closeDialog" title="结束维护并恢复服务" :busy="busy" @close="closeDialog=false">
+  <p class="warning">将先关闭当前装备维护窗口，核对未决装备操作，再按进入维护前的状态恢复游戏组件。不会回滚已完成的装备修改，不会操作 mihomo、cliproxyapi 或共享 Docker。</p>
+  <p>申请编号：{{id}}</p><p>维护原因：{{detail?.reason}}</p>
+  <p class="field-hint">恢复完成前不要新建维护。页面超时只查询原申请；关闭“新维护”功能开关不妨碍结束已有维护。</p>
+  <label class="maintenance-ack"><input v-model="closeAck" type="checkbox" aria-label="确认关闭维护窗口并恢复服务" :aria-invalid="!!closeError" :aria-describedby="closeError?'maintenance-close-error':undefined">我已完成装备维护，确认关闭窗口并恢复原游戏组件。</label>
+  <FieldError id="maintenance-close-error" :message="closeError"/>
+  <template #footer><button @click="closeDialog=false">返回核对</button><button class="primary" :disabled="!canClose" @click="closeMaintenance">确认结束并恢复</button></template>
+ </Modal>
  <Modal v-if="dialog" title="确认游戏维护" :busy="busy" @close="dialog=false"><p class="warning">将按已核对的计划断开游戏玩家并退出游戏组件。MySQL保留运行。退出阶段完成不等于维护已完成，也不会自动恢复或重复发送退出信号。</p><p>原因：{{detail?.reason}}</p><p>申请编号：{{id}}</p><p>游戏组件：{{detail?.result?.games?.join('、')||'以计划为准'}}</p><label class="maintenance-ack"><input v-model="ack" type="checkbox" aria-label="确认断开当前游戏玩家" :aria-invalid="!!ackError" :aria-describedby="ackError?'maintenance-ack-error':undefined">我确认会断开当前游戏玩家，并按原申请跟踪维护与恢复。</label><FieldError id="maintenance-ack-error" :message="ackError"/><template #footer><button @click="dialog=false">返回核对</button><button class="danger" :disabled="!canConfirm" @click="confirm">确认执行一次</button></template></Modal>
 </section>
 </template>

@@ -103,3 +103,68 @@ it('shows reconciled outcomes without calling unknown native effects successful 
  expect(panel.text()).toContain('不是游戏内效果证明')
  expect(posts()).toHaveLength(0)
 })
+
+describe('explicit close and restore',()=>{
+ async function openWindow(){
+  record={...planned(),status:'queued',can_confirm:false,can_cancel:false,can_close:true,result:{state:'maintenance_open',fingerprint},close_requested:false}
+  ready={...ready,enabled:false,write_gate:{state:'frozen'}}
+  sessionStorage.setItem(storage,JSON.stringify({id}))
+  const w=setup();await flushPromises();return w
+ }
+ it('allows owner to explicitly close a restored historical window with new maintenance disabled',async()=>{
+  const w=await openWindow();expect(posts()).toHaveLength(0)
+  expect(w.text()).toContain('结束维护并恢复服务')
+  await click(w,'结束维护并恢复服务');await click(w,'确认结束并恢复')
+  expect(w.find('#maintenance-close-error').text()).toContain('请先确认');expect(posts()).toHaveLength(0)
+  const old=vi.mocked(api).getMockImplementation()!
+  vi.mocked(api).mockImplementation(async(path,method,body:any)=>{
+   if(path.endsWith('/close')){
+    expect(JSON.parse(sessionStorage.getItem(storage)!).closeKey).toBe(body.idempotency_key)
+    expect(body).toEqual({idempotency_key:id,fingerprint,acknowledge_restore:true})
+    record={...record,can_close:false,close_requested:true,close_operation_id:'c'.repeat(32)};return {...record}
+   }
+   return old(path,method,body)
+  })
+  await w.find('[aria-label="确认关闭维护窗口并恢复服务"]').setValue(true)
+  await click(w,'确认结束并恢复')
+  expect(posts()).toHaveLength(1);expect(w.text()).toContain('结束维护已入队')
+  expect(w.findAll('button').some((b:any)=>b.text()==='结束维护并恢复服务')).toBe(false)
+ })
+ it('timeout preserves close key and refresh only queries without replay',async()=>{
+  const w=await openWindow();const old=vi.mocked(api).getMockImplementation()!
+  vi.mocked(api).mockImplementation(async(path,method,body)=>{
+   if(path.endsWith('/close'))throw new TypeError('network timeout')
+   return old(path,method,body)
+  })
+  await click(w,'结束维护并恢复服务');await w.find('[aria-label="确认关闭维护窗口并恢复服务"]').setValue(true)
+  await click(w,'确认结束并恢复')
+  const saved=JSON.parse(sessionStorage.getItem(storage)!);expect(saved.closeKey).toBe(id)
+  expect(w.text()).toContain('只查询原申请');expect(posts()).toHaveLength(1)
+  w.unmount();const remount=setup();await flushPromises();expect(posts()).toHaveLength(1)
+  expect(JSON.parse(sessionStorage.getItem(storage)!).closeKey).toBe(id)
+  expect(remount.text()).toContain('结束维护并恢复服务')
+ })
+ it('storage failure prevents close submission',async()=>{
+  const w=await openWindow();await click(w,'结束维护并恢复服务')
+  await w.find('[aria-label="确认关闭维护窗口并恢复服务"]').setValue(true)
+  vi.stubGlobal('sessionStorage',{setItem:()=>{throw new Error('full')}})
+  await click(w,'确认结束并恢复');expect(posts()).toHaveLength(0)
+  expect(w.text()).toContain('本次未提交')
+ })
+ it('does not expose restore for stale or ambiguous root lifecycle status',async()=>{
+  const w=await openWindow()
+  for(const state of ['needs_review','writers_stopped','resuming','completed']){
+   record={...record,can_close:false,close_requested:state==='resuming',result:{state,fingerprint}}
+   await click(w,'只查询原申请')
+   expect(w.findAll('button').some((b:any)=>b.text()==='结束维护并恢复服务')).toBe(false)
+  }
+ })
+})
+
+it('new maintenance never inherits a previous completed close key',async()=>{
+ record={...initial(),status:'queued',close_requested:true,can_close:false,result:{state:'completed',fingerprint}}
+ sessionStorage.setItem(storage,JSON.stringify({id,closeKey:'c'.repeat(32)}))
+ const w=setup();await flushPromises()
+ record=initial();await prepare(w)
+ expect(JSON.parse(sessionStorage.getItem(storage)!)).toEqual({id})
+})
