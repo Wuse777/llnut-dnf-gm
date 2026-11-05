@@ -4,8 +4,10 @@ This is NOT a generic service controller or a complete maintenance worker. No
 CLI, socket, web route, service installation or automatic recovery is exposed.
 A future authenticated outbox worker supplies only request id/reason; this class
 creates the actual plan locally. Closing the browser or restarting the worker
-must never replay a command. Full writer fencing / close / resume are separate
-phases, and game_drained deliberately retains exclusive logical ownership.
+must never replay a command. New plans bind the original database UUID and
+require persistent admission freeze / transaction drain before game commands.
+Outcome reconciliation, remaining writers, close and resume are still separate
+phases; game_drained deliberately retains ownership and the frozen gate.
 """
 from contextlib import contextmanager
 import copy
@@ -19,6 +21,8 @@ import time
 from dnfgm.inventory_fence import _read, directory
 from dnfgm.release_files import Refused, atomic_json, canonical, maintenance_lock, OP, HEX
 from game_drain import GameDrain, TIMEOUT
+from maintenance_admission import validate_plan as validate_admission_plan
+from maintenance_gate import binding_hash
 
 STATE = Path('/var/lib/dnf-gm/maintenance-drain')
 GLOBAL_LOCK = Path('/var/lib/dnf-gm/maintenance.lock')
@@ -43,8 +47,9 @@ def digest(value):
 
 class DrainCoordinator:
     def __init__(self, root, host, *, lock_path=None, owner=0,
-                 clock=time.time, monotonic=time.monotonic, writer=atomic_json):
+                 clock=time.time, monotonic=time.monotonic, writer=atomic_json, admission=None):
         self.root = Path(root)
+        self.admission = admission
         self.host = host
         self.owner = owner
         self.clock, self.monotonic, self.writer = clock, monotonic, writer
@@ -128,7 +133,7 @@ class DrainCoordinator:
         self._id(request_id)
         doc = _read(self.root, request_id + '.json', self.owner, MAX_BYTES)
         try:
-            if (not isinstance(doc, dict) or doc['version'] != 1 or doc['request_id'] != request_id
+            if (not isinstance(doc, dict) or type(doc['version']) is not int or doc['version'] not in (1, 2) or doc['request_id'] != request_id
                     or doc['state'] not in STATES or doc['reason'] != self._reason(doc['reason'])
                     or not isinstance(doc['events'], list) or len(doc['events']) > 160):
                 raise ValueError()
@@ -141,6 +146,10 @@ class DrainCoordinator:
                     value = doc[field]
                     if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
                         raise ValueError()
+            if doc['version'] == 2:
+                validate_admission_plan(doc['plan']['admission'])
+            elif 'admission' in doc['plan']:
+                raise ValueError()
             plan = copy.deepcopy(doc['plan'])
             fingerprint = plan.pop('fingerprint')
             if not HEX.fullmatch(fingerprint) or digest(plan) != fingerprint:
@@ -156,7 +165,7 @@ class DrainCoordinator:
                         or event['digest'] != digest({k: v for k, v in event.items() if k != 'digest'})):
                     raise ValueError()
             # A command history must be an exact prefix of this locally prepared plan.
-            expected = self._steps(doc['plan'])
+            expected = self._steps(doc['plan'], doc['request_id'])
             if len(doc['events']) > len(expected):
                 raise ValueError()
             for event, (phase, payload) in zip(doc['events'], expected):
@@ -171,8 +180,19 @@ class DrainCoordinator:
             raise Refused('maintenance_journal_invalid') from None
 
     @staticmethod
-    def _steps(plan):
-        steps = [('drain-started', {'fingerprint': plan['fingerprint']})]
+    def _steps(plan, request_id=None):
+        steps = []
+        if 'admission' in plan:
+            a = validate_admission_plan(plan['admission'])
+            token = {'version': 1, 'state': 'frozen', 'generation': a['gate']['generation'] + 1,
+                     'operation_id': request_id, 'binding_sha256': binding_hash(plan['identity'])}
+            proof = {'protocol_version': 1, 'ordinary_transactions_drained': True,
+                     'operation_id': request_id, 'generation': token['generation'],
+                     'binding_sha256': token['binding_sha256'], 'server_uuid': a['server_uuid'],
+                     'game_writes': False, 'maintenance_permit': False}
+            steps.extend([('freeze-intent', {'server_uuid': a['server_uuid'], 'open_generation': a['gate']['generation']}),
+                          ('write-gate-frozen', token), ('database-drained', proof)])
+        steps.append(('drain-started', {'fingerprint': plan['fingerprint']}))
         for game in plan['games']:
             service = {'service': game['service']}
             steps.extend((phase, service) for phase in ('inhibit-intent', 'inhibit-applied', 'marker-intent', 'marker-applied'))
@@ -185,6 +205,11 @@ class DrainCoordinator:
 
     @staticmethod
     def _payload_equal(phase, data, expected):
+        if phase in ('write-gate-frozen', 'database-drained'):
+            time_field = 'changed_at' if phase == 'write-gate-frozen' else 'checked_at'
+            return (isinstance(data, dict) and set(data) == set(expected) | {time_field}
+                    and all(type(data[k]) is type(v) and data[k] == v for k, v in expected.items())
+                    and type(data[time_field]) in (int, float) and math.isfinite(data[time_field]) and data[time_field] >= 0)
         if phase == 'game-drained':
             return (isinstance(data, dict) and set(data) == {'service', 'exit_code', 'signum'}
                     and data['service'] == expected['service'] and type(data['exit_code']) is int
@@ -205,7 +230,7 @@ class DrainCoordinator:
                             'service': e['data'].get('service')} for e in events],
                 'command_may_have_run': any(e['phase'] in COMMAND_INTENTS for e in events),
                 'error': doc.get('error'), 'maintenance_permit': False,
-                'can_confirm': doc['state'] == 'prepared' and current,
+                'can_confirm': doc['version'] == 2 and doc['state'] == 'prepared' and current,
                 'preview_expired': doc['state'] == 'prepared' and not current,
                 'can_cancel': doc['state'] == 'prepared', 'can_replay': False,
                 'can_resume': False, 'client_verified': False}
@@ -227,9 +252,18 @@ class DrainCoordinator:
             active = self._active()
             if active and self._load(active)['state'] not in TERMINAL_NO_EFFECT:
                 raise Refused('maintenance_other_request_active')
+            if self.admission is None:
+                raise Refused('maintenance_admission_required')
+            admission_plan = self.admission.prepare()
+            validate_admission_plan(admission_plan)
             plan = GameDrain(self.host).prepare()
+            binding_hash(plan['identity'])
+            self.admission.verify_plan(admission_plan)
+            plan.pop('fingerprint')
+            plan['admission'] = admission_plan
+            plan['fingerprint'] = digest(plan)
             now, mono = self._now()
-            doc = {'version': 1, 'request_id': request_id, 'reason': reason, 'plan': plan,
+            doc = {'version': 2, 'request_id': request_id, 'reason': reason, 'plan': plan,
                    'created_at': now, 'created_monotonic': mono, 'updated_at': now,
                    'state': 'prepared', 'events': []}
             doc['binding'] = digest({k: doc[k] for k in ('request_id', 'reason', 'plan', 'created_at', 'created_monotonic')})
@@ -263,6 +297,8 @@ class DrainCoordinator:
             # only return its durable record. Never call the adapter a second time.
             if doc['state'] != 'prepared':
                 return self.view(doc)
+            if doc['version'] != 2 or self.admission is None:
+                raise Refused('maintenance_admission_required')
             self._claim(request_id)
             now, mono = self._now()
             if not (0 <= now - doc['created_at'] < PREVIEW_TTL and 0 <= mono - doc['created_monotonic'] < PREVIEW_TTL):
@@ -272,9 +308,11 @@ class DrainCoordinator:
             # Durable start boundary BEFORE all host commands, even if revalidation fails.
             doc.update(state='running', updated_at=now, started_at=now, started_monotonic=mono)
             self._write(request_id + '.json', doc)
-            steps = self._steps(doc['plan'])
+            steps = self._steps(doc['plan'], doc['request_id'])
 
             def record(phase, data):
+                if phase not in ('freeze-intent', 'write-gate-frozen', 'database-drained'):
+                    self.admission.verify_frozen(doc['events'][1]['data'])
                 index = len(doc['events'])
                 if index >= len(steps) or steps[index][0] != phase or not self._payload_equal(phase, data, steps[index][1]):
                     raise Refused('maintenance_journal_transition_invalid')
@@ -292,6 +330,11 @@ class DrainCoordinator:
                 doc.update(next_doc)
 
             try:
+                record(*steps[0])
+                token = self.admission.freeze(request_id, doc['plan']['identity'], doc['plan']['admission'])
+                record('write-gate-frozen', token)
+                proof = self.admission.drain(doc['plan']['admission'], token)
+                record('database-drained', proof)
                 GameDrain(self.host).execute(doc['plan'], record)
             except Exception as error:
                 # Read back after uncertain fsync/replace. A failed receipt write

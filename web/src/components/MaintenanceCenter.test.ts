@@ -49,3 +49,21 @@ describe('web maintenance workflow',()=>{
 it.each(['open','frozen','unknown','not_configured'])('shows %s write admission independently of feature permission without an override',async(state)=>{ready.write_gate={state,operation_id:state==='frozen'?id:''};const w=setup();await flushPromises();const status=w.find('.maintenance-write-gate');expect(status.exists()).toBe(true);expect(status.text()).toContain({open:'普通写入已开放',frozen:'维护冻结中',unknown:'状态未知',not_configured:'尚未安装维护写入屏障'}[state]!);if(state==='frozen'){expect(status.text()).toContain(id);expect(status.text()).toContain('功能权限无需重新开启')}expect(status.find('button').exists()).toBe(false);expect(posts()).toHaveLength(0)})
 
 it('removes a previously offered confirmation when status refresh finds a frozen gate',async()=>{const w=setup();await prepare(w);record=planned();await click(w,'只查询原申请');expect(w.findAll('button').some((b:any)=>b.text()==='核对并确认维护')).toBe(true);ready.write_gate={state:'frozen',operation_id:id};await click(w,'刷新执行器状态');expect(w.findAll('button').some((b:any)=>b.text()==='核对并确认维护')).toBe(false);expect(posts()).toHaveLength(1)})
+
+it('renders database-admission stages without presenting transaction drain as a maintenance permit',async()=>{
+ record={...initial(),status:'queued',can_cancel:false,result:{state:'needs_review',maintenance_permit:false,events:[
+  {sequence:1,phase:'freeze-intent',at:1000},
+  {sequence:2,phase:'write-gate-frozen',at:1001},
+  {sequence:3,phase:'database-drained',at:1002},
+ ]}}
+ ready.write_gate={state:'frozen',operation_id:id}
+ sessionStorage.setItem(storage,JSON.stringify({id}))
+ const w=setup();await flushPromises()
+ expect(w.text()).toContain('已记录冻结新写入意向')
+ expect(w.text()).toContain('普通游戏写入已冻结')
+ expect(w.text()).toContain('已核对原数据库普通写事务结束')
+ expect(w.text()).toContain('执行结果待核对')
+ expect(w.text()).not.toContain('维护窗口已建立')
+ expect(w.text()).not.toContain('确认执行一次')
+ expect(posts()).toHaveLength(0)
+})

@@ -10,7 +10,7 @@ from game_drain import GameDrain, PROGRAMS, DEPENDENCIES, Refused
 class FakeHost:
     def __init__(self):
         self.cfg={'components':['mysql','game_siroco11','game_template','mysql-log']}
-        self.ident={'container_id':'c'*64,'pid':101,'boot_id':'fixture','container_started_at':'fixture',
+        self.ident={'container_id':'c'*64,'pid':101,'boot_id':'12345678-1234-1234-1234-123456789abc','container_started_at':'fixture',
                     'image_digest':'sha256:'+'a'*64,'program_sha256':next(iter(PROGRAMS)),'pvf_sha256':'b'*64,'policy_sha256':'d'*64}
         self.rows={'mysql':(True,True,True,False,3),'mysql-log':(True,True,True,True,4),
                    'game_siroco11':(True,True,True,True,9),'game_template':(False,False,False,False,-1)}

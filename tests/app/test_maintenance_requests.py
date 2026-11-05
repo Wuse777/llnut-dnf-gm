@@ -10,6 +10,7 @@ from dnfgm import maintenance_requests as mod
 from dnfgm.release_files import atomic_json
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'deploy'))
 from maintenance_drain import DrainCoordinator
+from maintenance_fixtures import admission
 from maintenance_outbox import PreparationWorker
 from test_game_drain import FakeHost
 
@@ -31,7 +32,7 @@ def setup(env,tmp_path,monkeypatch):
     host=FakeHost();s.image_digest=host.ident['image_digest'];s.pvf_sha256=host.ident['pvf_sha256'];s.inventory_program_sha256=host.ident['program_sha256']
     host.cfg.update({k:host.ident[k] for k in ('image_digest','pvf_sha256','program_sha256')})
     status=Path(s.status_file);d=json.loads(status.read_text());d.update(image_digest=s.image_digest,pvf_sha256=s.pvf_sha256);status.write_text(json.dumps(d))
-    coordinator=DrainCoordinator(tmp_path/'journal',host,owner=os.geteuid());coordinator.initialize()
+    coordinator=DrainCoordinator(tmp_path/'journal',host,owner=os.geteuid(),admission=admission(tmp_path));coordinator.initialize()
     worker=PreparationWorker(root,coordinator,os.geteuid(),owner=os.geteuid())
     worker.tick()
     return client,s,db,app,worker,coordinator,host,root

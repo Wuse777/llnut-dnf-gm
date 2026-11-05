@@ -9,6 +9,7 @@ import pytest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'deploy'))
 from maintenance_outbox import PreparationWorker, validate_packet
 from maintenance_drain import DrainCoordinator
+from maintenance_fixtures import admission
 from dnfgm.maintenance_requests import packet
 from dnfgm.release_files import atomic_json, read_json, Refused
 from test_game_drain import FakeHost
@@ -21,7 +22,7 @@ def rig(tmp_path):
     root=tmp_path/'transport';root.mkdir(mode=0o755)
     (root/'results').mkdir(mode=0o755);(root/'inbox').mkdir(mode=0o770)
     h=FakeHost();h.cfg.update({k:h.ident[k] for k in ('image_digest','pvf_sha256','program_sha256')})
-    c=DrainCoordinator(tmp_path/'journal',h,owner=os.geteuid());c.initialize()
+    c=DrainCoordinator(tmp_path/'journal',h,owner=os.geteuid(),admission=admission(tmp_path));c.initialize()
     worker=PreparationWorker(root,c,os.geteuid(),owner=os.geteuid())
     request={'operation_id':OP,'reason':'维护测试','created_at':int(time.time()),**{k:h.ident[k] for k in ('image_digest','pvf_sha256','program_sha256')}}
     return root,h,c,worker,request

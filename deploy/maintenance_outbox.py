@@ -48,7 +48,7 @@ class PreparationWorker:
         cfg=self.coordinator.host.cfg
         atomic_json(self.root/'status.json',{'version':1,'collected_at':self.clock(),
                     'image_digest':cfg['image_digest'],'pvf_sha256':cfg['pvf_sha256'],
-                    'program_sha256':cfg['program_sha256'],'prepare_supported':True,'execute_supported':False})
+                    'program_sha256':cfg['program_sha256'],'prepare_supported':self.coordinator.admission is not None,'execute_supported':False})
 
     def previous(self, data):
         try:prior=read_json(self.root/'results'/(data['operation_id']+'.json'),owner=self.owner,limit=65536)

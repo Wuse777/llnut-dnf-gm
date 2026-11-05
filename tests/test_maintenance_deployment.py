@@ -7,6 +7,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'deploy'))
 from check_maintenance_idle import assert_idle
 from maintenance_drain import DrainCoordinator, Refused
+from maintenance_fixtures import admission
 from dnfgm.release_files import atomic_json
 from test_game_drain import FakeHost
 
@@ -15,7 +16,7 @@ from test_game_drain import FakeHost
 def rig(tmp_path):
     state, runtime = tmp_path / 'private', tmp_path / 'runtime'
     host = FakeHost()
-    coordinator = DrainCoordinator(state, host, owner=os.geteuid())
+    coordinator = DrainCoordinator(state, host, owner=os.geteuid(), admission=admission(tmp_path))
     def check():
         return assert_idle(state=state, runtime=runtime, owner=os.geteuid())
     return coordinator, runtime, host, check

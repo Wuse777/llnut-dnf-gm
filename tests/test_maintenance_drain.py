@@ -10,6 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'deploy'))
 from maintenance_drain import DrainCoordinator, PREVIEW_TTL, Refused, digest
+from maintenance_fixtures import admission
 from dnfgm.release_files import atomic_json, maintenance_lock
 from test_game_drain import FakeHost
 
@@ -22,7 +23,8 @@ def rig(tmp_path):
     host = FakeHost()
     now = [1000.0, 50.0]
     broker = DrainCoordinator(tmp_path / 'journal', host, owner=os.geteuid(),
-                              clock=lambda: now[0], monotonic=lambda: now[1])
+                              clock=lambda: now[0], monotonic=lambda: now[1],
+                              admission=admission(tmp_path, clock=lambda: now[0]))
     broker.initialize()
     return broker, host, now
 
@@ -33,7 +35,7 @@ def prepare(broker):
 
 def restart(broker):
     return DrainCoordinator(broker.root, broker.host, lock_path=broker.lock_path,
-                            owner=os.geteuid(), clock=broker.clock, monotonic=broker.monotonic)
+                            owner=os.geteuid(), clock=broker.clock, monotonic=broker.monotonic, admission=broker.admission)
 
 
 def signals(host):
@@ -69,7 +71,7 @@ def test_complete_drain_has_ordered_durable_commands_not_a_maintenance_permit(ri
     host.command = command
     result = broker.confirm(RID, first['fingerprint'])
     assert seen == ['inhibit-intent', 'marker-intent', 'signal-intent']
-    assert result['state'] == 'game_drained' and result['revision'] == 9
+    assert result['state'] == 'game_drained' and result['revision'] == 12
     assert result['maintenance_permit'] is False and result['can_resume'] is False
     assert result['command_may_have_run'] is True and result['client_verified'] is False
     calls = copy.deepcopy(host.calls)
@@ -143,7 +145,7 @@ def test_coordinator_lock_serializes_start_cancel_and_plan_changes(rig):
     assert not host.calls
 
 
-@pytest.mark.parametrize('phase', ['drain-started', 'inhibit-intent', 'inhibit-applied', 'marker-intent',
+@pytest.mark.parametrize('phase', ['freeze-intent', 'write-gate-frozen', 'database-drained', 'drain-started', 'inhibit-intent', 'inhibit-applied', 'marker-intent',
                                    'marker-applied', 'signal-intent', 'signal-sent', 'game-drained', 'drain-finished'])
 @pytest.mark.parametrize('after_replace', [False, True])
 def test_lost_persistence_at_every_phase_never_replays_commands(rig, phase, after_replace):
@@ -172,7 +174,7 @@ def test_lost_persistence_at_every_phase_never_replays_commands(rig, phase, afte
         resumed.prepare(OTHER, '另一个编号也不能绕过')
 
 
-@pytest.mark.parametrize('stage', ['running', 'inhibit-intent', 'marker-intent', 'signal-intent', 'signal-sent'])
+@pytest.mark.parametrize('stage', ['running', 'freeze-intent', 'write-gate-frozen', 'database-drained', 'inhibit-intent', 'marker-intent', 'signal-intent', 'signal-sent'])
 def test_hard_worker_death_has_no_automatic_replay_after_restart(rig, stage):
     broker, host, _ = rig
     first = prepare(broker)

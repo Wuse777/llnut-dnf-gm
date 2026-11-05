@@ -10,7 +10,7 @@ const fresh=ref(false),attempted=ref(false),restored=ref(false),dialog=ref(false
 const storage='dnf-gm.maintenance-pending'
 let alive=true,timer:ReturnType<typeof setInterval>|undefined
 const names:Record<string,string>={cancelling:'取消已保存 · 等待释放原计划',preparing:'等待只读计划',prepared:'计划已生成 · 尚未执行',queued:'确认已入队 · 未证明开始',running:'已记录执行开始 · 需核对进度',needs_review:'执行结果待核对',game_drained:'游戏退出阶段完成 · 尚非完整维护窗口',maintenance_open:'维护窗口已建立',resuming:'正在核对并恢复服务',completed:'维护流程已结束',cancelled:'预览已取消',expired:'计划已过期',rejected:'执行器已拒绝'}
-const phases:Record<string,string>={'drain-started':'开始游戏退出阶段','inhibit-intent':'已记录禁止自动重启意向','inhibit-applied':'禁止自动重启命令已返回','marker-intent':'已记录停止标记意向','marker-applied':'停止标记命令已返回','signal-intent':'已记录退出信号意向','signal-sent':'退出信号命令已返回','game-drained':'游戏进程已正常退出','drain-finished':'游戏退出阶段记录完成'}
+const phases:Record<string,string>={'freeze-intent':'已记录冻结新写入意向','write-gate-frozen':'普通游戏写入已冻结','database-drained':'已核对原数据库普通写事务结束','drain-started':'开始游戏退出阶段','inhibit-intent':'已记录禁止自动重启意向','inhibit-applied':'禁止自动重启命令已返回','marker-intent':'已记录停止标记意向','marker-applied':'停止标记命令已返回','signal-intent':'已记录退出信号意向','signal-sent':'退出信号命令已返回','game-drained':'游戏进程已正常退出','drain-finished':'游戏退出阶段记录完成'}
 const terminal=computed(()=>['cancelled','expired','rejected','completed'].includes(detail.value?.result?.state))
 const canConfirm=computed(()=>fresh.value&&detail.value?.can_confirm&&state.value?.write_gate?.state==='open'&&!attempted.value&&!restored.value&&!busy.value)
 const displayedState=computed(()=>{const result=detail.value?.result?.state,status=detail.value?.status;

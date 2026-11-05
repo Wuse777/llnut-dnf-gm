@@ -125,7 +125,14 @@ class GameDrain:
         actual state. It must NOT call execute again or automatically reopen login.
         """
         expected=copy.deepcopy(plan)
-        if self.prepare()!=expected:raise Refused('maintenance_drain_preview_changed')
+        core=copy.deepcopy(expected)
+        if 'admission' in core:
+            # Root coordinator has already journaled/verified this precondition.
+            # Compare the game snapshot independently; all events retain the
+            # fingerprint of the complete reviewed plan.
+            core.pop('admission');core.pop('fingerprint')
+            core['fingerprint']=hashlib.sha256(canonical(core)).hexdigest()
+        if self.prepare()!=core:raise Refused('maintenance_drain_preview_changed')
         if not callable(record):raise Refused('maintenance_durable_recorder_required')
         h=self.host;cid=expected['identity']['container_id']
         record('drain-started',{'fingerprint':expected['fingerprint']})

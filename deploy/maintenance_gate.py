@@ -66,14 +66,19 @@ class WriteGateManager:
     def read(self):return validate(_read(self.root,'state.json',self.owner,4096))
     def save(self,state):atomic_json(self.root/'state.json',validate(state))
 
-    def freeze(self,operation_id,identity):
+    def freeze(self,operation_id,identity,*,expected_state=None):
         if not isinstance(operation_id,str) or not re.fullmatch('[a-f0-9]{32}',operation_id):raise Refused('write_gate_operation_invalid')
         binding=binding_hash(identity)
+        if expected_state is not None:
+            validate(expected_state)
+            if expected_state['state']!='open':raise Refused('write_gate_preview_changed')
         with self.locked(True):
             old=self.read()
             if old['state']=='frozen':
-                if old['operation_id']==operation_id and old['binding_sha256']==binding:return old
+                if (old['operation_id']==operation_id and old['binding_sha256']==binding
+                        and (expected_state is None or old['generation']==expected_state['generation']+1)):return old
                 raise Refused('write_gate_owned_by_other_request')
+            if expected_state is not None and old!=expected_state:raise Refused('write_gate_preview_changed')
             if old['operation_id']==operation_id:raise Refused('write_gate_request_already_released')
             state={**old,'state':'frozen','generation':old['generation']+1,'operation_id':operation_id,
                    'binding_sha256':binding,'changed_at':self.clock()}

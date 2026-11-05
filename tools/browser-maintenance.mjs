@@ -44,8 +44,11 @@ try{
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:output+'/mobile-confirm.png'});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await page.getByRole('checkbox',{name:'确认断开当前游戏玩家',exact:true}).check();await page.getByRole('button',{name:'确认执行一次',exact:true}).click();
  await page.getByRole('heading',{name:'确认已入队 · 未证明开始',exact:true}).waitFor();assert.equal(calls.filter(c=>c.method==='POST').length,2);
- record={...record,result:{...record.result,state:'game_drained',maintenance_permit:false,events:[{sequence:1,phase:'signal-intent',at:Date.now()/1000,service:'game_fixture'}]}};
+ record={...record,result:{...record.result,state:'game_drained',maintenance_permit:false,events:[{sequence:1,phase:'freeze-intent',at:Date.now()/1000},{sequence:2,phase:'write-gate-frozen',at:Date.now()/1000},{sequence:3,phase:'database-drained',at:Date.now()/1000},{sequence:4,phase:'signal-intent',at:Date.now()/1000,service:'game_fixture'}]}};
  await page.getByRole('button',{name:'只查询原申请',exact:true}).click();await page.getByRole('heading',{name:'游戏退出阶段完成 · 尚非完整维护窗口',exact:true}).waitFor();
+ await page.getByText('已记录冻结新写入意向',{exact:true}).waitFor();
+ await page.getByText('普通游戏写入已冻结',{exact:true}).waitFor();
+ await page.getByText('已核对原数据库普通写事务结束',{exact:true}).waitFor();
  await page.getByRole('button',{name:'核对实际状态（只读）',exact:true}).click();await page.getByText('核对请求已排队；下方如有记录，仅代表上次核对。',{exact:true}).waitFor();
  record={...record,observation_pending:false,result:{...record.result,observation:{state:'observed',collected_at:Date.now()/1000,games:[{service:'game_fixture',state:'down_normal'}]}}};
  await page.getByRole('button',{name:'只查询原申请',exact:true}).click();await page.getByText('game_fixture：进程正常退出（不是存档验收凭据）',{exact:true}).waitFor();
@@ -57,5 +60,5 @@ try{
  await page.locator('.maintenance-write-gate').scrollIntoViewIfNeeded();await page.screenshot({path:output+'/mobile-write-freeze.png'});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  assert.equal(await page.locator('.maintenance-write-gate button').count(),0);
  assert.equal(calls.filter(c=>c.method==='POST').length,3);assert.equal(errors.length,0,JSON.stringify(errors));
- console.log(JSON.stringify({passed:true,desktop:true,mobile:true,reloadGetOnly:true,postPaths:calls.filter(c=>c.method==='POST').map(c=>c.path),screenshots:output}));
+ console.log(JSON.stringify({passed:true,desktop:true,mobile:true,reloadGetOnly:true,databaseAdmissionStages:true,postPaths:calls.filter(c=>c.method==='POST').map(c=>c.path),screenshots:output}));
 }finally{await browser.close();await new Promise(r=>fixture.close(r))}
