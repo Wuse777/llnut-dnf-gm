@@ -27,6 +27,8 @@
 
 - `dof-dev/godof`，commit `7a272861f6c733386239702a0b023a7b7f2cbd3f`：`npk/npk.go`、`npk/file.go`、`npk/consts.go`、`npk/img/v2.go`、`v4.go`、`npk/image/`及`formatter/`的格式定义，用于核对NPK目录、IMG元数据、像素顺序及调色板布局。
 - `HsOjo/PyDnfEx`，commit `e417cefe43f54a40e20ef0df235aa1c8ecd8595a`：`pydnfex/img/image/link.py`，用于交叉核对格式17链接帧字段。
+- 2026-11-06追加核对上述godof同一提交的`npk/image/consts.go`：格式18／19／20对应DXT1／3／5，压缩5／6分别raw／zlib。只读取格式定义，不采用其解码器或未验证的通用像素长度表。
+- Microsoft官方Direct3D文档：`MicrosoftDocs/win32`的`desktop-src/direct3d10/d3d10-graphics-programming-guide-resources-block-compression.md`（核对时blob `4ff2dd9c512dddc7cc071ff234e5fefbcf5defd4`），以及Direct3D9的Opaque and 1-Bit Alpha Textures、Textures with Alpha Channels。用于独立实现BC1／BC2／BC3块布局、RGB565、显式／插值Alpha、物理块边界；不复制文档代码或插图。
 - `npk_assets.py`、`asset_builder.py`独立实现；未复制这些项目代码、图片、客户端或素材，不将其安装为运行依赖。格式实现已进行合成数据测试，但尚缺匹配客户端NPK实物验证。支持与未支持范围见`docs/ASSETS.md`。
 
 

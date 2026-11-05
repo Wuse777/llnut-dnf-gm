@@ -126,11 +126,80 @@ class Npk:
         return data
 
 
-def decode_img(data,index):
-    """v2/v4 common frames, links, ARGB1555/4444/BGRA8888 and v4 palette.
 
-    DXT, sprite-compressed, v1 and v5 are explicit unsupported states, not blank
-    or guessed images. Both cropped and transparent canvas bounds are checked.
+def dxt_size(width, height, fmt):
+    """BC1/2/3 physical block size, including partial edge blocks."""
+    if (type(width) is not int or type(height) is not int
+            or not 1 <= width <= 512 or not 1 <= height <= 512
+            or type(fmt) is not int or fmt not in (18, 19, 20)):
+        raise AssetFormatError('Invalid DXT raster dimensions or format')
+    return ((width + 3) // 4) * ((height + 3) // 4) * (8 if fmt == 18 else 16)
+
+
+def decode_dxt(raw, width, height, fmt):
+    """Independent, offline-only DXT1/3/5 -> straight RGBA8 decoder.
+
+    Format identifiers come from the NPK format reference; block layout and
+    interpolation come from Microsoft's BC1/BC2/BC3 documentation. No third-
+    party decoder, native library, DDS wrapper or external command is used.
+    """
+    if len(raw) != dxt_size(width, height, fmt):
+        raise AssetFormatError('DXT block payload length mismatch')
+    pixels = bytearray(width * height * 4)
+    stride = 8 if fmt == 18 else 16
+    blocks_x = (width + 3) // 4
+    for offset in range(0, len(raw), stride):
+        block = raw[offset:offset + stride]
+        color_offset = 0 if fmt == 18 else 8
+        color0, color1, indices = struct.unpack_from('<HHI', block, color_offset)
+        colors = []
+        for color in (color0, color1):
+            r, g, b = (color >> 11) & 31, (color >> 5) & 63, color & 31
+            colors.append(((r << 3) | (r >> 2), (g << 2) | (g >> 4),
+                           (b << 3) | (b >> 2), 255))
+        if fmt != 18 or color0 > color1:
+            for a, b in ((2, 1), (1, 2)):
+                colors.append(tuple((a * colors[0][c] + b * colors[1][c]) // 3
+                                    for c in range(3)) + (255,))
+        else:
+            colors.append(tuple((colors[0][c] + colors[1][c]) // 2
+                                for c in range(3)) + (255,))
+            colors.append((0, 0, 0, 0))
+        alpha_bits = 0
+        alpha_values = None
+        if fmt == 19:
+            alpha_bits = int.from_bytes(block[:8], 'little')
+        elif fmt == 20:
+            a0, a1 = block[0], block[1]
+            alpha_values = [a0, a1]
+            if a0 > a1:
+                alpha_values.extend(((7 - n) * a0 + n * a1) // 7
+                                    for n in range(1, 7))
+            else:
+                alpha_values.extend(((5 - n) * a0 + n * a1) // 5
+                                    for n in range(1, 5))
+                alpha_values.extend((0, 255))
+            alpha_bits = int.from_bytes(block[2:8], 'little')
+        block_index = offset // stride
+        x0, y0 = (block_index % blocks_x) * 4, (block_index // blocks_x) * 4
+        for n in range(16):
+            x, y = x0 + n % 4, y0 + n // 4
+            if x >= width or y >= height:
+                continue
+            r, g, b, a = colors[(indices >> (2 * n)) & 3]
+            if fmt == 19:
+                a = ((alpha_bits >> (4 * n)) & 15) * 17
+            elif fmt == 20:
+                a = alpha_values[(alpha_bits >> (3 * n)) & 7]
+            start = (y * width + x) * 4
+            pixels[start:start + 4] = bytes((r, g, b, a))
+    return bytes(pixels)
+
+def decode_img(data,index):
+    """v2/v4 common frames, links, raw color, palette and DXT1/3/5.
+
+    Sprite compression, palette+DXT, v1 and v5 remain explicit unsupported
+    states. Both cropped and transparent canvas bounds are checked.
     """
     if len(data)<32 or len(data)>MAX_IMG or data[:16].rstrip(b'\0')!=b'Neople Img File':raise AssetFormatError('Unsupported IMG header')
     table_size,_,version,count=struct.unpack_from('<4i',data,16)
@@ -154,12 +223,20 @@ def decode_img(data,index):
             frames.append({'link':target});pos+=8;continue
         if pos+36>len(data):raise AssetFormatError('Truncated frame table')
         fmt,extra,w,h,size,x,y,cw,ch=struct.unpack_from('<9i',data,pos);pos+=36
-        if fmt not in (14,15,16) or extra not in (5,6):raise AssetFormatError('Unsupported IMG pixel/compression variant')
+        if fmt not in (14,15,16,18,19,20) or extra not in (5,6):raise AssetFormatError('Unsupported IMG pixel/compression variant')
         if not 1<=w<=512 or not 1<=h<=512 or not 1<=cw<=512 or not 1<=ch<=512 or not 0<=x<=cw-w or not 0<=y<=ch-h:
             raise AssetFormatError('Icon canvas out of bounds')
-        decoded=w*h*(4 if fmt==16 else 2)
-        if extra==5:size=decoded
-        elif palette:decoded=w*h
+        if fmt in (18,19,20):
+            if palette:raise AssetFormatError('Unsupported palette/DXT combination')
+            decoded=dxt_size(w,h,fmt)
+            # For raw block data the declared size must agree with the block
+            # layout; do not guess padding or shift every subsequent frame.
+            if extra==5 and size!=decoded:
+                raise AssetFormatError('Unsupported raw DXT payload size')
+        else:
+            decoded=w*h*(4 if fmt==16 else 2)
+            if extra==5:size=decoded
+            elif palette:decoded=w*h
         if not 0<size<=MAX_IMG:raise AssetFormatError('Invalid frame payload size')
         frames.append(dict(fmt=fmt,extra=extra,w=w,h=h,size=size,x=x,y=y,cw=cw,ch=ch,decoded=decoded))
     payload=32+table_size if version==2 else pos
@@ -175,7 +252,9 @@ def decode_img(data,index):
     f=frames[index];raw=data[f['offset']:f['offset']+f['size']]
     if f['extra']==6:raw=inflate(raw,f['decoded'])
     pixels=bytearray()
-    if palette and f['extra']==6:
+    if f['fmt'] in (18,19,20):
+        pixels.extend(decode_dxt(raw,f['w'],f['h'],f['fmt']))
+    elif palette and f['extra']==6:
         for n in raw:
             if n>=len(palette):raise AssetFormatError('Palette index out of range')
             pixels.extend(palette[n])

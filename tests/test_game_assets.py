@@ -160,6 +160,21 @@ def test_builder_deduplicates_and_never_overwrites(tmp_path,monkeypatch):
         assert c.execute('SELECT COUNT(DISTINCT sha256) FROM item_images').fetchone()[0]==1
 
 
+
+@pytest.mark.parametrize('fmt', [18,19,20])
+def test_builder_decodes_synthetic_dxt_into_deduplicated_private_png(tmp_path,monkeypatch,fmt):
+    pvf,catalog,sha=builder_setup(tmp_path,monkeypatch)
+    npks=tmp_path/'npks';npks.mkdir()
+    block=struct.pack('<HHI',0xf800,0x07e0,0)
+    raw=(b'' if fmt==18 else b'\xff'*8)+block
+    npk(npks/'synthetic.npk',[('sprite/item/test.img',img(fmt,raw,compressed=True))])
+    output=tmp_path/'result';result=build_assets(pvf,catalog,output,npks)
+    assert result['states']=={'ready':2,'missing_reference':1}
+    assert result['unique_images']==1 and result['pvf_sha256']==sha
+    assert result['client_verified'] is False
+    pngs=list((output/'images').glob('*.png'));assert len(pngs)==1
+    assert decode_png(pngs[0].read_bytes()).rgba==b'\0'*12+b'\xff\0\0\xff'
+
 def test_builder_missing_ambiguous_and_failed_cleanup(tmp_path,monkeypatch):
     pvf,catalog,_=builder_setup(tmp_path,monkeypatch)
     assert build_assets(pvf,catalog,tmp_path/'missing')['states']=={'missing':2,'missing_reference':1}
