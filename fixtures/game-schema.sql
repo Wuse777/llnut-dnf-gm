@@ -195,6 +195,8 @@ CREATE TABLE inventory (
 USE taiwan_cain;
 CREATE TABLE charac_stat (
  charac_no int NOT NULL PRIMARY KEY,
+ village tinyint NOT NULL DEFAULT 1,
+ village_prev tinyint NOT NULL DEFAULT 1,
  exp int NOT NULL DEFAULT 0,
  fatigue smallint NOT NULL DEFAULT 0,
  premium_fatigue smallint NOT NULL DEFAULT 0,

@@ -21,6 +21,7 @@ from .native_operations import NativeOperations
 from .inventory_operations import InventoryOperations
 from .character_maintenance import CharacterMaintenance, CharacterMaintenancePreview
 from .character_rename import CharacterRename, RenamePreview
+from .character_rescue import CharacterRescue, RescuePreview
 from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm, MaintenanceClose, MaintenanceRecover
 from .models import InventoryPreview
 from .support_models import ProfileSave, CaseCreate, CaseUpdate, CaseEntry, CaseLink, CaseStatus, Category
@@ -97,6 +98,7 @@ def create_app(settings=None, database=None):
     inventory_ops = InventoryOperations(service)
     character_ops = CharacterMaintenance(service)
     rename_ops = CharacterRename(service)
+    rescue_ops = CharacterRescue(service)
     maintenance = MaintenanceRequests(db,settings)
     schedules = Schedules(db, settings, jobs, native_ops)
     from .task_health import TaskHealth, WorkerPulse
@@ -121,6 +123,7 @@ def create_app(settings=None, database=None):
     app.state.inventory_operations = inventory_ops
     app.state.character_maintenance = character_ops
     app.state.character_rename = rename_ops
+    app.state.character_rescue = rescue_ops
     app.state.maintenance = maintenance
     app.add_middleware(Guard, settings=settings)
     app.state.db, app.state.settings, app.state.service = db,settings,service
@@ -486,6 +489,36 @@ def create_app(settings=None, database=None):
     def rename_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
         key=user(request,True,True);limits.check('character-renames-cancel:'+key,12)
         return rename_ops.cancel(op)
+
+    @app.get(API+'/character-rescues/characters/{charac_no}')
+    def rescue_maintenance_read(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
+        key=user(request);limits.check('character-rescues-read:'+key,30)
+        return rescue_ops.read(charac_no)
+
+    @app.get(API+'/character-rescues/operations')
+    def rescue_history(request:Request,uid:int=Query(0,ge=0,le=2147483647),charac_no:int=Query(0,ge=0,le=2147483647),page:int=Query(1,ge=1,le=10000)):
+        key=user(request);limits.check('character-rescues-history:'+key,30)
+        return rescue_ops.history(uid,charac_no,page)
+
+    @app.post(API+'/character-rescues/preview')
+    def rescue_preview(data:RescuePreview,request:Request):
+        key=user(request,True,True);limits.check('character-rescues-preview:'+key,12)
+        return rescue_ops.preview(key,data.model_dump())
+
+    @app.get(API+'/character-rescues/operations/{op}')
+    def rescue_detail(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request);limits.check('character-rescues-detail:'+key,30)
+        return rescue_ops.detail(op)
+
+    @app.post(API+'/character-rescues/operations/{op}/confirm')
+    def rescue_confirm(data:Confirm,request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('character-rescues-confirm:'+key,10)
+        return rescue_ops.confirm(key,op,data.idempotency_key)
+
+    @app.post(API+'/character-rescues/operations/{op}/cancel-preview')
+    def rescue_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('character-rescues-cancel:'+key,12)
+        return rescue_ops.cancel(op)
 
     @app.get(API+'/maintenance')
     def maintenance_status(request:Request):

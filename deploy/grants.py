@@ -40,6 +40,7 @@ def bootstrap_sql(config,ph):
     sql += inventory_management_sql(user)
     sql += character_maintenance_sql(user)
     sql += character_rename_sql(user)
+    sql += character_rescue_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/010-support-desk.sql').read_text()
     sql += support_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/011-economy-ledger.sql').read_text()
@@ -160,7 +161,7 @@ def initialize_owner_capabilities_sql():
     # Installation-time explicit owner activation; does not overwrite later web
     # choices. No game rows, rewards, schedules or maintenance windows created.
     import json
-    switches=['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','char-fatigue','char-rename','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
+    switches=['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','char-fatigue','char-rename','char-rescue','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
     enabled=json.dumps(sorted(switches),separators=(',',':'))
     return ("START TRANSACTION;\nSELECT revision FROM dnf_gm.capability_policy WHERE id=1 FOR UPDATE;\n"
             "INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) "
@@ -185,3 +186,8 @@ def character_rename_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     for schema,table,column,keys,_ in LINKS.values():
         sql+=f"GRANT SELECT({','.join((*keys,column))}),UPDATE({column}) ON {schema}.{table} TO {user};\n"
     return sql
+
+
+def character_rescue_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return (f'GRANT SELECT(village),UPDATE(village) ON taiwan_cain.charac_info TO {user};\n'
+            f'GRANT SELECT(village,village_prev),UPDATE(village,village_prev) ON taiwan_cain.charac_stat TO {user};\n')

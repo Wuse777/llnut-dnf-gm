@@ -40,6 +40,7 @@ FEATURES = (
  ('item-restore','装备存档快照恢复','装备维护','accounts','item-restore','仅在当前存档与原操作after-image完全一致时恢复，不覆盖后续游戏进度。'),
  ('char-fatigue','角色疲劳恢复／调整','角色维护','accounts','char-fatigue','仅在显式维护窗口修改普通／额外已消耗疲劳，0表示恢复；历史计数与上限不变。'),
  ('char-rename','角色改名','角色维护','accounts','char-rename','显式维护窗口内同步角色与关联名称缓存，保留UID、角色编号及历史文字。'),
+ ('char-rescue','卡死位置救援','角色维护','accounts','char-rescue','显式维护窗口内重置选角、登录与返回城镇，不修改任务或物品，不是在线瞬移。'),
  ('mail-center','完整邮件与操作追踪','记录与维护','mail-center',None,'区分已投递、数据库领取标记与记录缺失。'),
  ('support','玩家问题工作台','记录与维护','support',None,'补偿草稿需再次预览确认，不等于直接撤销原操作。'),
  ('economy','GM发放统计','记录与维护','economy',None,'只统计可覆盖的GM操作，不冒充全服完整经济流水。'),
