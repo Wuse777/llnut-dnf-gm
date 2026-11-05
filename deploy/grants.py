@@ -223,4 +223,5 @@ def backup_schedule_sql(user="'dnf_gm_app'@'127.0.0.1'"):
 
 def character_skills_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     from dnfgm.character_skills import POINTS, SCALARS, BLOBS
-    return f'GRANT SELECT({",".join(("charac_no",*SCALARS,*BLOBS))}),UPDATE({",".join(POINTS)}) ON taiwan_cain_2nd.skill TO {user};\n'
+    return (f'GRANT SELECT(skill_tree_index) ON taiwan_cain.charac_info TO {user};\n'
+            f'GRANT SELECT({",".join(("charac_no",*SCALARS,*BLOBS))}),UPDATE({",".join(POINTS)}) ON taiwan_cain_2nd.skill TO {user};\n')

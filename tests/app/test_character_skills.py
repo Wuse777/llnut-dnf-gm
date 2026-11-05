@@ -68,4 +68,5 @@ def test_points_model_and_fixed_column_grants():
         with pytest.raises(ValidationError):SkillPointsPreview(**{**body,'changes':changes})
     sql=grants.character_skills_sql()
     assert 'UPDATE(remain_sp,remain_sp_2nd,remain_sfp_1st,remain_sfp_2nd)' in sql
+    assert 'SELECT(skill_tree_index) ON taiwan_cain.charac_info' in sql
     assert 'GRANT ALL' not in sql and 'skill_fair_pvp' not in sql
