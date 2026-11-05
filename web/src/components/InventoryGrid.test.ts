@@ -23,3 +23,18 @@ it('hides empty slots on demand and refuses unbounded slot expansion',async()=>{
  const w=mount(InventoryGrid,{props:{items:[item],slotCount:12}});await w.find('input').setValue(false);expect(w.findAll('.inventory-slot')).toHaveLength(1)
  await w.setProps({slotCount:100000000});await w.find('input').setValue(true);expect(w.findAll('.inventory-slot')).toHaveLength(0);w.unmount()
 })
+it('mobile selection opens bottom drawer and closes back to the exact slot',async()=>{
+ const media={matches:true,addEventListener:vi.fn(),removeEventListener:vi.fn()}
+ vi.stubGlobal('matchMedia',()=>media);vi.stubGlobal('fetch',vi.fn())
+ const w=mount(InventoryGrid,{props:{items:[item],slotCount:12,manageable:true},attachTo:document.body})
+ await w.find('button.inventory-slot').trigger('click');await flushPromises()
+ expect(w.find('[role=region]').exists()).toBe(false);expect(document.querySelector('.item-drawer')).not.toBeNull()
+ const dialog=document.querySelector('[role=dialog]')!;expect(dialog.textContent).toContain('存档数量')
+ const manage=Array.from(dialog.querySelectorAll<HTMLButtonElement>('button')).find(b=>b.textContent==='维护此物品')!;manage.click();await flushPromises()
+ expect(w.emitted('manage')?.[0]).toEqual([item]);expect(document.querySelector('[role=dialog]')).toBeNull();expect(fetch).not.toHaveBeenCalled();w.unmount();expect(media.removeEventListener).toHaveBeenCalled()
+})
+it('page changes close an old item detail rather than show a different page with stale selection',async()=>{
+ const w=mount(InventoryGrid,{props:{items:[item],slotCount:60},attachTo:document.body})
+ await w.find('button.inventory-slot').trigger('click');expect(w.find('[role=region]').exists()).toBe(true)
+ await w.findAll('button').find(b=>b.text()==='下一页槽位')!.trigger('click');expect(w.find('[role=region]').exists()).toBe(false);w.unmount()
+})

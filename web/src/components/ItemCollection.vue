@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import GameImage from './GameImage.vue'
+import ItemCard from './ItemCard.vue'
 import {ref,watch,onUnmounted} from 'vue'
 import {api,uncertainMessage} from '../api'
 import FavoriteButton from './FavoriteButton.vue'
@@ -26,7 +26,7 @@ onUnmounted(()=>generation++)
   <p class="field-hint">按当前 PVF 版本独立保存。最近选择仅表示加入过草稿，不代表发放或领取；收藏不会启用被停用的物品。</p>
   <p v-if="error" class="submit-error" role="alert">{{error}} <button type="button" @click="load">重试常用物品查询</button></p>
   <p v-if="loading" role="status">正在读取常用物品…</p>
-  <div v-else-if="rows.length" class="collection-items"><article v-for="item in rows" :key="item.id"><div><GameImage :image="item.image" :label="item.name||'物品'"/><b>{{item.name}}</b><small class="cell-note">#{{item.id}} · {{item.sendable?'可加入草稿':'不可发放'}}</small><small v-if="!item.sendable" class="cell-note">{{item.policy_reason}}</small></div><div class="button-row"><FavoriteButton :item="item" :disabled="disabled" @changed="emit('changed',$event)"/><button type="button" :disabled="disabled||!item.sendable" @click="emit('select',item)">加入清单</button></div></article></div>
+  <div v-else-if="rows.length" class="collection-items"><article v-for="item in rows" :key="item.id"><ItemCard :item="item"><small class="cell-note">#{{item.id}} · {{item.sendable?'可加入草稿':'不可发放'}}</small><small v-if="!item.sendable" class="cell-note">{{item.policy_reason}}</small></ItemCard><div class="button-row"><FavoriteButton :item="item" :disabled="disabled" @changed="emit('changed',$event)"/><button type="button" :disabled="disabled||!item.sendable" @click="emit('select',item)">加入清单</button></div></article></div>
   <p v-else-if="!error" class="empty">{{collection==='favorites'?'当前 PVF 下没有收藏，在物品旁点击“收藏”即可保存。':'当前 PVF 下还没有最近选择记录。'}}</p>
   <div v-if="!error" class="pagination"><button type="button" aria-label="上一页常用物品" :disabled="loading||page<=1" @click="page--;load()">上一页</button><span>第 {{page}} 页 · 共 {{total}} 项</span><button type="button" aria-label="下一页常用物品" :disabled="loading||page*50>=total" @click="page++;load()">下一页</button></div>
  </details>
