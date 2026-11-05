@@ -9,10 +9,17 @@ from .service import dump
 from .inventory_fence import Refused
 
 
-def settle_window(db,window_id):
+def settle_window(db,window_id, *, expected_server_uuid=None):
     if not isinstance(window_id,str) or not re.fullmatch(r'[a-f0-9]{32}',window_id):
         raise Refused('maintenance_window_invalid')
+    if expected_server_uuid is not None and (not isinstance(expected_server_uuid,str)
+            or not re.fullmatch(r'[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}',expected_server_uuid)):
+        raise Refused('maintenance_database_identity_invalid')
     with db.connect() as c,c.cursor() as q:
+        if expected_server_uuid is not None:
+            q.execute('SELECT @@server_uuid AS server_uuid')
+            if q.fetchone()['server_uuid']!=expected_server_uuid:
+                raise Refused('maintenance_database_identity_changed')
         q.execute("SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA='dnf_gm' AND TABLE_NAME IN ('operations','audit','inventory_operations','inventory_snapshots')")
         rows=q.fetchall()
         if len(rows)!=4 or any(r['ENGINE']!='InnoDB' for r in rows):raise Refused('maintenance_database_schema_unproven')

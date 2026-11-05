@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from dnfgm.inventory_fence import _read, directory
+from dnfgm.inventory_fence import _read, directory, MAX_CLOSE_BYTES
 from dnfgm.release_files import Refused, read_json
 from maintenance_drain import DrainCoordinator, STATE, TERMINAL_NO_EFFECT
 
@@ -31,7 +31,7 @@ def assert_idle(*, state=STATE, runtime=RUNTIME, gate=GATE, owner=0):
             # Even an expired/invalid permit must be deliberately closed first.
             raise Refused('maintenance_window_not_closed')
         if os.path.lexists(runtime / 'closed.json'):
-            receipt = _read(runtime, 'closed.json', owner, 4096)
+            receipt = _read(runtime, 'closed.json', owner, MAX_CLOSE_BYTES)
             if not isinstance(receipt, dict) or receipt.get('safe_to_resume') is not True:
                 raise Refused('maintenance_window_not_reconciled')
     if not os.path.lexists(state):

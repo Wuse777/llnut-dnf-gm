@@ -324,3 +324,22 @@ def test_drain_transition_never_waives_gateway_or_auxiliary_failure(monkeypatch,
     assert data['core_ok'] is False
     assert data['maintenance']['verified'] is (gateway_ok and auxiliary_ok)
     assert runtime.protection_health(data,1000) is (gateway_ok and auxiliary_ok)
+
+
+@pytest.mark.parametrize('expected',[True,False,None,'true'])
+@pytest.mark.parametrize('auxiliary_ok',[True,False])
+def test_verified_full_writer_drain_can_expect_gateway_exit_but_not_auxiliary_failure(monkeypatch,tmp_path,expected,auxiliary_ok):
+    cfg=json.loads((DEPLOY/'monitor.example.json').read_text())
+    pvf=tmp_path/'Script.pvf';pvf.write_bytes(b'synthetic');cfg['pvf_path']=str(pvf)
+    def command(args,*,probe):
+        if probe=='container_state':return SimpleNamespace(returncode=0,stdout='{"Running":true,"OOMKilled":false}|sha256:test')
+        if probe=='dnf_components':return SimpleNamespace(returncode=0,stdout='\n'.join(n+'=down' for n in cfg['components']))
+        return SimpleNamespace(returncode=0)
+    class Window:
+        def status(self):return {'active':True,'verified':True,'authority':'drain-transition',
+            'gateway_exit_expected':expected,'collected_at':990,'expires_at':1100}
+    monkeypatch.setattr(monitor,'command',command)
+    monkeypatch.setattr(monitor,'build_opener',lambda *a:SimpleNamespace(open=lambda *a,**k:(_ for _ in ()).throw(OSError())))
+    data=monitor.Collector(cfg,auxiliary=lambda:auxiliary_ok,maintenance=Window())()
+    assert not data['core_ok']
+    assert data['maintenance']['verified'] is (expected is True and auxiliary_ok)

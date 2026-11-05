@@ -491,7 +491,13 @@ class DrainMonitor:
                 return result
             gate.check_frozen(tokens[0])
             result.update(verified=True, games=observation['games'])
-            if 'services' in observation:result['services']=observation['services']
+            if 'services' in observation:
+                result['services']=observation['services']
+                gateway=[e for e in doc['events'] if e['data'].get('service')=='llnut_gate']
+                result['gateway_exit_expected']=bool(doc['version']==3 and gateway and
+                    gateway[-1]['phase'] in ('writer-signal-intent','writer-signal-sent','writer-stopped') and
+                    any(s['service']=='llnut_gate' and s['state'] in
+                        ('restart_inhibited','down_normal','down_terminated') for s in observation['services']))
             return result
         except Exception as error:
             return {'active': True, 'verified': False, 'authority': 'drain-transition',

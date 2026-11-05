@@ -19,6 +19,7 @@ from .release_files import Refused
 ROOT_UID = 0
 MAX_WINDOW = 3600
 MAX_AGE = 30
+MAX_CLOSE_BYTES = 16384
 HEX = re.compile(r'[a-f0-9]{64}\Z')
 BOUND_FIELDS = ('container_id', 'container_started_at', 'image_digest', 'pvf_sha256', 'program_sha256', 'components', 'boot_id', 'policy_sha256')
 

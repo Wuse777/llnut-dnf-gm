@@ -413,3 +413,12 @@ def test_fifo_ack_wait_accepts_only_previous_then_expected(rig):
     d.monotonic=lambda:clock[0];d.sleep=lambda seconds:clock.__setitem__(0,clock[0]+seconds)
     d.settle(plan,previous,expected,'guild')
     assert clock[0]==.1 and not h.calls
+
+
+def test_gateway_failure_exception_requires_durable_full_stop_and_current_freeze(rig):
+    from maintenance_drain import DrainMonitor
+    c,h,d=rig;stopped(rig)
+    assert DrainMonitor(c).status()['gateway_exit_expected'] is True
+    token=c.admission.gate.read();c.admission.gate.save({**token,'state':'open'})
+    result=DrainMonitor(c).status()
+    assert not result['verified'] and result.get('gateway_exit_expected') is not True

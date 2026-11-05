@@ -13,7 +13,7 @@ import os
 import secrets
 import time
 
-from dnfgm.inventory_fence import (BOUND_FIELDS, MaintenanceFence, Refused, _read, directory,
+from dnfgm.inventory_fence import (MAX_CLOSE_BYTES, BOUND_FIELDS, MaintenanceFence, Refused, _read, directory,
                                   open_lock, read_permit, validate_permit)
 from dnfgm.release_files import atomic_json, read_json
 from inventory_probe import LinuxProbe
@@ -73,22 +73,28 @@ class WindowManager:
                 raise Refused('maintenance_resources_low')
         return sample
 
-    def issue(self, *, reason, ttl=600, acknowledge_writers_stopped=False):
+    def issue(self, *, reason, ttl=600, acknowledge_writers_stopped=False, window_id=None, expected_binding=None):
         if acknowledge_writers_stopped is not True:raise Refused('maintenance_operator_ack_required')
         if type(ttl) is not int or not 30<=ttl<=3600:raise Refused('maintenance_ttl_invalid')
         if not isinstance(reason,str) or not 1<=len(reason.strip())<=200:raise Refused('maintenance_reason_required')
+        if window_id is not None and (not isinstance(window_id,str) or not re.fullmatch(r'[a-f0-9]{32}',window_id)):
+            raise Refused('maintenance_id_required')
+        if expected_binding is not None and (not isinstance(expected_binding,dict) or set(expected_binding)!=set(BOUND_FIELDS)):
+            raise Refused('maintenance_binding_invalid')
         with self.locked(True):
             # Even expired permits must be closed deliberately before a new one.
             if os.path.lexists(self.root/'permit.json'):raise Refused('maintenance_already_open')
             if os.path.lexists(self.root/'closed.json'):
-                previous=_read(self.root,'closed.json',self.owner,4096)
+                previous=_read(self.root,'closed.json',self.owner,MAX_CLOSE_BYTES)
                 if not isinstance(previous,dict) or previous.get('safe_to_resume') is not True:
                     raise Refused('maintenance_previous_close_unresolved')
             first=self.checked_snapshot();self.sleep(2);second=self.checked_snapshot()
             if any(first.get(k)!=second.get(k) for k in (*BOUND_FIELDS,'process_set_sha256')):
                 raise Refused('maintenance_probe_changed')
+            if expected_binding is not None and any(second[k]!=expected_binding[k] for k in BOUND_FIELDS):
+                raise Refused('maintenance_original_target_changed')
             now=self.clock()
-            p={**{k:second[k] for k in BOUND_FIELDS},'version':1,'id':secrets.token_hex(16),
+            p={**{k:second[k] for k in BOUND_FIELDS},'version':1,'id':window_id or secrets.token_hex(16),
                'created_at':int(first['collected_at']),'expires_at':int(first['collected_at'])+ttl,
                'created_monotonic':first['collected_monotonic'],'expires_monotonic':first['collected_monotonic']+ttl,'reason':reason.strip()}
             validate_permit(p,now,self.monotonic())
@@ -126,27 +132,34 @@ class WindowManager:
                 fence=MaintenanceFence(self.root,owner=self.owner,clock=self.clock,monotonic=self.monotonic,
                     **{k:p[k] for k in ('image_digest','pvf_sha256','program_sha256')})
                 return {'state':'verified',**fence.check()}
-            receipt=_read(self.root,'closed.json',self.owner,4096)
+            receipt=_read(self.root,'closed.json',self.owner,MAX_CLOSE_BYTES)
             if (not isinstance(receipt,dict) or not isinstance(receipt.get('id'),str)
                     or not re.fullmatch(r'[a-f0-9]{32}',receipt['id'])
                     or type(receipt.get('safe_to_resume')) is not bool):
                 raise Refused('maintenance_close_receipt_invalid')
             return {**receipt,'state':'closed' if receipt['safe_to_resume'] else 'reconciliation_required'}
 
-    def close(self,expected_id):
+    def close(self,expected_id, *, expected_binding=None):
         if not isinstance(expected_id,str) or not re.fullmatch(r'[a-f0-9]{32}',expected_id):
             raise Refused('maintenance_id_required')
         with self.locked(True):
             try:p=_read(self.root,'permit.json',self.owner,4096)
             except FileNotFoundError:
-                try:p=_read(self.root,'closed.json',self.owner,4096)
+                try:p=_read(self.root,'closed.json',self.owner,MAX_CLOSE_BYTES)
                 except FileNotFoundError:raise Refused('maintenance_close_receipt_missing') from None
                 if p.get('id')!=expected_id:raise Refused('maintenance_window_changed')
+                if expected_binding is not None and p.get('binding')!=expected_binding:
+                    raise Refused('maintenance_original_window_changed')
                 if p.get('safe_to_resume') is True:return {'state':'already_closed',**p}
             if not isinstance(p,dict) or p.get('id')!=expected_id:raise Refused('maintenance_window_changed')
+            if expected_binding is not None:
+                if set(expected_binding)!=set(BOUND_FIELDS):raise Refused('maintenance_binding_invalid')
+                original=p.get('binding') if 'safe_to_resume' in p else {k:p.get(k) for k in BOUND_FIELDS}
+                if original!=expected_binding:raise Refused('maintenance_original_window_changed')
+            binding={} if expected_binding is None else {'binding':expected_binding}
             # Revoke authority even if the DB is unavailable. Resume permission
             # remains false until fixed management-only settlement succeeds.
-            atomic_json(self.root/'closed.json',{'id':expected_id,'safe_to_resume':False})
+            atomic_json(self.root/'closed.json',{'id':expected_id,'safe_to_resume':False,**binding})
             atomic_json(self.root/'evidence.json',{'safe':False,'permit_id':expected_id,
                 'collected_at':self.clock(),'reason':'maintenance_closed'})
             try:(self.root/'permit.json').unlink()
@@ -156,9 +169,34 @@ class WindowManager:
             finally:os.close(fd)
             if self.reconcile is None:raise Refused('maintenance_database_reconciliation_required')
             summary=self.reconcile(expected_id)
-            receipt={'id':expected_id,'safe_to_resume':True,'services_changed':False,**summary}
+            receipt={**summary,**binding,'id':expected_id,'safe_to_resume':True,'services_changed':False}
             atomic_json(self.root/'closed.json',receipt)
             return {'state':'closed',**receipt}
+
+
+    @contextmanager
+    def closed_guard(self, expected_id, *, expected_binding=None):
+        """Hold the exclusive fence for the ENTIRE service restoration.
+
+        A boolean close receipt checked once is insufficient: another issue()
+        could otherwise open a window between a restore check and its command.
+        The yielded proof rereads only while this exclusive lock remains held.
+        """
+        if not isinstance(expected_id,str) or not re.fullmatch(r'[a-f0-9]{32}',expected_id):
+            raise Refused('maintenance_id_required')
+        with self.locked(True):
+            def proof():
+                if os.path.lexists(self.root/'permit.json'):
+                    raise Refused('maintenance_window_reopened')
+                receipt=_read(self.root,'closed.json',self.owner,MAX_CLOSE_BYTES)
+                if (not isinstance(receipt,dict) or receipt.get('id')!=expected_id
+                        or receipt.get('safe_to_resume') is not True):
+                    raise Refused('maintenance_close_not_proven')
+                if expected_binding is not None and receipt.get('binding')!=expected_binding:
+                    raise Refused('maintenance_original_window_changed')
+                return True
+            proof()
+            yield proof
 
 
 def reconcile_database(window_id):
