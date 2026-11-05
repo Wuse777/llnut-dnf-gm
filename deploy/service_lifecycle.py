@@ -310,7 +310,21 @@ class ServiceLifecycle:
         if h.identity()!=identity or h.services()!=states:raise Refused('maintenance_observation_changed')
         return observed
 
-    def restore(self, plan, record, check_closed, *, events=()):
+    def recovery_snapshot(self, plan, events, *, allow_pending=False):
+        """Capture only known original/down states; never send missing stop commands."""
+        observed=self.observe(plan,events);states={k:list(v) for k,v in self.host.services().items()}
+        phases={e['data']['service']:e['phase'].removeprefix('writer-') for e in events if e['data'].get('service')}
+        for row in observed:
+            if row['state'] not in ('original','restart_inhibited','restart_inhibited_marker_missing','down_normal','down_terminated'):
+                raise Refused('maintenance_partial_state_unproven')
+            if (not allow_pending and states[row['service']][0]
+                    and phases.get(row['service']) in ('signal-intent','signal-sent')):
+                raise Refused('maintenance_partial_exit_pending')
+        if self.observe(plan,events)!=observed:raise Refused('maintenance_observation_changed')
+        self.check(plan,states)
+        return states
+
+    def restore(self, plan, record, check_closed, *, events=(), baseline=None):
         """Continue an explicit restore from a validated durable event prefix.
 
         A persisted start intent is never sent twice. If its effect cannot be
@@ -320,17 +334,22 @@ class ServiceLifecycle:
         if not callable(record) or not callable(check_closed):raise Refused('maintenance_restore_authority_required')
         h=self.host;cycle=validate_cycle(plan);identity=plan['identity'];cid=identity['container_id']
         latest={e['data']['service']:e for e in events if 'service' in e['data']}
-        expected=self.stopped_snapshot(plan)
+        initial=copy.deepcopy(baseline) if baseline is not None else self.stopped_snapshot(plan)
+        expected=copy.deepcopy(initial)
         # Reconstruct all already-started services before any new command. This
         # also rejects unexpected starts of a later service or changed processes.
         for name,entry in cycle['entries'].items():
             event=latest.get(name);phase=event['phase'] if event else None
+            if initial[name][0]:
+                actual=list(h.services()[name])
+                if not actual[0] or h.service_process(identity,actual[4])!=entry['process']:
+                    raise Refused('maintenance_preserved_process_changed')
             if phase=='service-restored':
                 expected[name]=event['data']['state']
                 if h.service_process(identity,expected[name][4])!=event['data']['process']:
                     raise Refused('maintenance_restored_process_changed')
             elif phase:
-                actual=list(h.services()[name]);marked=[False,False,entry['before'][2],True,-1]
+                actual=list(h.services()[name]);marked=copy.deepcopy(initial[name]);marked[2]=entry['before'][2]
                 if phase=='restore-marker-intent':
                     if actual not in (expected[name],marked):raise Refused('maintenance_restore_unexpected_state')
                 elif phase=='restore-marker-applied':
@@ -362,8 +381,15 @@ class ServiceLifecycle:
             if phase=='restore-marker-applied':
                 if check_closed() is not True:raise Refused('maintenance_close_not_proven')
                 record('restore-start-intent',{'service':name})
-                h.command(['docker','exec',cid,'s6-svc','-u',directory])
-                record('restore-start-sent',{'service':name})
+                preserved=initial[name][0]
+                if not preserved or not expected[name][1]:
+                    h.command(['docker','exec',cid,'s6-svc','-u',directory])
+                    if preserved:
+                        previous=copy.deepcopy(expected);expected[name][1]=True
+                        self.settle(plan,previous,expected,name)
+                if preserved and h.service_process(identity,expected[name][4])!=entry['process']:
+                    raise Refused('maintenance_preserved_process_changed')
+                record('restore-start-sent',{'service':name,**({'preserved':True} if preserved else {})})
             elif phase=='restore-start-intent':
                 # A matching running process proves the required state, not that
                 # a lost command response arrived. No new start is issued here.

@@ -1,12 +1,13 @@
 """Read-only restore transition proof; no database, signals, writes or renewals."""
 import os
+import copy
 from pathlib import Path
 
 from dnfgm.inventory_fence import BOUND_FIELDS, MAX_CLOSE_BYTES, _read, validate_permit
 from dnfgm.release_files import Refused
 from maintenance_gate import WriteGateManager
 from maintenance_session_state import bound_to_plan, load
-from service_lifecycle import START_TIMEOUT, validate_cycle
+from service_lifecycle import START_TIMEOUT, validate_cycle, ServiceLifecycle
 
 
 class SessionMonitor:
@@ -25,10 +26,10 @@ class SessionMonitor:
         for name,entry in cycle['entries'].items():
             if h.contract(plan['identity'],name)!=entry['contract']:raise Refused('maintenance_service_contract_changed')
             row=list(states[name]);event=latest.get(name);phase=event['phase'] if event else None
-            stopped=[False,False,False,True,-1]
-            marked=[False,False,entry['before'][2],True,-1]
+            stopped=session.get('abort',{}).get('baseline',{}).get(name,[False,False,False,True,-1])
+            marked=copy.deepcopy(stopped);marked[2]=entry['before'][2]
             state='changed'
-            if phase is None and row==stopped:state='down_waiting_restore'
+            if phase is None and row==stopped:state='original_preserved' if stopped[0] else 'down_waiting_restore'
             elif phase=='restore-marker-intent' and row in (stopped,marked):state='restore_marker_pending'
             elif phase=='restore-marker-applied' and row==marked:state='restore_start_pending'
             elif phase in ('restore-start-intent','restore-start-sent'):
@@ -39,6 +40,7 @@ class SessionMonitor:
             elif phase=='service-restored':
                 if row==event['data']['state'] and h.service_process(plan['identity'],row[4])==event['data']['process']:
                     state='restored'
+            if stopped[0] and (not row[0] or h.service_process(plan['identity'],row[4])!=entry['process']):state='changed'
             result.append({'service':name,'state':state})
         if h.identity()!=plan['identity'] or h.services()!=states:raise Refused('maintenance_restore_observation_changed')
         return result
@@ -96,7 +98,7 @@ class SessionMonitor:
         the closed window, gate and every process at each collection instead.
         """
         c=self.c;plan=raw['plan'];now,mono=c._now()
-        if raw['state']!='writers_stopped' or len(session['events'])<3:
+        if (raw['state']!='writers_stopped' and not session.get('abort')) or len(session['events'])<3:
             raise Refused('maintenance_recovery_not_closed')
         if any(now<e['at'] or mono<e['monotonic'] for e in session['events']):
             raise Refused('maintenance_evidence_stale')
@@ -143,7 +145,7 @@ class SessionMonitor:
         Partial drains and live writers deliberately do not qualify.
         """
         c=self.c;plan=raw['plan'];now,mono=c._now()
-        if raw['state']!='writers_stopped':raise Refused('maintenance_writers_not_stopped')
+        if raw['state'] not in ('writers_stopped','running','needs_review') or len(raw['events'])<2:raise Refused('maintenance_writers_not_stopped')
         if now<raw['started_at'] or mono<raw['started_monotonic']:raise Refused('maintenance_evidence_stale')
         before=plan['services_before'];games=set(plan['service_cycle']['games'])
         if any(n not in before or (n not in games and (before[n][:3]!=[True,True,True] or before[n][4]<1)) for n in self.required_components):
@@ -166,8 +168,17 @@ class SessionMonitor:
             if not bound_to_plan(closed.get('binding'),plan):raise Refused('maintenance_original_window_changed')
         elif closed and closed.get('safe_to_resume') is not True:
             raise Refused('maintenance_previous_close_unresolved')
-        services=self.observe(plan,session or {'events':[]})
-        if any(row['state']!='down_waiting_restore' for row in services):raise Refused('maintenance_restore_unexpected_state')
+        if raw['state'] in ('running','needs_review'):
+            if permit:raise Refused('maintenance_window_without_intent')
+            baseline=ServiceLifecycle(c.host).recovery_snapshot(plan,raw['events'],allow_pending=True)
+            if session and (not session.get('abort') or session['abort']['baseline']!=baseline
+                    or session['abort']['drain_digest']!=raw['events'][-1]['digest']
+                    or session['abort']['drain_revision']!=len(raw['events'])):
+                raise Refused('maintenance_abort_journal_changed')
+            services=ServiceLifecycle(c.host).observe(plan,raw['events'])
+        else:
+            services=self.observe(plan,session or {'events':[]})
+            if any(row['state']!='down_waiting_restore' for row in services):raise Refused('maintenance_restore_unexpected_state')
         try:after_session=load(c.root,c.owner,request_id,plan)
         except FileNotFoundError:after_session=None
         if (c._active()!=request_id or c._load(request_id)!=raw or after_session!=session
@@ -187,12 +198,13 @@ class SessionMonitor:
         request_id=c._active()
         if request_id is None:return None
         raw=c._load(request_id);plan=raw['plan']
-        if raw['version']!=3 or raw['state'] not in ('writers_stopped','completed'):return None
+        if raw['version']!=3 or raw['state'] not in ('running','needs_review','writers_stopped','completed','recovered'):return None
         try:session=load(c.root,c.owner,request_id,plan)
         except FileNotFoundError:
-            if raw['state']=='completed':raise Refused('maintenance_completion_missing')
+            if raw['state'] in ('completed','recovered'):raise Refused('maintenance_completion_missing')
+            if len(raw['events'])<2:return None
             return self.prewindow(request_id,raw,None)
-        if raw['state']=='completed':return {'active':False,'verified':False,'recorded_state':'completed'}
+        if raw['state'] in ('completed','recovered'):return {'active':False,'verified':False,'recorded_state':'completed'}
         if len(session['events'])<2 or len(session['events'])<=3 and session['events'][1]['phase']=='window-not-issued':
             return self.prewindow(request_id,raw,session)
         closing=next((e for e in session['events'] if e['phase']=='window-close-intent'),None)

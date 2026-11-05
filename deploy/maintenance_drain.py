@@ -29,9 +29,9 @@ STATE = Path('/var/lib/dnf-gm/maintenance-drain')
 GLOBAL_LOCK = Path('/var/lib/dnf-gm/maintenance.lock')
 PREVIEW_TTL = 300
 MAX_BYTES = 256 * 1024
-STATES = {'prepared', 'running', 'needs_review', 'game_drained', 'writers_stopped', 'completed', 'cancelled', 'expired'}
+STATES = {'prepared', 'running', 'needs_review', 'game_drained', 'writers_stopped', 'completed', 'recovered', 'cancelled', 'expired'}
 TERMINAL_NO_EFFECT = {'cancelled', 'expired'}
-TERMINAL_FINISHED = TERMINAL_NO_EFFECT | {'completed'}
+TERMINAL_FINISHED = TERMINAL_NO_EFFECT | {'completed','recovered'}
 COMMAND_INTENTS = {'inhibit-intent', 'marker-intent', 'signal-intent', 'writer-inhibit-intent', 'writer-marker-intent', 'writer-signal-intent'}
 
 
@@ -145,7 +145,7 @@ class DrainCoordinator:
                 value = doc[field]
                 if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
                     raise ValueError()
-            if doc['state'] in {'running', 'needs_review', 'game_drained', 'writers_stopped', 'completed'}:
+            if doc['state'] in {'running', 'needs_review', 'game_drained', 'writers_stopped', 'completed', 'recovered'}:
                 for field in ('started_at', 'started_monotonic'):
                     value = doc[field]
                     if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
@@ -157,7 +157,7 @@ class DrainCoordinator:
             if doc['version'] == 3:
                 validate_cycle(doc['plan'])
                 if doc['state']=='game_drained':raise ValueError()
-            elif 'service_cycle' in doc['plan'] or doc['state'] in ('writers_stopped','completed'):
+            elif 'service_cycle' in doc['plan'] or doc['state'] in ('writers_stopped','completed','recovered'):
                 raise ValueError()
             plan = copy.deepcopy(doc['plan'])
             fingerprint = plan.pop('fingerprint')
@@ -184,9 +184,12 @@ class DrainCoordinator:
                 raise ValueError()
             if doc['state'] in ('game_drained','writers_stopped','completed') and len(doc['events']) != len(expected):
                 raise ValueError()
-            if doc['state']=='completed':
+            if doc['state'] in ('completed','recovered'):
                 from maintenance_session_state import load as load_session
-                if load_session(self.root,self.owner,request_id,doc['plan'])['state']!='completed':
+                final=load_session(self.root,self.owner,request_id,doc['plan'])
+                if (final['state']!='completed' or (doc['state']=='recovered' and
+                        (not final.get('abort') or final['abort']['drain_digest']!=doc['events'][-1]['digest']
+                         or final['abort']['drain_revision']!=len(doc['events'])))):
                     raise Refused('maintenance_completion_unproven')
             return doc
         except (KeyError, TypeError, ValueError, AttributeError):
@@ -248,7 +251,7 @@ class DrainCoordinator:
         public_outcome = ({k:outcome[k] for k in ('rewards_committed','rewards_failed','native_uncertain','game_writes','automatic_replay')} if outcome else None)
         now, mono = self._now()
         current = 0 <= now - doc['created_at'] < PREVIEW_TTL and 0 <= mono - doc['created_monotonic'] < PREVIEW_TTL
-        return {'request_id': doc['request_id'], 'state': doc['state'], 'reason': doc['reason'],
+        return {'request_id': doc['request_id'], 'state': 'completed' if doc['state']=='recovered' else doc['state'], 'reason': doc['reason'],
                 'ordinary_outcomes': public_outcome,
                 'fingerprint': doc['plan']['fingerprint'], 'created_at': doc['created_at'],
                 'expires_at': doc['created_at'] + PREVIEW_TTL,
@@ -307,21 +310,22 @@ class DrainCoordinator:
     def status(self, request_id):
         # Atomic snapshot reads are available even while the executor holds its lock.
         doc=self._load(request_id);result=self.view(doc)
-        if doc['version']==3 and doc['state'] in ('writers_stopped','completed'):
+        if doc['version']==3 and doc['state'] in ('running','needs_review','writers_stopped','completed','recovered'):
             from maintenance_session_state import load as load_session
             try:session=load_session(self.root,self.owner,request_id,doc['plan'])
-            except FileNotFoundError:return {**result,'recovery_available':doc['state']=='writers_stopped'}
+            except FileNotFoundError:return {**result,'recovery_available':doc['state']=='writers_stopped' or (doc['state'] in ('running','needs_review') and len(doc['events'])>=2)}
             states={'opening':'running','closing':'resuming','restoring':'resuming'}
             result['state']=states.get(session['state'],session['state'])
-            if session['state']=='completed' and doc['state']!='completed':
+            if session['state']=='completed' and doc['state'] not in ('completed','recovered'):
                 result['state']='needs_review'  # Final ownership receipt not yet reconciled.
             offset=len(result['events'])
             result['events'].extend({'sequence':offset+i+1,'phase':e['phase'],
                 'at':e['at'],'service':e['data'].get('service'),
-                **({'reconciled':True} if e['data'].get('reconciled') is True else {})} for i,e in enumerate(session['events']))
+                **({'reconciled':True} if e['data'].get('reconciled') is True else {}),
+                **({'preserved':True} if e['data'].get('preserved') is True else {})} for i,e in enumerate(session['events']))
             result.update(revision=len(result['events']),phase=result['events'][-1]['phase'],
                 error=session['error'],window_requires_live_check=session['state']=='maintenance_open',
-                recovery_available=doc['state']!='completed' and session['state']!='maintenance_open')
+                recovery_available=doc['state'] not in ('completed','recovered') and session['state']!='maintenance_open')
         return result
 
     def cancel(self, request_id):

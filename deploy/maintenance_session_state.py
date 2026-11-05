@@ -42,15 +42,43 @@ def restored_record(data,entry):
         raise Refused('maintenance_restoration_receipt_invalid')
 
 
+def validate_abort(value,plan):
+    if (not isinstance(value,dict) or set(value)!={'baseline','token','drain_digest','drain_revision'}
+            or type(value['drain_revision']) is not int or not 2<=value['drain_revision']<=512
+            or not isinstance(value['drain_digest'],str) or not re.fullmatch(r'[a-f0-9]{64}',value['drain_digest'])):
+        raise Refused('maintenance_abort_record_invalid')
+    token=validate_gate(value['token'])
+    if (token['state']!='frozen' or token['generation']!=plan['admission']['gate']['generation']+1
+            or token['binding_sha256']!=binding_hash(plan['identity'])):
+        raise Refused('maintenance_abort_record_invalid')
+    baseline=value['baseline'];before=plan['services_before'];cycle=validate_cycle(plan)
+    if not isinstance(baseline,dict) or set(baseline)!=set(before):raise Refused('maintenance_abort_record_invalid')
+    for name,row in baseline.items():
+        if (not isinstance(row,list) or len(row)!=5 or any(type(x) is not bool for x in row[:4])
+                or type(row[4]) is not int):raise Refused('maintenance_abort_record_invalid')
+        if name not in cycle['entries']:
+            if row!=before[name]:raise Refused('maintenance_abort_record_invalid')
+        elif row!=[False,False,False,True,-1]:
+            original=before[name]
+            if row not in (original,[True,False,original[2],original[3],original[4]],
+                            [True,False,False,original[3],original[4]]):
+                raise Refused('maintenance_abort_record_invalid')
+    return value
+
+
 def validate(doc,request_id,plan):
     try:
         cycle=validate_cycle(plan)
-        if (not isinstance(doc,dict) or set(doc)!={'version','request_id','fingerprint','state','events','error','digest'}
-                or type(doc['version']) is not int or doc['version']!=1
+        if (not isinstance(doc,dict) or set(doc)!=({'version','request_id','fingerprint','state','events','error','digest'}|({'abort'} if doc.get('version')==2 else set()))
+                or type(doc['version']) is not int or doc['version'] not in (1,2)
                 or doc['request_id']!=request_id or doc['fingerprint']!=plan['fingerprint']
                 or doc['state'] not in ('opening','maintenance_open','closing','restoring','completed','needs_review')
                 or doc['digest']!=hashlib.sha256(canonical({k:v for k,v in doc.items() if k!='digest'})).hexdigest()
                 or not isinstance(doc['events'],list) or len(doc['events'])>512):raise ValueError()
+        if doc['version']==2:
+            validate_abort(doc['abort'],plan)
+            if doc['abort']['token']['operation_id']!=request_id:raise ValueError()
+            if any(e.get('phase') in ('window-issue-intent','window-issued') for e in doc['events']):raise ValueError()
         expected=steps(plan);count=len(doc['events'])
         if count and doc['events'][0].get('phase')=='window-abort-intent':expected[0]=('window-abort-intent',None)
         if count>=2 and doc['events'][1].get('phase')=='window-not-issued':expected[1]=('window-not-issued',None)
@@ -81,8 +109,11 @@ def validate(doc,request_id,plan):
             elif phase=='restore-marker-intent':
                 if data!={'service':name,'normally_up':cycle['entries'][name]['before'][2]}:raise ValueError()
             elif phase in ('restore-marker-applied','restore-start-intent','restore-start-sent'):
-                if data!={'service':name} and not (phase=='restore-start-sent' and data=={'service':name,'reconciled':True}):raise ValueError()
-            elif phase=='service-restored':restored_record(data,cycle['entries'][name])
+                if data!={'service':name} and not (phase=='restore-start-sent' and data in ({'service':name,'reconciled':True},{'service':name,'preserved':True})):raise ValueError()
+            elif phase=='service-restored':
+                restored_record(data,cycle['entries'][name])
+                if doc.get('abort',{}).get('baseline',{}).get(name,[False])[0] and data['process']!=cycle['entries'][name]['process']:
+                    raise ValueError()
             elif phase=='services-restored':
                 if data!={'services':cycle['start_order'],'ordinary_writes_open':False}:raise ValueError()
             elif phase=='gate-released':

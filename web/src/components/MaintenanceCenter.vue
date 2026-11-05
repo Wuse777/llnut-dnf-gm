@@ -23,8 +23,8 @@ const displayedState=computed(()=>{const result=detail.value?.result?.state,stat
  if(status==='cancelled'&&!['cancelled','expired','rejected','completed'].includes(result))return 'cancelling';
  return result||status})
 const gateNames:Record<string,string>={open:'普通写入已开放',frozen:'维护冻结中',unknown:'状态未知 · 普通写入已保护',not_configured:'尚未安装维护写入屏障'}
-const recoveryReasons:Record<string,string>={maintenance_start_outcome_unproven:'组件已有启动意向，但目前没有匹配的运行进程。为避免重复启动，本次未继续；请先核对组件状态。',maintenance_restored_process_changed:'已恢复组件的进程发生变化，不能继续沿用旧恢复记录。',maintenance_restored_core_unhealthy:'组件恢复后核心健康检查未通过；可修复问题后再次核对恢复。'}
-const observationNames:Record<string,string>={down_waiting_restore:'组件保持停止，等待恢复',restore_marker_pending:'恢复启动标记中',restore_start_pending:'启动命令待确认',starting:'组件已启动，正在核对就绪状态',restored:'组件状态与恢复记录一致',down_terminated:'组件已按计划由TERM退出（不代表维护完成）',original:'与计划前状态一致',restart_inhibited:'进程仍在运行，自动重启已禁止',restart_inhibited_marker_missing:'进程仍在运行，停止标记待核对',down_normal:'进程正常退出（不是存档验收凭据）',down_abnormal:'进程异常退出',changed:'与原计划不一致'}
+const recoveryReasons:Record<string,string>={maintenance_partial_exit_pending:'组件已有退出意向，但原进程仍在运行。退出结果尚不明确，未重发信号；请等待后使用只读核对，再确认恢复。',maintenance_partial_state_unproven:'部分组件状态无法与原计划对应，保留冻结，不尝试强制启动。',maintenance_preserved_process_changed:'应保留的原进程已经改变，停止恢复并保留原记录。',maintenance_abort_journal_changed:'退出记录与本次恢复快照不一致，不能继续使用旧快照。',maintenance_start_outcome_unproven:'组件已有启动意向，但目前没有匹配的运行进程。为避免重复启动，本次未继续；请先核对组件状态。',maintenance_restored_process_changed:'已恢复组件的进程发生变化，不能继续沿用旧恢复记录。',maintenance_restored_core_unhealthy:'组件恢复后核心健康检查未通过；可修复问题后再次核对恢复。'}
+const observationNames:Record<string,string>={original_preserved:'保留仍在运行的原进程',down_waiting_restore:'组件保持停止，等待恢复',restore_marker_pending:'恢复启动标记中',restore_start_pending:'启动命令待确认',starting:'组件已启动，正在核对就绪状态',restored:'组件状态与恢复记录一致',down_terminated:'组件已按计划由TERM退出（不代表维护完成）',original:'与计划前状态一致',restart_inhibited:'进程仍在运行，自动重启已禁止',restart_inhibited_marker_missing:'进程仍在运行，停止标记待核对',down_normal:'进程正常退出（不是存档验收凭据）',down_abnormal:'进程异常退出',changed:'与原计划不一致'}
 const active=computed(()=>!!id.value&&!terminal.value)
 function date(value:any){return typeof value==='number'?new Date(value*1000).toLocaleString('zh-CN',{hour12:false}):'未知'}
 function fail(e:unknown){error.value=uncertainMessage(e);if(e instanceof ApiError){if(e.status===401)emit('expired');if(e.status===403&&e.message.includes('重新认证'))emit('reauth')}}
@@ -129,7 +129,7 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
      <small>这是采集时的进程状态，不证明游戏存档完整，不开放装备写入，也不会重发退出命令或恢复服务。</small>
     </template>
    </section>
-   <ol v-if="detail.result?.events?.length" class="maintenance-events"><li v-for="event in detail.result.events" :key="event.sequence"><b>{{event.reconciled?'中断后已核对组件运行状态（未重发启动）':phases[event.phase]||event.phase}}</b><span>{{event.service||'维护流程'}} · {{date(event.at)}}</span></li></ol>
+   <ol v-if="detail.result?.events?.length" class="maintenance-events"><li v-for="event in detail.result.events" :key="event.sequence"><b>{{event.preserved?'已保留原运行进程并恢复启动配置':event.reconciled?'中断后已核对组件运行状态（未重发启动）':phases[event.phase]||event.phase}}</b><span>{{event.service||'维护流程'}} · {{date(event.at)}}</span></li></ol>
   </template>
   <div class="toolbar"><button :disabled="busy" @click="inspect()">只查询原申请</button><button v-if="detail?.can_observe" :disabled="busy||detail?.observation_pending" @click="observe">核对实际状态（只读）</button><button v-if="canConfirm" class="danger" @click="openConfirm">核对并确认维护</button><button v-if="canRecover" class="primary" @click="openRecovery">核对中断并继续恢复</button><button v-if="recoveryAttempted" :disabled="busy" @click="reviewRecovery">核对上次恢复结果</button><button v-if="canClose" class="primary" @click="openClose">结束维护并恢复服务</button><button v-if="detail?.can_cancel" :disabled="busy" @click="cancel">取消尚未执行的计划</button><button v-if="detail?.retry_dispatch_allowed&&!detail?.receipt_error" :disabled="busy" @click="dispatch">补投递原申请</button><button v-if="terminal" :disabled="busy" @click="reset">结束查看</button></div>
  </section>
@@ -139,7 +139,7 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
  <Modal v-if="recoveryDialog" title="核对中断并继续恢复" :busy="busy" @close="recoveryDialog=false">
   <p class="warning">只接续这次维护的关窗与恢复步骤，不重新停服、不重复充值或装备修改，不重新发送已有启动意向的命令。</p>
   <p>申请编号：{{id}}</p><p>当前步骤：{{phases[detail?.result?.phase]||detail?.result?.phase}}</p>
-  <p class="field-hint">已启动的组件会核对进程；未执行的后续步骤按原计划继续。若某组件只有启动意向但实际没有运行，会保留冻结并显示原因，不盲目重启。</p>
+  <p class="field-hint">部分退出中断时，仍正常运行的原进程予以保留，只恢复已确认退出的组件；不会为完成维护而继续停服。已启动的组件会核对进程，未执行的后续恢复步骤按原计划继续。若某组件只有启动意向但实际没有运行，会保留冻结并显示原因，不盲目重启。</p>
   <label class="maintenance-ack"><input v-model="recoveryAck" type="checkbox" aria-label="确认核对并继续恢复" :aria-invalid="!!recoveryError">我确认核对当前状态，并继续恢复原游戏组件。</label>
   <FieldError id="maintenance-recovery-error" :message="recoveryError"/>
   <template #footer><button @click="recoveryDialog=false">返回核对</button><button class="primary" :disabled="!canRecover" @click="recoverMaintenance">确认核对并继续</button></template>

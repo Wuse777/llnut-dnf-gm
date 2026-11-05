@@ -174,7 +174,7 @@ class WindowManager:
             return {'state':'closed',**receipt}
 
 
-    def close_unissued(self, expected_id, *, expected_binding):
+    def close_unissued(self, expected_id, *, expected_binding, verify_abort=None):
         """Close an interrupted pre-window attempt without ever granting a permit."""
         if not isinstance(expected_id,str) or not re.fullmatch(r'[a-f0-9]{32}',expected_id):
             raise Refused('maintenance_id_required')
@@ -191,9 +191,13 @@ class WindowManager:
                     if prior.get('safe_to_resume') is True:return {'state':'already_closed',**prior}
                 elif prior.get('safe_to_resume') is not True:
                     raise Refused('maintenance_previous_close_unresolved')
-            snapshot=self.checked_snapshot()
-            if any(snapshot.get(k)!=v for k,v in expected_binding.items()):
-                raise Refused('maintenance_original_target_changed')
+            if verify_abort is not None:
+                if not callable(verify_abort) or verify_abort() is not True:
+                    raise Refused('maintenance_abort_state_unproven')
+            else:
+                snapshot=self.checked_snapshot()
+                if any(snapshot.get(k)!=v for k,v in expected_binding.items()):
+                    raise Refused('maintenance_original_target_changed')
             atomic_json(self.root/'closed.json',{'id':expected_id,'binding':expected_binding,'safe_to_resume':False})
             atomic_json(self.root/'evidence.json',{'safe':False,'permit_id':expected_id,
                 'collected_at':self.clock(),'reason':'maintenance_closed_without_issue'})

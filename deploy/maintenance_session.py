@@ -27,14 +27,52 @@ class MaintenanceSession:
             raise Refused('maintenance_owner_mismatch')
 
     def _plan(self, request_id):
-        c=self.coordinator
-        doc=c._load(request_id)
-        if (doc['version']!=3 or doc['state'] not in ('writers_stopped','completed')
-                or doc['state']!='completed' and c._active()!=request_id):
+        c=self.coordinator;doc=c._load(request_id);plan=doc['plan']
+        if doc['version']!=3 or (doc['state'] not in ('completed','recovered') and c._active()!=request_id):
             raise Refused('maintenance_writers_not_stopped')
-        plan=doc['plan'];validate_cycle(plan)
-        token=validate_token(doc['events'][1]['data'],plan['admission'],request_id,plan['identity'])
+        validate_cycle(plan)
+        if doc['state'] in ('writers_stopped','completed'):
+            token=validate_token(doc['events'][1]['data'],plan['admission'],request_id,plan['identity'])
+        elif doc['state'] in ('running','needs_review','recovered'):
+            session=self._load(request_id,plan);abort=session.get('abort')
+            if (not abort or abort['drain_revision']!=len(doc['events'])
+                    or abort['drain_digest']!=doc['events'][-1]['digest']):
+                raise Refused('maintenance_abort_journal_changed')
+            token=validate_token(abort['token'],plan['admission'],request_id,plan['identity'])
+        else:raise Refused('maintenance_writers_not_stopped')
         return plan,token
+
+    def _begin_partial_abort(self, request_id):
+        """Called under coordinator lock, before any restoration command."""
+        c=self.coordinator;raw=c._load(request_id);plan=raw['plan']
+        if (raw['version']!=3 or raw['state'] not in ('running','needs_review')
+                or c._active()!=request_id or len(raw['events'])<2):
+            raise Refused('maintenance_partial_abort_unavailable')
+        try:return self._load(request_id,plan)
+        except FileNotFoundError:pass
+        if os.path.lexists(self.window.root/'permit.json'):
+            raise Refused('maintenance_window_without_intent')
+        token=validate_token(raw['events'][1]['data'],plan['admission'],request_id,plan['identity'])
+        c.admission.verify_frozen(token);self._database(plan)
+        c.admission.drain(plan['admission'],token)
+        baseline=c.lifecycle.recovery_snapshot(plan,raw['events'])
+        doc={'version':2,'request_id':request_id,'fingerprint':plan['fingerprint'],
+             'state':'opening','events':[],'error':None,
+             'abort':{'baseline':baseline,'token':token,'drain_digest':raw['events'][-1]['digest'],
+                      'drain_revision':len(raw['events'])}}
+        self._save(doc)
+        return doc
+
+    def _initial_check(self, doc, plan):
+        c=self.coordinator;baseline=doc.get('abort',{}).get('baseline')
+        c.lifecycle.check(plan,baseline if baseline is not None else c.lifecycle.stopped_snapshot(plan))
+        if baseline is not None:
+            for name,entry in plan['service_cycle']['entries'].items():
+                if c.host.contract(plan['identity'],name)!=entry['contract']:
+                    raise Refused('maintenance_service_contract_changed')
+                if baseline[name][0] and c.host.service_process(plan['identity'],baseline[name][4])!=entry['process']:
+                    raise Refused('maintenance_preserved_process_changed')
+        return True
 
     def binding(self, plan):
         return {**{k:plan['identity'][k] for k in BOUND_FIELDS if k!='components'},
@@ -125,6 +163,13 @@ class MaintenanceSession:
     def close_restore(self, request_id, *, recover=False):
         c=self.coordinator
         with c.locked():
+            if recover and c._load(request_id)['state'] in ('running','needs_review'):
+                try:self._begin_partial_abort(request_id)
+                except Exception as error:
+                    raw=c._load(request_id)
+                    raw.update(state='needs_review',error=error_code(error),updated_at=c._now()[0])
+                    c._write(request_id+'.json',raw)
+                    return c.status(request_id)
             plan,token=self._plan(request_id)
             try:doc=self._load(request_id,plan)
             except FileNotFoundError:
@@ -142,7 +187,7 @@ class MaintenanceSession:
                 # stops or issue a window: reconcile a persisted permit, or
                 # create only a closed tombstone and restore the original plan.
                 c.admission.verify_frozen(token);self._database(plan)
-                c.lifecycle.check(plan,c.lifecycle.stopped_snapshot(plan))
+                self._initial_check(doc,plan)
                 if not doc['events']:
                     if os.path.lexists(self.window.root/'permit.json'):
                         raise Refused('maintenance_window_without_intent')
@@ -158,17 +203,18 @@ class MaintenanceSession:
                 if len(doc['events'])==2:
                     c.admission.verify_frozen(token)
                     if doc['events'][1]['phase']=='window-issued':self._window_matches(request_id,plan)
-                    c.lifecycle.check(plan,c.lifecycle.stopped_snapshot(plan))
+                    self._initial_check(doc,plan)
                     self._record(doc,plan,'window-close-intent',{'window_id':request_id})
                 if len(doc['events'])==3:
                     c.admission.verify_frozen(token)
-                    c.lifecycle.check(plan,c.lifecycle.stopped_snapshot(plan))
+                    self._initial_check(doc,plan)
                     previous=self.window.reconcile
                     self.window.reconcile=lambda wid:settle_window(c.admission.db,wid,
                         expected_server_uuid=plan['admission']['server_uuid'])
                     try:
                         close=self.window.close_unissued if doc['events'][1]['phase']=='window-not-issued' else self.window.close
-                        closed=close(request_id,expected_binding=self.binding(plan))
+                        closed=close(request_id,expected_binding=self.binding(plan),
+                            **({'verify_abort':lambda:self._initial_check(doc,plan)} if doc.get('abort') else {}))
                     finally:self.window.reconcile=previous
                     self._record(doc,plan,'window-closed',closed)
                 with self.window.closed_guard(request_id,expected_binding=self.binding(plan)) as closed_proof:
@@ -180,7 +226,7 @@ class MaintenanceSession:
                     phases={e['phase'] for e in doc['events']}
                     if 'services-restored' not in phases:
                         proof()
-                        restored=c.lifecycle.restore(plan,record,proof,events=tuple(doc['events']))
+                        restored=c.lifecycle.restore(plan,record,proof,events=tuple(doc['events']),baseline=doc.get('abort',{}).get('baseline'))
                     else:
                         restored=c.lifecycle.stopped_snapshot(plan)
                         for e in doc['events']:
@@ -224,7 +270,7 @@ class MaintenanceSession:
         when a later request owns the gate.
         """
         c=self.coordinator;request_id=session['request_id'];raw=c._load(request_id)
-        if raw['state']=='completed':return
+        if raw['state'] in ('completed','recovered'):return
         verified=self._load(request_id,plan)
         if verified['state']!='completed' or c._active()!=request_id:
             raise Refused('maintenance_completion_unproven')
@@ -244,7 +290,7 @@ class MaintenanceSession:
                 for item in records:
                     if c.host.service_process(plan['identity'],item['state'][4])!=item['process']:
                         raise Refused('maintenance_restored_process_changed')
-                raw.update(state='completed',updated_at=c._now()[0])
+                raw.update(state='recovered' if session.get('abort') else 'completed',updated_at=c._now()[0])
                 c._write(request_id+'.json',raw)
 
     def status(self, request_id):
