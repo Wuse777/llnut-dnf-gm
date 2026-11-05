@@ -36,7 +36,7 @@ try{
  const inspect=page.getByRole('button',{name:'查看物品详情 '+item.id+' '+item.name,exact:true});await inspect.click();
  await page.getByRole('dialog',{name:'物品详情 · #'+item.id}).waitFor();await noOverflow();await page.screenshot({path:output+'/desktop-item.png'});
  await page.keyboard.press('Escape');await inspect.waitFor();assert.equal(await inspect.evaluate(el=>el===document.activeElement),true);
- await page.locator('nav').getByRole('button',{name:'账号与角色',exact:true}).click();await page.getByRole('button',{name:'管理 →',exact:true}).click();await page.getByRole('button',{name:'查看详情',exact:true}).click();await page.getByRole('tab',{name:/穿戴装备/}).click();await page.getByRole('button',{name:'格子视图',exact:true}).click();
+ await page.locator('nav').getByRole('button',{name:'账号与角色',exact:true}).click();await page.getByRole('button',{name:'管理 →',exact:true}).click();await page.getByRole('button',{name:'查看详情',exact:true}).click();await page.getByRole('group',{name:'角色详情分组',exact:true}).getByRole('button',{name:/装备与仓储/}).click();await page.getByRole('tab',{name:/穿戴装备/}).click();await page.getByRole('button',{name:'格子视图',exact:true}).click();
  await page.locator('button.inventory-slot').click();await page.getByRole('region',{name:'选中物品详情',exact:true}).waitFor();await page.screenshot({path:output+'/desktop-inventory.png'});
  await page.keyboard.press('Escape');assert.equal(await page.getByRole('dialog',{name:'角色详情',exact:true}).count(),1);assert.equal(await page.getByRole('region',{name:'选中物品详情',exact:true}).count(),0);
  await page.setViewportSize({width:390,height:844});await page.locator('button.inventory-slot').click();

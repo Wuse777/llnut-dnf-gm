@@ -101,3 +101,9 @@ it('uses compact category navigation, remembers each category and keeps keyboard
  await w.get('#character-tab-backpack').trigger('keydown',{key:'End'});await flushPromises();expect(category('邮件与记录').attributes('aria-pressed')).toBe('true');expect(w.get('#character-tab-activity').attributes('aria-selected')).toBe('true')
  }finally{w.unmount()}
 })
+
+it('includes the scroll container inset when keeping section titles below the sticky identity',async()=>{
+ const {w}=setup();const body=w.get('.modal-body').element as HTMLElement;body.style.paddingTop='24px';body.style.scrollPaddingTop='5px'
+ try{await flushPromises();const height=w.get('.sticky-character-identity').element.getBoundingClientRect().height;expect(body.style.scrollPaddingTop).toBe(`${Math.ceil(height)+36}px`)}finally{w.unmount()}
+ expect(body.style.scrollPaddingTop).toBe('5px')
+})

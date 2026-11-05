@@ -34,7 +34,7 @@ await page.route('**/dnf-gm/api/v1/**',async route=>{
  else {errors.push('Unexpected route '+p);status=500;d={detail:'Unknown synthetic route'}}
  await route.fulfill({status,json:d});
 });
-async function openRole(){await page.locator('nav').getByRole('button',{name:'账号与角色',exact:true}).click();await page.getByRole('button',{name:'管理 →',exact:true}).click();await page.getByRole('button',{name:'查看详情',exact:true}).click();await page.getByRole('tab',{name:/穿戴装备/}).click()}
+async function openRole(){await page.locator('nav').getByRole('button',{name:'账号与角色',exact:true}).click();await page.getByRole('button',{name:'管理 →',exact:true}).click();await page.getByRole('button',{name:'查看详情',exact:true}).click();await page.getByRole('group',{name:'角色详情分组',exact:true}).getByRole('button',{name:/装备与仓储/}).click();await page.getByRole('tab',{name:/穿戴装备/}).click();await page.getByRole('button',{name:'列表视图',exact:true}).click()}
 try{
  await page.emulateMedia({reducedMotion:'reduce'});await page.goto(base);await openRole();
  await page.locator('.character-items').getByRole('button',{name:'维护此物品',exact:true}).click();
@@ -45,12 +45,12 @@ try{
  assert.equal(await page.getByRole('button',{name:'刷新角色存档',exact:true}).isDisabled(),true);
  await page.screenshot({path:output+'/desktop-preview.png',fullPage:false});
  await page.getByRole('button',{name:'确认执行装备操作',exact:true}).click();await page.getByText(/合成提交结果待确认/).waitFor();assert.equal(postCount,1);
- await page.reload();await openRole();await page.getByRole('tab',{name:'装备维护',exact:true}).click();
+ await page.reload();await openRole();await page.getByRole('group',{name:'角色详情分组',exact:true}).getByRole('button',{name:/维护与排查/}).click();await page.getByRole('tab',{name:'装备维护',exact:true}).click();
  await page.getByRole('heading',{name:/执行意向已记录/}).waitFor();assert.equal(postCount,1);assert.equal(await page.getByRole('button',{name:'确认执行装备操作',exact:true}).count(),0);
  record={...record,status:'committed',result:{snapshot_id:record.operation_id}};await page.getByRole('button',{name:'查询原操作结果',exact:true}).click();await page.getByText(/下方角色资料仍是旧快照/).waitFor();
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:output+'/mobile-result.png',fullPage:false});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'Mobile document overflow');
  const overflowing=await page.locator('.modal-body').evaluate(el=>el.scrollWidth>el.clientWidth+1);assert.equal(overflowing,false,'Mobile modal overflow');
- await page.getByRole('button',{name:'结束查看',exact:true}).click();await page.getByRole('tab',{name:/穿戴装备/}).click();await page.getByRole('button',{name:'刷新角色存档',exact:true}).click();
+ await page.getByRole('button',{name:'结束查看',exact:true}).click();await page.getByRole('group',{name:'角色详情分组',exact:true}).getByRole('button',{name:/装备与仓储/}).click();await page.getByRole('tab',{name:/穿戴装备/}).click();await page.getByRole('button',{name:'刷新角色存档',exact:true}).click();
  await page.getByRole('button',{name:'格子视图',exact:true}).click();
  const tiles=page.locator('.inventory-grid button');if(await tiles.count())await tiles.first().click();
  await page.screenshot({path:output+'/mobile-grid.png',fullPage:true});

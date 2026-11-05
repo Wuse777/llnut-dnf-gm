@@ -38,7 +38,7 @@ watch(identity,node=>{
  const body=root.value?.closest<HTMLElement>('.modal-body')
  if(!node||!body)return
  const previous=body.style.scrollPaddingTop
- const update=()=>{body.style.scrollPaddingTop=`${Math.ceil(node.getBoundingClientRect().height)+12}px`}
+ const update=()=>{body.style.scrollPaddingTop=`${Math.ceil(node.getBoundingClientRect().height)+(parseFloat(getComputedStyle(body).paddingTop)||0)+12}px`}
  update();const observer=typeof ResizeObserver!=='undefined'?new ResizeObserver(update):null;observer?.observe(node)
  releaseIdentity=()=>{observer?.disconnect();body.style.scrollPaddingTop=previous}
 },{flush:'post'})
