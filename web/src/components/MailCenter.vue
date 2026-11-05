@@ -2,7 +2,7 @@
 import {ref,watch,onBeforeUnmount} from 'vue'
 import {api,uncertainMessage} from '../api'
 import Modal from './Modal.vue'
-const props=withDefaults(defineProps<{uid?:number,characNo?:number,lockedTarget?:boolean}>(),{uid:0,characNo:0,lockedTarget:false})
+const props=withDefaults(defineProps<{uid?:number,characNo?:number,lockedTarget?:boolean,operationId?:string}>(),{uid:0,characNo:0,lockedTarget:false,operationId:''})
 const emit=defineEmits<{draft:[request:any]}>()
 const uid=ref(''),role=ref(''),op=ref(''),rows=ref<any[]>([]),page=ref(1),more=ref(false)
 const error=ref(''),loading=ref(false),detailError=ref(''),detailLoading=ref(false),selected=ref(''),detail=ref<any>(null),after=ref(0),previous=ref<number[]>([])
@@ -29,7 +29,7 @@ function close(){detailEpoch++;selected.value='';detail.value=null;detailError.v
 async function next(){if(detail.value?.next_after==null)return;const cursor=detail.value.next_after;previous.value.push(after.value);await inspect(selected.value,cursor)}
 async function back(){const cursor=previous.value.pop();if(cursor!==undefined)await inspect(selected.value,cursor)}
 function draft(){if(!detail.value)return;const request=JSON.parse(JSON.stringify(detail.value.batch.request));emit('draft',request);close()}
-watch(()=>[props.uid,props.characNo],()=>{uid.value=props.uid?String(props.uid):'';role.value=props.characNo?String(props.characNo):'';op.value='';close();void load(true)},{immediate:true})
+watch(()=>[props.uid,props.characNo,props.operationId],()=>{uid.value=props.uid?String(props.uid):'';role.value=props.characNo?String(props.characNo):'';op.value=props.operationId;close();void load(true);if(props.operationId)open(props.operationId)},{immediate:true})
 onBeforeUnmount(()=>{listEpoch++;detailEpoch++})
 </script>
 <template>

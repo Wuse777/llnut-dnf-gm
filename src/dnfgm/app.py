@@ -24,6 +24,7 @@ from .character_rename import CharacterRename, RenamePreview
 from .character_rescue import CharacterRescue, RescuePreview
 from .character_quests import CharacterQuests
 from .character_progression import CharacterProgression
+from .player_preferences import PlayerPreferences,PlayerTarget,PlayerFavorite
 from .maintenance_requests import MaintenanceRequests, MaintenancePrepare, MaintenanceConfirm, MaintenanceClose, MaintenanceRecover
 from .models import InventoryPreview
 from .support_models import ProfileSave, CaseCreate, CaseUpdate, CaseEntry, CaseLink, CaseStatus, Category
@@ -103,6 +104,7 @@ def create_app(settings=None, database=None):
     rescue_ops = CharacterRescue(service)
     quest_reader = CharacterQuests(service)
     progression_reader = CharacterProgression(service)
+    player_preferences = PlayerPreferences(db)
     maintenance = MaintenanceRequests(db,settings)
     schedules = Schedules(db, settings, jobs, native_ops)
     from .task_health import TaskHealth, WorkerPulse
@@ -150,10 +152,10 @@ def create_app(settings=None, database=None):
     @app.get(API+'/health')
     def health():
         with db.connect() as c, c.cursor() as q:
-            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 14')
+            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 15')
             versions={row['version'] for row in q.fetchall()}
-            if versions != set(range(1,15)):
-                raise HTTPException(503,'管理库迁移未完成，需要完成014操作结果迁移（包含013事务屏障及此前迁移）')
+            if versions != set(range(1,16)):
+                raise HTTPException(503,'管理库迁移未完成，需要完成015玩家收藏迁移及此前迁移')
             from .gameplay_transactions import inspect_protocol
             try:inspect_protocol(q)
             except Exception:raise HTTPException(503,'管理库事务屏障不可核验；不会自动修复或开启维护') from None
@@ -233,6 +235,21 @@ def create_app(settings=None, database=None):
     def capability_receipt(request:Request,rid:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
         key=user(request);limits.check('capability-receipt:'+key,60)
         return policy.receipt(rid)
+
+    @app.get(API+'/players/collections')
+    def player_collection(request:Request,collection:Literal['recent','favorites']='recent',page:int=Query(1,ge=1,le=10000)):
+        key=user(request);limits.check('players-collections:'+key,40)
+        return player_preferences.list(collection,page)
+
+    @app.post(API+'/players/visit')
+    def player_visit(data:PlayerTarget,request:Request):
+        key=user(request,True);limits.check('players-visit:'+key,40)
+        return player_preferences.update(data.uid,data.charac_no)
+
+    @app.put(API+'/players/favorite')
+    def player_favorite(data:PlayerFavorite,request:Request):
+        key=user(request,True);limits.check('players-favorite:'+key,30)
+        return player_preferences.update(data.uid,data.charac_no,data.favorite)
 
     @app.get(API+'/accounts')
     def accounts(request:Request,q:str=Query('',max_length=80),page:int=Query(1,ge=1,le=10000)):

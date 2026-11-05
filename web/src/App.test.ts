@@ -273,3 +273,9 @@ it('mail title is inline validated and carried into the preview request',async()
 it('opens a character shortcut as a target-bound reward draft without submitting',async()=>{
  const {w,calls}=testApp();try{await target(w);await click(w,'查看详情');await w.get('.character-shortcuts').findAll('button').find(b=>b.text()==='给此角色发奖励')!.trigger('click');await flushPromises();expect(w.find('[data-testid=character-detail]').exists()).toBe(false);expect((w.get('#mail-role').element as HTMLSelectElement).value).toBe('4');expect(w.text()).toContain('UID 3');expect(calls.some(c=>c.method==='POST'&&c.path.includes('operations'))).toBe(false)}finally{w.unmount()}
 })
+it('keeps player history view when returning from another workspace',async()=>{
+ const {w,calls}=testApp();await target(w);await click(w,'该玩家操作历史');await click(w,'邮件发放');await click(w,'账号与角色')
+ expect(w.find('.player-center .audit-list').exists()).toBe(true)
+ expect(calls.some(c=>c.path==='/players/visit'&&c.body.uid===3)).toBe(true)
+ expect(calls.some(c=>c.path.includes('/operations/preview'))).toBe(false);w.unmount()
+})

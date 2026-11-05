@@ -51,3 +51,10 @@ it('pure currency reward needs no fake attachment and errors clear beside curren
 it('currency-only draft copies to template editor and preserves amount when saving',async()=>{
  const {w,calls}=setup();await target(w);await w.find('#mail-reward-cera_point').setValue(456);await click(w,'另存为礼包模板');expect((w.find('#gift-reward-cera_point').element as HTMLInputElement).value).toBe('456');await w.find('#gift-name').setValue('Currency');await click(w,'创建礼包模板');expect(calls.find(c=>c.path==='/gift-templates'&&c.body)?.body).toMatchObject({items:[],currency_rewards:{cera_point:456}});w.unmount()
 })
+it('starts a blank follow-up mail while retaining the exact recipient',async()=>{
+ const {w,calls}=setup();await target(w);await w.find('#mail-gold').setValue(5);await click(w,'生成预览 →');await click(w,'确认执行一次')
+ expect(w.text()).toContain('查看本次完整邮件');await click(w,'继续给此角色发放（新草稿）')
+ expect((w.find('[aria-label="收件角色"]').element as HTMLSelectElement).value).toBe('4')
+ expect((w.find('#mail-gold').element as HTMLInputElement).value).toBe('0')
+ expect(calls.filter(c=>c.path.endsWith('/confirm'))).toHaveLength(1);w.unmount()
+})

@@ -50,6 +50,8 @@ def bootstrap_sql(config,ph):
     sql += capability_policy_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/013-gameplay-fence.sql').read_text()
     sql += (Path(__file__).resolve().parents[1]/'migrations/014-operation-outcomes.sql').read_text()
+    sql += (Path(__file__).resolve().parents[1]/'migrations/015-player-preferences.sql').read_text()
+    sql += player_preferences_sql(user)
     sql += gameplay_fence_sql(user)
     sql += reward_jobs_sql(user)
     sql += catalog_policy_sql(user)
@@ -197,3 +199,8 @@ def character_rescue_sql(user="'dnf_gm_app'@'127.0.0.1'"):
 def character_quests_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     from dnfgm.character_quests import QUEST_COLUMNS
     return f'GRANT SELECT({",".join("`"+k+"`" for k in QUEST_COLUMNS)}) ON taiwan_cain.new_charac_quest TO {user};\n'
+
+
+def player_preferences_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return (f'GRANT SELECT,INSERT(uid,charac_no,favorite,favorited_at,visited_at),'
+            f'UPDATE(favorite,favorited_at,visited_at) ON dnf_gm.player_preferences TO {user};\n')

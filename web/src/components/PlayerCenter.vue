@@ -3,9 +3,9 @@ import {supportNames,inventoryNames,nativeNames} from '../nativeStatus'
 import {ref,watch,onBeforeUnmount} from 'vue'
 import {api,uncertainMessage} from '../api'
 import MailCenter from './MailCenter.vue'
-const props=defineProps<{account:any,busy?:boolean}>()
-const emit=defineEmits<{action:[value:{action:string,uid:number,charac_no?:number}],draft:[value:any],inspect:[id:string],correction:[value:any]}>()
-const tab=ref('roles'),rows=ref<any[]>([]),page=ref(1),loading=ref(false),error=ref('')
+const props=defineProps<{account:any,busy?:boolean,viewState?:{tab:string,page:number}}>()
+const emit=defineEmits<{action:[value:{action:string,uid:number,charac_no?:number}],draft:[value:any],inspect:[id:string],correction:[value:any],'view-state':[value:{tab:string,page:number}]}>()
+const tab=ref(props.viewState?.tab||'roles'),rows=ref<any[]>([]),page=ref(props.viewState?.page||1),loading=ref(false),error=ref('')
 const names:Record<string,string>={...nativeNames,...inventoryNames,...supportNames,currency:'余额变更',mail:'奖励邮件',ban:'封禁',unban:'解封','equipment-unlock':'装备提前解锁'}
 let epoch=0
 function parse(v:string){try{return JSON.parse(v)}catch{return {}}}
@@ -18,7 +18,8 @@ async function load(){
 }
 function act(action:string,charac_no?:number){emit('action',{action,uid:props.account.uid,charac_no})}
 function switchTab(next:string){tab.value=next;page.value=1;void load()}
-watch(()=>props.account.uid,()=>{page.value=1;void load()},{immediate:true})
+watch(()=>props.account.uid,()=>{tab.value=props.viewState?.tab||'roles';page.value=props.viewState?.page||1;void load()},{immediate:true})
+watch([tab,page],()=>emit('view-state',{tab:tab.value,page:page.value}))
 onBeforeUnmount(()=>epoch++)
 </script>
 <template><section class="account-characters player-center"><div class="section-title"><div><h2>角色与管理历史</h2><p class="muted">UID {{account.uid}} · 所有操作保留当前玩家上下文</p></div><div class="button-row"><button :disabled="busy" @click="act('currency')">调整账号余额</button><button :disabled="busy" @click="act('ban')">封禁此账号</button><button :disabled="busy" @click="act('unban')">解除此账号封禁</button></div></div>

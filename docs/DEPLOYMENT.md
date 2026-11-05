@@ -318,3 +318,9 @@ sudo /opt/dnf-gm/venv/bin/python deploy/upgrade-economy.py \
 ### 维护前普通结果核对迁移（014）
 
 新安装`grants.py`和既有`upgrade-gameplay-fence.py`同时包含013/014。014仅给`dnf_gm.operations`增加`(status,action,operation_id)`索引，不更改游戏表和功能权限；脚本可重复执行。执行维护核对前检查索引列及相关表InnoDB引擎，不接受同名错误索引。普通应用兼容013，但新完整维护适配器要求014；不要把旧应用健康检查通过理解为新执行器已安装。升级仍须通过原维护空闲预检，不能清除冻结文件或原审计绕过。当前本地未部署。
+
+## 015 玩家收藏与最近访问升级
+
+新版健康检查要求001–015。先由维护者在安装锁与空闲维护状态下应用 `migrations/015-player-preferences.sql`，调用 `deploy/grants.py` 中 `player_preferences_sql` 为既有专用运行用户添加精确列授权，再安装构建产物。不得重新执行新实例bootstrap，不修改管理员密码或现有功能策略。
+
+015仅新增管理库界面偏好表，没有游戏数据或游戏表结构修改。通过原有安装器仅重启GM组件。回滚应用保留015，不删除审计、奖励、维护记录或玩家偏好；旧版按限定版本范围检查迁移，不拒绝015的存在。

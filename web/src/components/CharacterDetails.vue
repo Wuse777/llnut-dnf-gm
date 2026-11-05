@@ -18,7 +18,7 @@ const fatigueBusy=ref(false),fatiguePending=ref(false),fatigueVisited=ref(false)
 const visual=ref(true)
 import UnlockRequests from './UnlockRequests.vue'
 const props=withDefaults(defineProps<{characNo:number,initialSection?:string}>(),{initialSection:'basic'})
-const emit=defineEmits<{close:[],reauth:[],expired:[],action:[value:{action:string,uid:number,charac_no:number}],draft:[value:any],inspect:[id:string]}>()
+const emit=defineEmits<{close:[],reauth:[],expired:[],visited:[value:{uid:number,charac_no:number}],action:[value:{action:string,uid:number,charac_no:number}],draft:[value:any],inspect:[id:string]}>()
 const inventoryPending=ref(false),inventoryStale=ref(false)
 const inventoryBusy=ref(false),inventoryVisited=ref(false),inventorySelection=ref<{container:string,slot:number}|null>(null)
 const actionBusy=computed(()=>unlockBusy.value||inventoryBusy.value||fatigueBusy.value||renameBusy.value||rescueBusy.value)
@@ -43,7 +43,7 @@ function number(n:unknown){return n===null||n===undefined?'未知':Number(n).toL
 function date(s:unknown){if(typeof s!=='string'||s.startsWith('0000-'))return '未记录';const d=new Date(s.replace(' ','T')+'Z');return Number.isNaN(d.getTime())?'未记录':d.toLocaleString('zh-CN',{hour12:false})}
 async function load(){
  const current=++generation;loading.value=true;error.value='';data.value=null
- try{const result=await api('/characters/'+props.characNo);if(current===generation){data.value=result;page.value=1;inventoryStale.value=false}}
+ try{const result=await api('/characters/'+props.characNo);if(current===generation){data.value=result;if(result.account&&!result.character.delete_flag)emit('visited',{uid:result.character.uid,charac_no:props.characNo});page.value=1;inventoryStale.value=false}}
  catch(e){if(current===generation)error.value=uncertainMessage(e)}
  finally{if(current===generation)loading.value=false}
 }
@@ -75,7 +75,7 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
    <p v-if="loading" role="status" class="empty"><span class="spinner"/> 正在读取角色资料、装备、背包与仓库…</p>
    <div v-else-if="error" class="submit-error" role="alert"><b>无法读取角色详情</b><p>{{error}}</p><button @click="load">重试查询</button></div>
    <template v-else-if="data">
-    <div class="character-identity"><GameImage :image="data.portrait" :label="data.profession.name" portrait/><div><h3>{{data.character.charac_name}}</h3><p>{{data.profession.name}} · Lv.{{data.character.lev}} · {{data.account?.accountname??'归属账号缺失'}} / UID {{data.character.uid}}</p></div><span class="status-badge" :class="data.character.delete_flag?'neutral':'success'">{{data.character.delete_flag?'已删除（仅查看存档）':'未删除'}}</span></div>
+    <div class="character-identity sticky-character-identity"><GameImage :image="data.portrait" :label="data.profession.name" portrait/><div><h3>{{data.character.charac_name}}</h3><p>{{data.profession.name}} · Lv.{{data.character.lev}} · {{data.account?.accountname??'归属账号缺失'}} / UID {{data.character.uid}}</p></div><span class="status-badge">登录表：{{data.account_online?.login_status===1?'在线':data.account_online?.login_status===0?'离线':'未知'}}</span><span class="status-badge" :class="data.character.delete_flag?'neutral':'success'">{{data.character.delete_flag?'已删除（仅查看存档）':'未删除'}}</span></div>
     <div class="button-row character-shortcuts" role="group" aria-label="当前角色快捷操作"><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('currency')">调整所属账号余额</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('mail')">给此角色发奖励</button><button :disabled="navigationLocked" @click="tab('unlock')">查看解锁申请</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('ban')">封禁所属账号</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('unban')">解除账号封禁</button></div>
     <p v-if="navigationLocked" class="field-hint">请先完成或查询当前维护／解锁操作，再使用快捷跳转。</p>
     <details class="character-guidance"><summary>存档说明与图片状态</summary>
@@ -139,6 +139,8 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
 </template>
 
 <style scoped>
+.sticky-character-identity{position:sticky;top:-1px;z-index:3;background:var(--bg-primary);padding:12px;border-bottom:1px solid var(--border-color);box-shadow:0 6px 12px #00000008}
+
 .detail-tabs{display:grid;grid-template-columns:.9fr 1.25fr 1.15fr 1fr;gap:12px;margin:16px 0 20px;padding:16px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:12px}.detail-tab-group{display:flex;flex-direction:column;gap:3px;min-width:0}.detail-group-label{font-size:11px;color:var(--text-secondary);padding:0 8px 8px;letter-spacing:.04em}.detail-tab-group button{text-align:left;background:transparent;border:1px solid transparent;padding:7px 9px;font-size:12px;white-space:normal}.detail-tab-group button.active{background:var(--bg-tertiary);border-color:var(--border-color);font-weight:600;color:var(--text-primary)}.detail-tab-group button:hover:not(:disabled){background:var(--bg-secondary)}.detail-tab-group button:focus-visible{outline:2px solid var(--primary-color);outline-offset:1px}
 
 .character-mobile-section{display:none}.character-guidance{margin:12px 0}.character-guidance summary{cursor:pointer;color:var(--text-secondary)}@media(max-width:768px){.character-mobile-section{display:grid;gap:8px;margin:16px 0}.detail-tabs{display:none}.character-identity{display:grid;grid-template-columns:48px minmax(0,1fr);gap:8px 12px}.character-identity>:first-child{grid-row:1/3}.character-identity>.status-badge{grid-column:2;justify-self:start}.character-identity h3{font-size:20px}}
