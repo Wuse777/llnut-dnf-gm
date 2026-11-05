@@ -234,7 +234,8 @@ def create_app(settings=None, database=None):
         key=user(request);limits.check('capabilities:'+key,15)
         from .capabilities import report
         policy.refresh(force=True)
-        return {**report(settings,db),'policy':policy.view()}
+        from .plugin_diagnostics import report as plugin_report
+        return {**report(settings,db),'policy':policy.view(),'plugins':plugin_report(settings)}
 
     @app.post(API+'/capabilities/policy')
     def update_capability_policy(data:PolicyUpdate,request:Request):

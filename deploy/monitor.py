@@ -136,7 +136,9 @@ class Collector:
             if sig != (after.st_ino, after.st_size, after.st_mtime_ns):
                 raise RuntimeError('PVF changed while hashing')
             self.pvf_sha, self.cached_sig = sha, sig
-        status = dict(services=services, core_ok=all(services.values()), pvf_sha256=self.pvf_sha, image_digest=image,
+        from dnfgm.plugin_diagnostics import source_fingerprint
+        plugin_source = source_fingerprint(pvf.parent / 'frida.js')
+        status = dict(plugin_source=plugin_source, services=services, core_ok=all(services.values()), pvf_sha256=self.pvf_sha, image_digest=image,
                       native_monitor_sha256=self.native_fingerprint(state.get('Pid')))
         if self.maintenance is not None:
             window = self.maintenance.status()

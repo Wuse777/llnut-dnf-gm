@@ -3,6 +3,7 @@ import {computed,ref,onMounted,onUnmounted} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
 import Modal from './Modal.vue'
 import FieldError from './FieldError.vue'
+import PluginDiagnostics from './PluginDiagnostics.vue'
 const emit=defineEmits<{expired:[],reauth:[],navigate:[tab:string]}>()
 const data=ref<any>(null),busy=ref(false),error=ref(''),success=ref(''),reason=ref(''),reasonError=ref(''),enabled=ref<string[]>([]),search=ref(''),filter=ref('all'),confirm=ref(false),pending=ref(''),checking=ref(false)
 const storage='dnf-gm.capability-pending'
@@ -77,6 +78,7 @@ onUnmounted(()=>{alive=false;if(timer)clearInterval(timer)})
    <fieldset :disabled="frozen||data.policy.revision==null"><legend class="sr-only">选择管理员功能</legend><div class="capability-switches"><label v-for="c in choices" :key="c.id"><input type="checkbox" :checked="enabled.includes(c.id)" :value="c.id" @change="toggle(c.id,$event)"><span>{{c.label}}</span></label></div><label for="capability-reason">权限调整原因<input id="capability-reason" v-model="reason" maxlength="200" :aria-invalid="!!reasonError" :aria-describedby="reasonError?'capability-reason-error':undefined" placeholder="例如：开放所有功能进行网页测试"></label><FieldError id="capability-reason-error" :message="reasonError"/><button type="button" class="primary" @click="preview">核对并保存权限</button></fieldset>
    <p v-if="data.policy.state==='unknown'" class="warning">权限记录当前不可读取，请修复数据库连接后刷新；不会把未知状态当作已开放。</p>
   </section>
+  <PluginDiagnostics v-if="data?.plugins" :data="data.plugins"/>
   <section v-if="data" class="panel"><form class="toolbar" @submit.prevent><input v-model="search" aria-label="搜索功能" placeholder="搜索功能名称、用途"><select v-model="filter" aria-label="筛选功能状态"><option value="all">全部状态</option><option v-for="(label,key) in states" :key="key" :value="key">{{label}}</option></select></form>
    <p class="field-hint">“人工记录：游戏客户端”仅代表绑定该源码／镜像／PVF的维护验收记录，不保证此刻可执行；没有记录不等于权限关闭。</p>
    <div class="capability-grid"><article v-for="item in rows" :key="item.id" class="capability-card"><div class="section-title"><small>{{item.group}}</small><span class="pill" :class="{'capability-attention':item.state==='attention'}">{{states[item.state]||'未知'}}</span></div><h3>{{item.label}}</h3><ul v-if="item.checks.length" class="capability-checks"><li v-for="check in item.checks" :key="check.code">{{check.message}}</li></ul><p>{{item.note}}</p><div class="capability-verification"><template v-if="item.verification.state==='matched'"><b>人工记录：{{item.verification.level==='client'?'游戏客户端':'接口／数据库'}}</b><small>{{date(item.verification.checked_at)}} · {{item.verification.reference}}</small></template><template v-else-if="item.verification.state==='version_mismatch'"><b>历史验收记录不匹配当前版本</b><small>{{item.verification.reference}}</small></template><span v-else>未关联当前版本验收记录</span></div><button v-if="destinations.has(item.destination)" type="button" @click="emit('navigate',item.destination)">打开功能 →</button></article></div><p v-if="!rows.length" class="empty">没有匹配的功能。</p>

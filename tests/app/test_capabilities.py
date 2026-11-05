@@ -207,3 +207,16 @@ def test_audit_operation_lookup_resolves_policy_receipt_without_game_confirm(env
     assert c.get(P+'/operations/'+uuid.uuid4().hex).status_code==404
     c.cookies.clear()
     assert c.get(P+'/operations/'+rid).status_code==401
+
+
+def test_plugin_report_is_authenticated_and_excludes_private_snapshot_fields(env):
+    c,s,db,app=env
+    from dnfgm.plugin_diagnostics import REVIEWED_SCRIPT_SHA256
+    path=Path(s.status_file);live=json.loads(path.read_text())
+    live.update(collected_at=time.time(),plugin_source={'schema':1,'source_state':'observed','source_sha256':REVIEWED_SCRIPT_SHA256},plugin_private_password='must-not-appear-in-plugin-report')
+    path.write_text(json.dumps(live))
+    response=c.get(P+'/capabilities');assert response.status_code==200,response.text
+    plugin=response.json()['plugins'];assert plugin['state']=='matched' and plugin['editable'] is False
+    assert plugin['runtime_state']=='not_verified' and len(plugin['startup'])==6
+    assert 'must-not-appear-in-plugin-report' not in json.dumps(plugin)
+    c.cookies.clear();assert c.get(P+'/capabilities').status_code==401
