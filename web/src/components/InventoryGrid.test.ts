@@ -38,3 +38,8 @@ it('page changes close an old item detail rather than show a different page with
  await w.find('button.inventory-slot').trigger('click');expect(w.find('[role=region]').exists()).toBe(true)
  await w.findAll('button').find(b=>b.text()==='下一页槽位')!.trigger('click');expect(w.find('[role=region]').exists()).toBe(false);w.unmount()
 })
+it('groups equipment by adapted slot while preserving unknown positions',()=>{
+ const w=mount(InventoryGrid,{props:{items:[item,{...item,slot:12,slot_label:'扩展槽'}],slotCount:13,equipment:true}})
+ expect(w.findAll('.equipment-group-title').map(h=>h.text())).toEqual(['武器与称号1 / 2','防具0 / 5','首饰0 / 3','特殊装备0 / 2','其他存档槽位1 / 1'])
+ expect(w.findAll('.inventory-slot')).toHaveLength(13);w.unmount()
+})

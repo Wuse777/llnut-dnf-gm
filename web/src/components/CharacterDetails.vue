@@ -5,7 +5,7 @@ import Modal from './Modal.vue'
 import GameImage from './GameImage.vue'
 import InventoryGrid from './InventoryGrid.vue'
 import InventoryEditor from './InventoryEditor.vue'
-const visual=ref(false)
+const visual=ref(true)
 import UnlockRequests from './UnlockRequests.vue'
 const props=withDefaults(defineProps<{characNo:number,initialSection?:string}>(),{initialSection:'basic'})
 const emit=defineEmits<{close:[],reauth:[],expired:[]}>()
