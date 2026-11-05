@@ -12,6 +12,7 @@ import time
 
 from . import __version__
 from .catalog import Catalog, snapshot
+from .release_record import read_record
 
 SHA = re.compile(r'^[a-f0-9]{64}$')
 IMAGE = re.compile(r'^sha256:[a-f0-9]{64}$')
@@ -66,8 +67,8 @@ REASONS = {
 }
 
 
-def release_identity():
-    root = Path(__file__).resolve().parents[2]
+def release_identity(root=None):
+    root = Path(__file__).resolve().parents[2] if root is None else Path(root)
     try:
         with (root/'SOURCE_REVISION').open() as f:
             value = f.read(128).strip()
@@ -75,7 +76,8 @@ def release_identity():
     except OSError:
         revision = None
     return {'version':__version__, 'source_revision':revision,
-            'source_state':'unknown' if revision is None else 'dirty' if revision.endswith('-dirty') else 'recorded'}
+            'source_state':'unknown' if revision is None else 'dirty' if revision.endswith('-dirty') else 'recorded',
+            **read_record(root,revision)}
 
 
 def evidence(path, binding, now):

@@ -11,9 +11,15 @@ PYTHON=${PYTHON_BIN:-python3.12}
 mkdir -p "$OUT/web"
 cp -R "$ROOT/src" "$ROOT/deploy" "$ROOT/migrations" "$ROOT/tools" "$ROOT/licenses" "$ROOT/docs" "$OUT/"
 cp "$ROOT/CHANGELOG.md" "$ROOT/SECURITY.md" "$ROOT/CONTRIBUTING.md" "$OUT/"
-if git -C "$ROOT" rev-parse --verify HEAD >/dev/null 2>&1; then git -C "$ROOT" describe --always --dirty > "$OUT/SOURCE_REVISION"; fi
+if git -C "$ROOT" rev-parse --verify HEAD >/dev/null 2>&1; then
+  git -C "$ROOT" rev-parse HEAD > "$OUT/SOURCE_REVISION"
+  if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then
+    sed -i 's/$/-dirty/' "$OUT/SOURCE_REVISION"
+  fi
+fi
 cp "$ROOT/requirements.lock" "$ROOT/pyproject.toml" "$ROOT/README.md" "$ROOT/LICENSE" "$ROOT/THIRD_PARTY.md" "$OUT/"
 cp -R "$ROOT/web/dist" "$OUT/web/"
+"$PYTHON" "$OUT/tools/write_release_record.py" "$OUT"
 find "$OUT" -name __pycache__ -type d -prune -exec rm -rf '{}' +
 "$PYTHON" -m pip download --only-binary=:all: --dest "$OUT/wheels" -r "$ROOT/requirements.lock"
 (cd "$OUT"; find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)

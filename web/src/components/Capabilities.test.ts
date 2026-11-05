@@ -6,7 +6,7 @@ import {api,ApiError} from '../api'
 vi.mock('../api',async()=>{const real=await vi.importActual<typeof import('../api')>('../api');return {...real,api:vi.fn()}})
 let wrappers:any[]=[]
 function sample(){return {checked_at:100,application:{version:'fixture',source_revision:null,source_state:'unknown'},schema:{state:'ok',versions:[1,12]},policy:{state:'legacy',revision:0,enabled:['mail'],choices:[{id:'mail',label:'邮件'},{id:'currency',label:'点券'}],account_scope:'legacy'},scope:{test_only:true},binding:{pvf_sha256:'a'.repeat(64),image_digest:'sha256:'+'b'.repeat(64)},catalog:{state:'matched'},assets:{state:'not_installed'},runtime:{fresh:true,collected_at:99},note:'只读状态不是执行权限',items:[{id:'mail',label:'奖励邮件',group:'运营',state:'configured',checks:[],verification:{state:'not_recorded'},note:'打开不发放',destination:'mail'},{id:'private-message',label:'私信',group:'待适配',state:'not_implemented',checks:[],verification:{state:'not_recorded'},note:'尚未适配',destination:null}]}}
-function render(){const w=mount(Capabilities,{attachTo:document.body});wrappers.push(w);return w}
+function render(){const w=mount(Capabilities,{attachTo:document.body,global:{stubs:{AssetCoverage:true}}});wrappers.push(w);return w}
 function button(w:any,name:string){return w.findAll('button').find((b:any)=>b.text()===name)!}
 beforeEach(()=>{vi.mocked(api).mockReset();vi.mocked(api).mockResolvedValue(sample());sessionStorage.clear()})
 afterEach(()=>{wrappers.forEach(w=>w.unmount());wrappers=[];document.body.innerHTML='';vi.useRealTimers()})
@@ -35,4 +35,10 @@ it('shows dependency changes in the selection and confirmation before submitting
  await w.find('#capability-reason').setValue('开启公告及其会话前提');await button(w,'核对并保存权限').trigger('click')
  expect(w.find('[role=dialog]').text()).toContain('会话查询、公告')
  expect(api).toHaveBeenCalledTimes(1)
+})
+
+it('shows bound deployment and documentation versions without inventing missing records',async()=>{
+ const d:any=sample();d.application.release={state:'recorded',id:'20261106-ui-fixture',built_at:100};d.application.documentation={state:'recorded',source_revision:'a'.repeat(40),manifest_sha256:'b'.repeat(64),file_count:42};vi.mocked(api).mockResolvedValue(d)
+ const w=render();await flushPromises();expect(w.get('[aria-label="源码部署与文档版本"]').text()).toContain('20261106-ui-fixture');expect(w.text()).toContain('42 份文档');expect(w.text()).toContain('不连接GitHub')
+ d.application={version:'fixture',source_revision:null,source_state:'unknown'};vi.mocked(api).mockResolvedValue(d);await button(w,'刷新功能状态').trigger('click');await flushPromises();expect(w.text()).toContain('未记录部署版本');expect(w.text()).toContain('未记录文档版本');expect(w.text()).not.toContain('20261106-ui-fixture')
 })
