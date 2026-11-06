@@ -107,3 +107,14 @@ it('includes the scroll container inset when keeping section titles below the st
  try{await flushPromises();const height=w.get('.sticky-character-identity').element.getBoundingClientRect().height;expect(body.style.scrollPaddingTop).toBe(`${Math.ceil(height)+36}px`)}finally{w.unmount()}
  expect(body.style.scrollPaddingTop).toBe('5px')
 })
+it('keeps two primary actions and puts account penalties and unlock under an explicit disclosure',async()=>{
+ const {w}=setup();await flushPromises()
+ try{
+  expect(w.findAll('.character-primary-actions button')).toHaveLength(2)
+  const more=w.get('.character-more');expect((more.element as HTMLDetailsElement).open).toBe(false)
+  ;(more.element as HTMLDetailsElement).open=true;await more.trigger('toggle')
+  await more.findAll('button').find(b=>b.text()==='封禁所属账号')!.trigger('click')
+  expect(w.emitted('action')?.[0]).toEqual([{action:'ban',uid:3,charac_no:4}])
+  expect((more.element as HTMLDetailsElement).open).toBe(false)
+ }finally{w.unmount()}
+})

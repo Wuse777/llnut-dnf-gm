@@ -22,7 +22,7 @@ import MailCenter from './MailCenter.vue'
 import CharacterActivity from './CharacterActivity.vue'
 const fatigueBusy=ref(false),fatiguePending=ref(false),fatigueVisited=ref(false)
 const skillsBusy=ref(false),skillsPending=ref(false),skillsVisited=ref(false)
-const visual=ref(true)
+const visual=ref(true),moreOpen=ref(false)
 import UnlockRequests from './UnlockRequests.vue'
 const props=withDefaults(defineProps<{characNo:number,initialSection?:string}>(),{initialSection:'basic'})
 const emit=defineEmits<{close:[],reauth:[],expired:[],visited:[value:{uid:number,charac_no:number}],action:[value:{action:string,uid:number,charac_no:number}],draft:[value:any],inspect:[id:string]}>()
@@ -57,7 +57,7 @@ const recentGroupSections=ref<Record<string,string>>({})
 function groupTab(label:string){const group=tabGroups.find(group=>group.label===label);if(group)tab(recentGroupSections.value[label]||group.tabs[0][0])}
 const separatePanels=['manage','fatigue','skills','rename','rescue','quests','progression','profession']
 const navigationLocked=computed(()=>actionBusy.value||inventoryPending.value||levelsPending.value||professionPending.value||skillsPending.value||fatiguePending.value||renamePending.value||rescuePending.value||questPending.value||unlockPending.value)
-function shortcut(action:string){if(navigationLocked.value||!data.value?.account||data.value.character.delete_flag)return;emit('action',{action,uid:data.value.character.uid,charac_no:props.characNo})}
+function shortcut(action:string){if(navigationLocked.value||!data.value?.account||data.value.character.delete_flag)return;moreOpen.value=false;emit('action',{action,uid:data.value.character.uid,charac_no:props.characNo})}
 function mailDraft(value:any){if(!navigationLocked.value)emit('draft',value)}
 function inspect(id:string){if(!navigationLocked.value)emit('inspect',id)}
 function number(n:unknown){return n===null||n===undefined?'未知':Number(n).toLocaleString('zh-CN')}
@@ -97,12 +97,14 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
    <div v-else-if="error" class="submit-error" role="alert"><b>无法读取角色详情</b><p>{{error}}</p><button @click="load">重试查询</button></div>
    <template v-else-if="data">
     <div ref="identity" class="character-identity sticky-character-identity"><GameImage :image="data.portrait" :label="data.profession.name" portrait/><div class="character-identity-main"><h3>{{data.character.charac_name}}</h3><p>{{data.profession.name}} · Lv.{{data.character.lev}} · {{data.account?.accountname??'归属账号缺失'}} / UID {{data.character.uid}}</p><small v-if="data.portrait?.source_kind==='official_promotional'" class="portrait-attribution">官方职业插画 · 非角色实际外观</small></div><div class="character-status" role="group" aria-label="角色状态"><span class="status-badge">登录表：{{data.account_online?.login_status===1?'在线':data.account_online?.login_status===0?'离线':'未知'}}</span><span class="status-badge" :class="data.character.delete_flag?'neutral':'success'">{{data.character.delete_flag?'已删除（仅查看存档）':'未删除'}}</span></div></div>
-    <div class="button-row character-shortcuts" role="group" aria-label="当前角色快捷操作"><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('currency')">调整所属账号余额</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('mail')">给此角色发奖励</button><button :disabled="navigationLocked" @click="tab('unlock')">查看解锁申请</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('ban')">封禁所属账号</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('unban')">解除账号封禁</button></div>
+    <div class="character-shortcuts" role="group" aria-label="当前角色快捷操作"><div class="character-primary-actions"><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('currency')">调整所属账号余额</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('mail')">给此角色发奖励</button></div>
+     <details class="character-more" :open="moreOpen" @toggle="moreOpen=($event.target as HTMLDetailsElement).open"><summary>更多操作 <span>解锁／账号封禁</span></summary><div class="button-row"><button :disabled="navigationLocked" @click="tab('unlock');moreOpen=false">查看解锁申请</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('ban')">封禁所属账号</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('unban')">解除账号封禁</button></div></details>
+    </div>
     <p v-if="navigationLocked" class="field-hint">请先完成或查询当前维护／解锁操作，再使用快捷跳转。</p>
     <details class="character-guidance"><summary>存档说明与图片状态</summary>
-    <p v-if="data.assets&&data.assets.state!=='ready'" class="field-hint">图片：{{data.assets.note}}；文字查询不受影响。</p><p class="field-hint snapshot-note">{{data.snapshot_note}}<br>读取时间：{{new Date(data.collected_at*1000).toLocaleString('zh-CN',{hour12:false})}}。资料、金币及物品为只读查询；装备解锁需在专页单独预览确认。</p>
+    <p v-if="data.assets&&data.assets.state!=='ready'" class="field-hint">图片：{{data.assets.note}}；文字查询不受影响。</p><p class="field-hint">背包、仓库、金币和属性可能等待游戏进程保存；刷新网页不会强制保存，查询结果不等于实时战斗面板。</p><p class="field-hint snapshot-note">{{data.snapshot_note}}<br>读取时间：{{new Date(data.collected_at*1000).toLocaleString('zh-CN',{hour12:false})}}。资料、金币及物品为只读查询；装备解锁需在专页单独预览确认。</p>
     </details>
-    <p v-if="data.account_online?.login_status===1" class="warning">所属账号在线；不代表当前角色在线。背包、仓库、金币和属性可能等待游戏进程保存，刷新网页不会强制保存。</p>
+    <p v-if="data.account_online?.login_status===1" class="warning">所属账号在线；不代表当前角色在线。存档可能未更新，详见存档说明。</p>
     <p v-if="data.catalog_state!=='ok'" class="submit-error" role="status">物品索引不可用或版本不匹配：仍显示存档编号，但物品名称、等级及职业名称可能未知。</p>
     <label class="character-mobile-section">查看内容<select :value="section" :disabled="actionBusy" aria-label="切换角色详情内容" @change="tab(($event.target as HTMLSelectElement).value)"><optgroup v-for="group in tabGroups" :key="group.label" :label="group.label"><option v-for="[id,label] in group.tabs" :key="id" :value="id">{{label}}</option></optgroup></select></label>
     <div class="detail-navigation">
@@ -177,4 +179,9 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
 
 .character-mobile-section{display:none}.character-guidance{margin:12px 0}.character-guidance summary{cursor:pointer;color:var(--text-secondary)}@media(max-width:768px){.character-mobile-section{display:grid;gap:8px;margin:16px 0}.detail-navigation{display:none}.character-identity{display:grid;grid-template-columns:48px minmax(0,1fr);gap:8px 12px}.character-identity>:first-child{grid-row:1/3}.character-identity>.character-status{grid-column:2;justify-self:start;justify-content:flex-start}.character-identity h3{font-size:20px}}
 .character-shortcuts{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.character-shortcuts button{flex:1 1 150px}
+</style>
+
+<style scoped>
+.character-shortcuts{display:grid;gap:6px}.character-primary-actions{display:flex;flex-wrap:wrap;gap:8px}.character-more{margin:0}.character-more>summary{font-size:12px;min-height:28px;padding:4px 0;color:var(--text-primary)}.character-more>summary span{color:var(--text-secondary);font-weight:400;margin-left:8px}.character-more[open]>.button-row{padding:8px 0}.character-more[open]>summary{margin-bottom:0}
+@media(max-width:680px){.character-primary-actions{display:grid;grid-template-columns:1fr 1fr}.character-primary-actions>button{padding:8px;font-size:12px;min-height:36px}.character-more>summary{min-height:26px}.character-more .button-row{display:grid;grid-template-columns:1fr 1fr}.character-more .button-row>button{font-size:12px;padding:8px}.character-guidance{margin-top:6px}}
 </style>

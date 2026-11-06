@@ -6,9 +6,9 @@ const emit=defineEmits<{close:[]}>()
 const panel=ref<HTMLElement|null>(null)
 let previous:Element|null=null
 const identity=Symbol('dialog'),depth=ref(1)
-function focusables(){return Array.from(panel.value?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]')??[]).filter(element=>{
- if(element.tabIndex<0)return false
- for(let node:HTMLElement|null=element;node&&node!==panel.value;node=node.parentElement){const style=getComputedStyle(node);if(node.hidden||node.inert||style.display==='none'||style.visibility==='hidden'||style.visibility==='collapse')return false}
+function focusables(){return Array.from(panel.value?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],summary,[tabindex="0"]')??[]).filter(element=>{
+ if(element.tabIndex<0&&!(element.tagName==='SUMMARY'&&!element.hasAttribute('tabindex')))return false
+ for(let node:HTMLElement|null=element;node&&node!==panel.value;node=node.parentElement){const style=getComputedStyle(node);if(node.hidden||node.inert||style.display==='none'||style.visibility==='hidden'||style.visibility==='collapse')return false;if(node.tagName==='DETAILS'&&!node.hasAttribute('open')&&!node.querySelector(':scope > summary')?.contains(element))return false}
  return true
 })}
 function keys(e:KeyboardEvent){if(!topDialog(identity))return;if(e.key==='Escape'&&e.target instanceof Element&&e.target.closest('[data-escape-local]'))return;if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();if(!props.busy)emit('close')}if(e.key==='Tab'){const a=focusables();if(!a.length){e.preventDefault();panel.value?.focus();return}const first=a[0],last=a[a.length-1];if(e.shiftKey&&(document.activeElement===first||document.activeElement===panel.value||!panel.value?.contains(document.activeElement))){e.preventDefault();last.focus()}else if(!e.shiftKey&&(document.activeElement===last||!panel.value?.contains(document.activeElement))){e.preventDefault();first.focus()}}}

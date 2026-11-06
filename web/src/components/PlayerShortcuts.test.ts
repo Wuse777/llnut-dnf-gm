@@ -20,3 +20,12 @@ it('unavailable targets stay removable and a late response cannot replace a newe
  old(new Response(JSON.stringify({items:[],total:0})));await flushPromises()
  expect(w.get('.target-open').attributes('disabled')).toBeDefined();expect(w.get('[aria-label="取消收藏目标 7:9"]').attributes('disabled')).toBeUndefined();w.unmount()
 })
+it('starts compact and collapses after choosing without losing the current identity',async()=>{
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({items:[{uid:7,charac_no:9,favorite:false,available:true,account:{accountname:'gm'},character:{charac_name:'测试'}}],total:1,page_size:12}))))
+ const w=mount(PlayerShortcuts,{props:{revision:0,current:{uid:7,charac_no:9,label:'测试'}}});await flushPromises()
+ const disclosure=w.get('details');expect((disclosure.element as HTMLDetailsElement).open).toBe(false)
+ ;(disclosure.element as HTMLDetailsElement).open=true;await disclosure.trigger('toggle')
+ await w.get('.target-open').trigger('click');await flushPromises()
+ expect((disclosure.element as HTMLDetailsElement).open).toBe(false)
+ expect(w.get('.current-target').text()).toContain('测试');expect(w.emitted('choose')?.[0][0]).toEqual({uid:7,charac_no:9});w.unmount()
+})

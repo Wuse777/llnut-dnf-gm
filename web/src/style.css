@@ -151,3 +151,11 @@ input[aria-invalid=true]:focus,select[aria-invalid=true]:focus{box-shadow:0 0 0 
 
 /* Explicitly attributed promotional portraits, not inventory pixel art. */
 .illustration-portrait{background:var(--bg-secondary);border-color:var(--border-color);box-shadow:0 2px 8px #00000014}.illustration-portrait img{object-fit:cover;image-rendering:auto}
+
+/* Compact workflows retain the CPAMC theme and existing confirmation boundaries. */
+.mail-add-items{display:none}.operation-guidance{margin:10px 0}.operation-guidance>summary{color:var(--text-secondary);font-size:12px}.operation-guidance p{font-size:12px;line-height:1.65;color:var(--text-secondary);margin:10px 0 0}.mail-pane .section-title{flex-wrap:wrap}.mail-pane .section-title h2{min-width:0}
+@media(max-width:1150px){.mail-add-items{display:inline-flex}.mail-pane .queue-panel{position:static}.mail-pane .mail-fields{gap:12px;margin-top:14px;padding-top:14px}.mail-pane .queue-summary{padding:12px 0}}
+
+.mail-message-options{margin:0}.mail-message-options>summary{min-height:32px;padding:6px 0;color:var(--text-primary)}.mail-message-options>summary small{margin-left:8px;color:var(--text-secondary)}.mail-message-fields{display:grid;gap:12px;margin-top:12px}
+
+@media(max-width:680px){.mail-pane-items .table-wrap{overflow:visible}.mail-picker-table{display:block;width:100%;min-width:0}.mail-picker-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}.mail-picker-table tbody{display:grid;gap:10px}.mail-picker-table tbody tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:12px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-secondary)}.mail-picker-table tbody td{display:block;min-width:0;max-width:none;border:0;padding:0;white-space:normal}.mail-picker-table td:first-child,.mail-picker-table td:last-child{grid-column:1/-1}.mail-picker-table td:nth-child(2){font-size:12px}.mail-picker-table td:nth-child(3){font-size:11px;color:var(--text-secondary)}.mail-picker-table td:last-child{display:flex;justify-content:flex-end;align-items:center;gap:8px}.mail-picker-table .cell-note{margin:2px 0 0}}

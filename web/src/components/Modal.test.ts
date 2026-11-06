@@ -19,3 +19,10 @@ it('does not trap keyboard users in hidden groups or inactive tabs and includes 
  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));expect(document.activeElement).toBe(w.get('#source').element)
  }finally{w.unmount()}
 })
+it('includes disclosure summaries and excludes actions inside a closed disclosure',()=>{
+ const w=mount(Modal,{attachTo:document.body,props:{title:'更多操作'},slots:{default:'<button id="primary">发奖励</button><details><summary id="more">更多操作</summary><button id="penalty">封禁</button></details>'}})
+ try{
+  ;(w.get('#more').element as HTMLElement).focus();document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));expect(document.activeElement).toBe(w.get('[aria-label="关闭对话框"]').element)
+  document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));expect(document.activeElement).toBe(w.get('#more').element)
+ }finally{w.unmount()}
+})
