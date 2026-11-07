@@ -1,336 +1,206 @@
-## 2026-11-06 在线备份升级注意
-
-新版本需要管理库迁移001–016以及`backup_schedule_sql`精确权限。已有实例走`deploy/upgrade-release.py`升级：先保留私有管理库备份，停止GM自身的DB工作器并持有维护锁，再迁移/授权；不停止游戏、mihomo、cliproxyapi或共享Docker。安装器自动配置既有维护执行器的备份源，不新增常驻DB进程，网页直接控制计划。详见[备份说明](BACKUP-HEALTH.md)。
-
-更新时继续保留外部`/var/lib/dnf-gm/catalog.sqlite`及其指纹；不要从旧发布目录携带过期的内嵌`catalog.sqlite`覆盖已丰富索引。新备份凭据只存root私有`/etc/dnf-gm/backup.json`，不得加入发布目录或校验清单。
-
-## 2026-11-05 单任务修复发布
-
-当前生产 `20261105-quest-repair-6ed2aa3`（源码 `6ed2aa3`）。任务检索与修复页增加名称搜索、前置状态及单槽清理；新增 `quest-clear` 已通过网页能力策略开启，24项开启、全部账号。仍必须由管理员在网页显式开启维护窗口，不在部署时停服或测试玩家写入。新增精确列授权使用 `quest_repair_sql`；管理库001–015不变。公网只读检查通过、维护窗口关闭、执行器就绪，受保护服务PID未变。详细边界见 [任务说明](CHARACTER-QUESTS.md) 和 [实施台账](ROADMAP-IMPLEMENTATION.md)。
-
 # 安装、升级与回滚
 
-本流程是公开版的通用模板，不读取原部署者的凭据或私有运维仓库。**不要将其直接覆盖到已有安装上**。先在隔离环境演练；安装脚本只控制 `dnf-gm*`，不会重启游戏、Docker、代理或现有网关。
+[项目首页](../README.md) · [文档中心](README.md) · [开发指南](DEVELOPMENT.md) · [发布说明](releases/v0.4.0.md)
 
-## 1. 前置条件
+适用：**已有 llnut/dnf 清风 1031 + MySQL 5.7 的 Linux 服务器**。GM 以 systemd 服务运行在宿主机，通过私有 Docker 网络连接已有游戏数据库；不是另一套游戏服务端，也没有“通用 Docker 一键安装”承诺。
 
-- Linux + systemd，Python 3.12、venv、curl；现有且已正常运行的 llnut/dnf 容器和 MySQL 5.7。数据库只能通过私有网络访问，不发布数据库公网端口。
-- 准备备份并验证恢复。不能停止会删除运行容器的管理单元后再试图导出其中的 MySQL。
-- 维护电脑构建前端和 Python wheels，目标 Python / OS / 架构必须匹配。服务器不运行 Node 开发服务。
-- 明确容器名、PVF 路径、s6 组件名、网关回环健康地址、数据库 IP / 端口，以及 MySQL 实际看到的宿主机来源地址。模板中的 `172.18.0.2` 只是示例，不保证与你的 Docker 网络相同。
+> [!WARNING]
+> 先在隔离环境核对兼容性并准备恢复能力。部署只操作 GM 自身组件；不重启共享 Docker、mihomo、cliproxyapi 或游戏服务。**已有实例走升级，不要重复执行 provision，不要覆盖私有配置。**
 
-## 2. 在维护电脑构建
+## 部署路线
 
-```bash
-PYTHON_BIN=python3.12 bash tools/build_release.sh /absolute/new/release-directory
-# 可选：在本地生成匹配目录。不要提交 PVF 或输出索引到 Git。
-PYTHONPATH=src .venv/bin/python tools/build_catalog.py /private/Script.pvf /private/catalog.sqlite --encoding gbk
+```text
+准备备份及版本信息 → 维护电脑构建 → 传输并核验
+           ├─ 首次：创建管理库／专用账号 → 配置监控 → 安装
+           └─ 升级：确认维护空闲 → 停止 GM 工作者 → 迁移／授权 → 安装
+回环健康检查 → SSH 隧道 → 测试范围验收 → 按需配置 HTTPS
 ```
 
-构建脚本复制源码、前端产物、部署文件和 wheels，不打包配置、玩家记录或 PVF。将 release-directory 复制到服务器 `/opt/dnf-gm/releases/<你的版本>/`；如有本地索引，单独交付为该目录的 `catalog.sqlite`，初次也可无索引，以只读账号查询开始。将校验清单与可信的传输前哈希核对。
+## 环境与准备清单
 
-## 3. 首次创建管理库与凭据
+| 位置 | 要求 |
+| --- | --- |
+| 维护电脑 | Git、Bash、Python **3.12**（pip／venv）、Node.js **24.15+ 的 24.x**、npm；可下载锁定依赖 |
+| 游戏服务器 | Linux + systemd、Python 3.12／venv、curl；已有可用游戏容器及 MySQL 5.7 |
+| 数据库 | 私有网络可达，精确来源 IP，专用用户；不发布公网数据库端口 |
+| 版本信息 | 镜像 digest、PVF SHA-256、容器名、容器内 MySQL 端口、实际 s6 组件名、网关健康地址 |
+| 备份 | 私有管理库备份、配置／索引备份，以及独立核验的游戏恢复方案；管理库备份不包含游戏进度 |
+| 资源 | GM 组件合计 `MemoryMax=192M`、`CPUQuota=25%`；健康门槛包括可用内存≥256 MiB、Swap 剩余≥1536 MiB、磁盘剩余≥2 GiB；不是整机容量保证 |
 
-先创建虚拟环境（以下命令均在服务器 root 维护会话执行）：
+配置里的示例地址 `172.18.0.2`、容器名和端口不能原样照搬。构建 wheels 的 OS／架构必须匹配目标服务器，macOS／Windows／ARM 构建物不能冒充 Linux x86_64 安装包。其他镜像先阅读[兼容性说明](COMPATIBILITY.md)。
+
+## 1. 在维护电脑构建
 
 ```bash
+git clone --branch v0.4.0 --depth 1 https://github.com/Wuse777/llnut-dnf-gm.git
+cd llnut-dnf-gm
+# 输出目录必须是新的绝对路径；默认只做类型检查／构建，不跑全量测试。
+PYTHON_BIN=python3.12 bash tools/build_release.sh "$HOME/dnf-gm-build-v0.4.0"
+```
+
+完整本机构建目录包含 `src/`、`deploy/`、`migrations/`、`web/dist/`、锁定 wheels、源码版本、构建记录和 `SHA256SUMS`。不包含生产配置、物品库或游戏素材。将整个目录交付服务器，例如：
+
+```bash
+# 替换实际 SSH 地址；远端使用新目录，不能覆盖 current 指向的版本。
+ssh YOUR_SSH_USER@YOUR_SERVER 'sudo mkdir -p /opt/dnf-gm/releases/v0.4.0'
+# 上传到维护账号可写目录，再由维护者移入上面的 root 发布目录。
+scp -r "$HOME/dnf-gm-build-v0.4.0" YOUR_SSH_USER@YOUR_SERVER:~/
+# 以下在服务器 root 会话中执行，按实际上传目录替换。
+cp -a /home/YOUR_SSH_USER/dnf-gm-build-v0.4.0/. /opt/dnf-gm/releases/v0.4.0/
+cd /opt/dnf-gm/releases/v0.4.0
+sha256sum --check --strict SHA256SUMS
+```
+
+传输前后对比可信哈希；同包提供的校验文件用于完整性检查，不独立证明来源可信。新目录必须无旧索引、配置和多余文件。
+
+### Release 下载文件是什么
+
+| 文件 | 内容 | 能否直接 `install.sh` |
+| --- | --- | --- |
+| `llnut-dnf-gm-0.4.0-source.tar.gz` | 对应标签的 Git 源码与文档 | 否，先本机构建 |
+| `llnut-dnf-gm-0.4.0-web.tar.gz` | `web/dist/` 静态前端与 `SOURCE_REVISION` | 否，仅供同版后端配套使用 |
+| `SHA256SUMS` | 上述附件 SHA-256 | 用于 `sha256sum -c SHA256SUMS` |
+
+预构建网页不是单独可连接数据库的管理面板；不要与旧后端混用。GitHub 自动生成的 Source code 压缩包也不是含 wheels 的安装目录。
+
+## 2. 首次安装
+
+以下命令在**服务器 root 维护会话**执行。若已安装，请跳到[已有实例升级](#已有实例升级)。
+
+### 2.1 初始化环境和私有配置
+
+```bash
+RELEASE=/opt/dnf-gm/releases/v0.4.0
 python3.12 -m venv /opt/dnf-gm/venv
 /opt/dnf-gm/venv/bin/python -m pip install --no-index \
-  --find-links /opt/dnf-gm/releases/<版本>/wheels \
-  -r /opt/dnf-gm/releases/<版本>/requirements.lock
+  --find-links "$RELEASE/wheels" -r "$RELEASE/requirements.lock"
+install -d -m 700 /root/dnf-gm-private
+install -m 600 "$RELEASE/deploy/config.example.json" /root/dnf-gm-private/config-input.json
 ```
 
-在 root 私有目录复制并编辑 `deploy/config.example.json`，填写真实 `db_host`（数字 IPv4）和端口；暂时保持 `public=false`、`writes=[]`、`test_uids=[-1]`、本地 Origin 不变。不要编辑或提交仓库里的示例文件来保存生产秘密。
+编辑私有副本，不把秘密填回 Git 示例：
+
+- 填真实 `db_host`（数字 IPv4）和 `db_port`；来源 IP 是 **MySQL 看到的宿主机地址**。
+- 起步保留 `public=false`、`origins=["http://127.0.0.1:8765"]`、`writes=[]`、`test_uids=[-1]`；不要全域 CORS。
+- 数据库密码和应用密钥由 provision 生成；不把玩家账号、游戏 root 密码或网关 AES 密钥拿来当管理密码。
+- 物品目录默认 `/var/lib/dnf-gm/catalog.sqlite`；没有匹配索引也可先做只读账号查询。
 
 ```bash
-/opt/dnf-gm/venv/bin/python /opt/dnf-gm/releases/<版本>/deploy/provision.py \
-  --config /root/private-gm-config-input.json --container <现有容器名> \
-  --mysql-port 4000 --db-account-host <MySQL看到的宿主机来源IP>
+/opt/dnf-gm/venv/bin/python "$RELEASE/deploy/provision.py" \
+  --config /root/dnf-gm-private/config-input.json \
+  --container YOUR_GAME_CONTAINER --mysql-port YOUR_MYSQL_PORT \
+  --db-account-host YOUR_EXACT_SOURCE_IP
 ```
 
-工具交互输入管理员密码（至少 20 字符），自动生成独立数据库密码和应用密钥，创建系统账号 `dnfgm`、管理库 `dnf_gm` 和管理员 `admin`。不打印密码、不修改玩家行；维护授权仅通过容器已有的 `DNF_DB_ROOT_PASSWORD` 使用。运行账号最多 3 连接，只有指定表 / 列权限，没有游戏表 DDL、玩家密码读取、背包修改或授权能力。
+工具交互读取至少 20 字符管理员密码，生成 `dnfgm` 系统用户、`dnf_gm` 库、专用数据库账号、管理员 `admin` 和 `/etc/dnf-gm/config.json`。MySQL 维护权限使用容器已有 `DNF_DB_ROOT_PASSWORD`；不打印密码，不写玩家行。数据库 DDL 不是整体原子操作，失败后检查部分创建状态，**不要自动重复初始化**。
 
-初始化配置为 `/etc/dnf-gm/config.json`（旧初始化工具生成dnfgm所有、0600）；第二十八批安装器核验事务屏障后将它原子保存为root所有、dnfgm组可读的0640，运行账号不能直接改配置。不要使用此工具升级或重置密码。MySQL DDL 无法整体回滚，失败时保留私密配置并检查部分创建状态，禁止自动反复初始化。
+当前源码管理库迁移为 **001–016**。运行账号最多 3 个连接，只获必要表／列权限。能力开关与实际可执行性分开，初始私有配置不能替代镜像指纹、索引、准入与维护验证。
 
-## 4. 配置独立监控并安装
-
-复制 `deploy/monitor.example.json` 为 `/etc/dnf-gm/monitor.json`，root 所有、0644 或更严格；按实际环境配置容器、PVF 和组件。`core_services` 可包含 `mihomo`、`cliproxyapi` 等必须保护的服务。采集器没有原运维仓库依赖，快照不含命令输出、日志正文或凭据。
+### 2.2 配置监控并安装
 
 ```bash
-bash /opt/dnf-gm/releases/<版本>/deploy/install.sh
+install -m 644 "$RELEASE/deploy/monitor.example.json" /etc/dnf-gm/monitor.json
+# 编辑真实容器、PVF、数据路径、健康地址和 s6 组件名。
+# core_services 中加入本机必须保护的实际服务，例如 mihomo、cliproxyapi。
+bash "$RELEASE/deploy/install.sh"
 ```
 
-- 安装只生成数据库目标 IP 的 systemd 访问放行，应用无 Docker socket / 任意命令接口。
-- 网页应用与 root 采集进程合计受 `dnf-gm.slice` 的 192 MiB 内存上限、单核 25% CPU 配额限制。
-- 采集完成后间隔15秒，失败也退避；保护每5秒读资源。连续两次低于256MiB可用内存、1536MiB空闲Swap、2GiB磁盘余量，或两份新采集的核心故障快照，仅停止GM并要求人工恢复；缓存失败不会重复计数。
-- 采集超时立即发布未知快照，阻止游戏写入；至少60秒、至少3次采集持续失败才停止GM。只有本监控进程自身发起的采集失败停止，才可在3份连续健康新快照且跨度至少30秒后自动启动GM。每进程每小时最多3次；启动失败不自动重放，监控重启不接管旧停止，核心服务不会被启动或重启。
-- 手动维护应先 `touch /var/lib/dnf-gm/no-auto-recover` 再 `systemctl stop dnf-gm.service`。结束维护时删除标记，核验资源/核心状态后手动启动GM。标记由root目录控制，网页无权操作。普通手动停服不产生恢复资格；已经被监控停下时的重复stop是systemd空操作，必须先设置禁止标记来表达维护意图。
-- `/api/v1/health`（带 `/dnf-gm` 前缀）检查管理库；`/api/v1/ready` 另检查新鲜快照、核心和资源，异常返回503。监控外部可用性时应检查ready，不能仅以首页200判正常。
-- 若机器没有 Swap 或不足，监控将阻止启动。请在维护窗口规划 Swap，不为上线而调低保护底线。
-- 状态未就绪时安装拒绝启动应用；物品索引缺失可只读运行，但不能发物品。
+监控配置 root 所有、0644 或更严格。安装器核验校验清单／维护空闲、安装 GM 单元、原子切换 `current`，先启动监控，健康后才启动后端。它可能重启 `dnf-gm*`，**不会修改 Nginx，也不部署或重启游戏**。
 
-## 5. 隧道验收与写入激活
+安装器会把应用配置收紧为 root 所有、dnfgm 组可读的 0640；不要为了消除权限报错改成 0777。维护及在线备份还需对应私有执行配置，详见[维护中心](WEB-MAINTENANCE.md)、[备份说明](BACKUP-HEALTH.md)，不要填假指纹来绕过保护。
+
+## 3. 回环检查与 SSH 隧道
 
 ```bash
-ssh -N -L 8765:127.0.0.1:8765 <SSH用户>@<你的主机>
+systemctl status dnf-gm.service dnf-gm-monitor.service --no-pager
+# Host 必须与 origins 中的主机和端口一致。
+curl --fail -H 'Host: 127.0.0.1:8765' http://127.0.0.1:8765/dnf-gm/api/v1/health
+curl --fail -H 'Host: 127.0.0.1:8765' http://127.0.0.1:8765/dnf-gm/api/v1/ready
 ```
 
-通过 `http://127.0.0.1:8765/dnf-gm/` 登录。先核对只读数据。
+`health` 核对数据库及版本结构；`ready` 还检查实时监控／资源。`health=200` 不代表游戏功能完成验收。采集未知或过期必须处理，不能替换为伪正常快照。
 
-在**私密配置**中设置：
-
-- `test_uids` 为专用测试账号的真实 UID（默认 `[-1]` 拒绝所有玩家写入；空数组意味着取消目标限制，需明确决定）。
-- `image_digest` 为 `docker inspect -f '{{.Image}}' <容器>` 的完整值，本公开采集器使用不可变 image ID，而不是 tag 或 `RepoDigest`。
-- `pvf_sha256` 为服务器 PVF 的 SHA-256；本地索引也必须匹配。
-- 在 `writes` 添加经过适配的 `currency`、`mail`、`ban`、`unban`，对应 `write_approvals` 必须显式置 `true`。仅填写指纹不意味着游戏内验收已通过。
-
-仅重启 `dnf-gm.service` 应用配置；更改监控设置需仅重启 `dnf-gm-monitor.service`。先验证测试角色，尤其在线消费交错、邮件领取与封禁后的重新登录。客户端缺失时只能标为接口 / 数据库通过，不能标为游戏内通过。
-
-### 0.3.1统一数量规则
-
-无需逐项配置数量上限。已知、缺失或为0的PVF堆叠值均只作元数据，不限制邮件和礼包数量；所有物品使用原生数量字段正整数范围1–2,147,483,647。旧`mail_stack_limits`配置作为兼容键保留，但不参与启动校验、物品验证和发放，可从私密配置删除。
-
-从0.3.0升级无需数据库迁移、新增授权或重新生成索引。安装新release，切换`static_dir`到新前端并只重启GM；监控及核心服务可保持原样。旧待确认邮件可能因物品描述变化而需要重新预览，已完成操作的结果与幂等记录不修改。升级后核对`/health`、`/ready`版本0.3.1，以及未知/已知上限条目的`quantity_unlimited=true`。装备类填写多件时后端逐件创建邮件附件及特殊存储记录，耗时和存储随件数增长。
-
-## 6. 可选 HTTPS
-
-没有自动公网发布脚本。先检查域名 / IP 证书、既有同源页面的脚本安全，再人工将 `deploy/nginx.conf` 内容 include 到现有 HTTPS server 块，保持路径不变。修改后 `nginx -t`，成功才平滑 reload；不要覆盖已有路由。
-
-配置 `origins=["https://你的管理域名"]`、`public=true`；删除或注销旧会话后仅重启 GM。新模式不会接受隧道模式的旧会话。后端仍仅监听回环地址。公共端口只用现有 HTTPS，不能开放 8765 或数据库端口。
-
-同一域名下的其他面板与 GM 共享浏览器源；不同路径不构成安全隔离。有同源注入风险时保留隧道，优先使用独立受控域名。
-
-## 7. 升级与回滚
-
-1. 备份管理库及只读索引，保留之前 release 和 wheels；**不要备份到公开 Git**。
-2. 对比迁移与列权限，先在隔离库演练。首次开源版本含迁移 001 / 002；未来升级不能重新运行 provision，不能清空审计或幂等表。
-3. 新版本在新 release 目录，运行其 `deploy/install.sh` 切换代码 / 依赖 / 服务文件。目录已有 current 时记录 previous；安装不会自动执行未来数据库迁移，也不会修改 Nginx。
-4. 回滚前可人工关闭 GM 的 Nginx include 并验证 reload，然后 `bash /opt/dnf-gm/current/deploy/rollback.sh`。它用 previous 的本地 wheels 重装旧应用，仅控制 GM 服务；目录和旧索引须事先保留兼容性。
-5. 回滚不删除审计、不撤回充值 / 已领取邮件，不通过整库恢复纠正单笔发放。出现不确定提交时只按操作编号查询，不盲目重放。
-
-资源上限和 systemd 语法在目标主机需通过 `systemd-analyze verify` 复核。公开化脚本未经其他服务器完整安装验收，不宣称一键通用适配。
-
-### 从0.1.0升级到0.2.0
-
-没有新管理库迁移。原配置的只读/测试目标/写入审批保持；不能重新provision。安装器先核对SHA256SUMS，再禁止自动恢复、停止GM及监控，然后安装离线依赖；current原子切换，等待新监控PID产生健康快照并通过ready后才完成。失败时GM保持停止，检查后人工回退；安装前已有的禁止恢复标记不会被移除。
-
-若需要开启1031装备解锁，先备份管理库、私有配置与授权；在隔离库核对存档格式和事务表引擎，再执行仅追加授权的命令：
+维护电脑执行：
 
 ```bash
-PYTHONPATH=/opt/dnf-gm/current/src /opt/dnf-gm/venv/bin/python \
-  /opt/dnf-gm/current/deploy/upgrade-equipment-unlock.py \
-  --container <现有容器> --mysql-port 4000 --db-account-host <MySQL看到的来源IP>
+ssh -N -L 8765:127.0.0.1:8765 YOUR_SSH_USER@YOUR_SERVER
 ```
 
-授权不会激活功能；仍需私有配置同时添加 `writes` 中的 `equipment-unlock` 和相应 `write_approvals=true`，再只重启GM。不适配的服务器保持关闭。10亿金币/新解锁预览可能不被旧代码理解，跨版本回滚前保持GM停止、核对未确认操作，不能直接以旧版重新开放写入。
+访问 `http://127.0.0.1:8765/dnf-gm/`，使用独立管理员密码。若更换本地端口，要同步精确 Origin／Host 配置；不要以允许所有 Origin 解决登录问题。先核对账号、中文角色、余额、在线统计，再在专用测试对象上验收已启用写操作。
 
+## 4. 私有索引与可选图片
 
-## 升级至0.3.0：全物品与商城积分
-
-先备份管理库、现有列权限、索引和私有配置，并创建维护禁止恢复标记，停止GM。使用新版本代码在维护窗口执行：
+PVF 在维护电脑离线解析，不在网页上传、不在小内存服务器在线处理：
 
 ```bash
-/opt/dnf-gm/venv/bin/python deploy/upgrade-rewards.py --container YOUR_CONTAINER --mysql-port 4000 --db-account-host YOUR_EXACT_SOURCE_IP
-/opt/dnf-gm/venv/bin/python tools/enrich_catalog_creatures.py /private/Script.pvf /var/lib/dnf-gm/catalog.sqlite /private/catalog-rewards.sqlite
+# 先按开发指南准备 .venv；输入和输出都位于 Git 之外。
+PYTHONPATH=src .venv/bin/python tools/build_catalog.py \
+  /private/Script.pvf /private/catalog.sqlite --encoding gbk
 ```
 
-占位参数须替换为当前部署的值。升级脚本只追加积分、时装和宠物的列级权限，并执行003管理库迁移：首次将既有禁止策略统一开放，再次运行保留此后手动停用。无游戏表DDL，不发放任何奖励。索引工具校验PVF摘要，补充宠物和宠物装备的存储类型；将输出文件以原索引所有者和只读权限安装到配置的catalog_file，再原子切换release并启动GM。全新索引已包含该元数据。
+将索引单独安装为 `/var/lib/dnf-gm/catalog.sqlite`，只读可访问；PVF SHA-256 必须匹配。成长、技能、任务等索引增强按相应功能手册生成，不用一份空索引假装完整适配。图片是可选私有包，见[素材指南](ASSETS.md)；没有素材时保留文字和占位图。
 
-`writes`及`write_approvals`中的`currency`同时控制点券、代币券和积分；`mail`控制所有类型邮件。原有测试UID、PVF及资源门禁继续生效。恢复后先核对健康版本0.3.0、完整索引与可发放总数、账号积分和邮件预览。时装、宠物、积分与大额领取尚需真实客户端验收。
+## 已有实例升级
 
-回退应用时同时恢复原索引和catalog_policy_items/catalog_policy_state/schema_versions的管理库备份；保留或按授权备份撤销新增列权限。回退代码不会撤回已经确认的奖励。
+> 不重复 provision，不重置管理员，不清空功能策略、审计、快照或幂等记录。先读[版本说明](releases/v0.4.0.md)及[升级检查](UPGRADE-CHECK.md)。
 
-
-## 开发版管理扩展（未发布，不是0.3.1的必需升级）
-
-当前源码在0.3.1之后加入004邮件流水、005物品偏好、006持久奖励任务、007原生控制历史索引、008定时运营、009装备快照、010问题工作台、011发放统计、012网页权限、013普通写入事务屏障及仓库只读。发布前先在隔离环境演练并按当前实例逐项核验权限，不可重新运行`provision.py`。在完整备份和升级窗口中，仅停止GM应用，保留游戏、数据库、共享Docker及核心代理服务。
-
-在新的版本目录、root维护身份下依次执行（参数必须替换为已核实的现有容器和数据库用户精确来源）：
+1. 保留可恢复的私有管理库备份，以及配置、权限、外部索引／图片版本；确认没有未决维护、批量发放或提交结果待核查的操作。
+2. 新目录构建、传输并核验。**不能把旧发布目录里的过期 `catalog.sqlite` 复制进新包**：安装器会覆盖外部索引；先检查新包无内嵌旧索引。
+3. 确认维护窗口已正常关闭／恢复游戏，再用同版检查器核对维护空闲。停止 GM 工作者，不停止 DNF 容器：
 
 ```bash
-python3 deploy/upgrade-mail-center.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
-python3 deploy/upgrade-warehouse-read.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
-python3 deploy/upgrade-item-preferences.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
-python3 deploy/upgrade-reward-jobs.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
-python3 deploy/upgrade-native-controls.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
-python3 deploy/upgrade-schedules.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
-python3 deploy/upgrade-inventory.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
-python3 deploy/upgrade-support.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
-python3 deploy/upgrade-economy.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
-python3 deploy/upgrade-capabilities.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
-python3 deploy/upgrade-gameplay-fence.py --container <现有容器> --mysql-port <数据库端口> --db-account-host <精确来源IP>
+RELEASE=/opt/dnf-gm/releases/v0.4.0
+/opt/dnf-gm/venv/bin/python "$RELEASE/deploy/check_maintenance_idle.py"
+touch /var/lib/dnf-gm/no-auto-recover
+# 仅对已安装的 GM 单元执行；停定时器以免备份／清理同时启动。
+for unit in dnf-gm-alert.timer dnf-gm-cleanup.timer dnf-gm-maintenance.service dnf-gm-monitor.service dnf-gm.service; do
+  if systemctl cat "$unit" >/dev/null 2>&1; then systemctl stop "$unit"; fi
+done
+/opt/dnf-gm/venv/bin/python "$RELEASE/deploy/upgrade-release.py" \
+  --container YOUR_GAME_CONTAINER --mysql-port YOUR_MYSQL_PORT \
+  --db-account-host YOUR_EXACT_SOURCE_IP --backup /root/private-management-backup.sql
+bash "$RELEASE/deploy/install.sh"
 ```
 
-这些工具只执行管理库DDL或专用账号增量授权，不修改游戏表结构、不发奖励、不重启服务。当前合并版`health`要求管理库001至013全部存在，并核对013的真实表引擎和协议行；它不替代实际运行账号的列权限核验。安装应用后用管理员认证分别检查角色详情中的两类仓库、物品收藏/最近选择、邮件中心和原业务；历史邮件导入步骤仍见第一批阶段说明。
+备份必须已存在、非空、root 所有且仅 root 可读。当前统一升级器核对来源迁移、补齐001–016及精确列授权，不修改游戏行；来源版本不支持或 DDL 中断时停下排查，不能删表重来。**新功能开关及授权需复核**：升级器初始化尚缺失的能力，不以旧截图或旧默认值推断现有策略。
 
-回滚旧应用时保留004/005/006/007/008/009/010/011/012/013表、邮件流水、偏好、审计及操作编号，不删除玩家数据或执行降级DDL。新增账号仓库金币只是只读存档，与金币邮件上限无关。
+4. 核对 `current`、`previous`、构建记录、`health`、`ready` 和已知账号只读数据。安装失败时禁止自动恢复，保留日志和原目录。
+5. 本流程手动创建的 `no-auto-recover` 由维护者在确认健康后移除；原先已存在的标记不要擅自删除。按原配置恢复之前启用的告警／清理定时器。不要启用以前不存在的功能。
 
+`upgrade-release.py` 在进程停止后持有固定维护锁；不要手工 SQL 拼迁移。它不是通用任意版本数据库升级器；配置兼容性、索引和维护协议也要核对。
 
-### 网页管理管理员功能权限（当前交付方案）
+## 可选：HTTPS 公网访问
 
-最终部署先完成上述迁移、最小列权限及适配安装，由`upgrade-capabilities.py`仅在未管理的修订0上初始化全部已实现开关。之后管理员在“功能与版本”页面调整，不再依赖SSH编辑`writes`、`test_uids`、`write_approvals`或执行器开关；管理策略生效后目标范围为全部账号。下面早期逐项文件配置只作兼容/迁移说明，不作为新版启用流程。没有验收记录不会禁止启用；未实现的原生协议不能靠开关变成可运行能力。
+完成隧道验收后再做，优先独立管理域名与有效证书：
 
-权限、原请求收据与审计同事务。查询审计操作编号可读取权限结果，但不能经游戏操作确认端点重放。迁移及运行时不重启mihomo、cliproxyapi、共享Docker。切换策略不撤销已开始事务；开启执行器可能继续已确认任务，保存前会提示。回滚须支持`web_capability_policy: 1`，旧版忽略策略会被拒绝；不要删除策略表或伪造标记来回退。详见[权限手册](CAPABILITIES.md)。
+1. 私有配置设 `public=true`，`origins` 只填写实际 HTTPS Origin（不含路径）；切换模式时注销旧会话。
+2. 在现有 HTTPS `server` 内审查并引入 [deploy/nginx.conf](../deploy/nginx.conf)。保留 `/dnf-gm/` 前缀，后端仍监听 `127.0.0.1:8765`。
+3. 执行 `nginx -t` 成功后再平滑 reload；保留原游戏网关和其他服务路由。
+4. 外部检查后端端口不可直连、`/dnf-gm/api/v1/internal/` 返回404、登录／CSRF／Cookie 正常；再次检查同源其他页面。
 
-### 组合奖励与批量执行器（历史文件配置，现用网页开关）
+不同 URL 路径不等于安全隔离。没有专属域名或存在相邻应用脚本风险时，保留 SSH 隧道，不强行公网开放。不要在文档或 Release 粘贴自己的生产地址和管理员密码。
 
-- 单次组合奖励需在`writes`和`write_approvals`显式激活`reward`；若内容含账号货币还须`currency`，含邮件还须`mail`。既有充值/邮件权限不会自动启用组合奖励。
-- 批量发放额外要求`batch-reward`及其显式审批，并设置`batch_worker_enabled: true`；`batch_worker_interval`须为1–60秒整数，默认1秒。启用前确认管理库006、最小权限、镜像/PVF指纹、采集快照、资源和测试UID条件均满足。
-- 仅一个应用进程内线程逐目标执行，仍共享最多3条数据库连接，没有新进程、额外数据库端口、Docker socket或命令接口。MySQL具名锁避免重复执行器同时发奖；连接关闭释放锁。时间间隔不是吞吐量保证，大量独立装备投递可能延长单目标事务。
-- 全服/在线模式按**角色**固定名单；在线表示登录状态表在线账号名下的匹配角色，不表示这些角色同时在线。没有角色的账号不包含在本轮名单内。全服启动要输入“全服发放”；按角色重复账号货币需单独确认。
-- 任务列表与目标分页保留实际状态；关浏览器不停止任务。暂停/取消只影响未开始的目标，不撤销已提交奖励；已开始的事务可能先完成。控制请求超时只查询原任务。
-- 单角色的货币、邮件、幂等操作、成功审计、目标完成和去重记录一次提交。**整个批量任务不是跨全服的大事务**；一部分角色成功后，另一角色失败不会撤销前者。界面明确显示逐角色结果。
-- 执行前持久记录`executing`。进程中断后先取得目标行锁，核对原操作/审计；不能因为浏览器报错而自动重发。已知未提交标为failed；人工“重新排队”后仍需“继续”。不一致记录隔离为uncertain并暂停该任务，其他任务不被反复核对阻塞。手工核对不能忽略审计冲突。
-- 升级/回滚前先在面板暂停任务，记录其编号，再仅停止GM。回滚不删除006表，不将executing/uncertain直接改成pending，不恢复整库撤销单笔奖励。旧版代码不运行执行器；回到新版本后先核对持久任务。
-- 数据库完成不证明在线消费、邮件领取或客户端显示正确。本轮网页/API/事务测试不替代游戏客户端验证。
-
-### 私有图片包（开发版，可选）
-
-见[图片包指南](ASSETS.md)。在维护电脑离线生成全新目录，复制至服务器root拥有、dnfgm组只读的私有路径；设置`assets_dir`，仅重启GM。默认空字符串，不要求图片包才可使用原业务。无需新增迁移/数据库权限/解析进程。包、配置及新鲜服务器快照的PVF不符时拒绝图片；缺图/损坏降级到文字，不改变发奖数量或业务预览指纹。回滚只切换完整包路径，不在线覆盖文件。真实素材尚未取得和验收，当前代码未部署。
-
-
-### 解锁申请中心（开发版）
-
-- `/unlock-requests`按角色编号游标每次扫描至多25个存档，按账号/角色/UID搜索；状态在扫描后过滤，因此空结果页仍可能有下一页。不是无界全库解压。
-- 单角色和跨角色处理复用`equipment-unlock`写权限及原有指纹/资源/测试目标审批；没有新增权限开关或迁移。本批单独不增加授权，合并开发版仍需要前述004/005/006与最小权限。
-- 列表只读。处理前退出选中账号，确认后下次加载角色由游戏处理。一批1–20个不同角色、明确申请编号、共同原因，所有角色申请修改和审计在同一事务提交，失败全部回滚。
-- 预览绑定穿戴、背包、角色仓库和锁记录指纹，确认再次锁定/核验；新代码拒绝旧版缺少容器指纹的待提交预览，请重建。已完成操作保留原编号查询，不重放。
-- 结果丢失保存原操作编号，重新打开解锁中心只查询，不自动重发。查询仍为preview不代表可以安全重发未知提交。不要用清除浏览器存储来绕过待确认状态。
-- 物品关联按当前二进制已核对的锁字段，不是槽号；重复关联显示候选，缺失/损坏显示不完整。范围仅穿戴、背包和角色仓库；不覆盖独立时装/宠物表或账号仓库。逐角色处理标注从最近20条该账号解锁审计中匹配，未显示标注不证明从未处理。
-- 回滚应用保留全部操作/审计；已回拨的申请时间不会因切回版本而恢复。无游戏装备写入、无新维护停机或运行时补丁，不把数据库完成等同于客户端完成。生产正向关联和客户端验证仍未完成。
-
-
-### 运维诊断（开发版，只读）
-
-- 新监控入口`monitor.py`在`/var/lib/dnf-gm/telemetry.sqlite`持久保存诊断，无需MySQL迁移或新授权。监控所有者写入、应用只读，默认0644；内容只有资源数字、固定事件、脱敏目录标签和发布包名称，禁止复制凭据/原始日志/argv。不要授予应用写此数据库的权限。
-- 新配置`telemetry_file`默认上述路径，一般不需写入应用配置；如使用自定义路径，必须是维护人员配置的绝对路径并允许应用只读。旧版应用不认识新增配置键，回滚时恢复与旧版本兼容的配置，不删除诊断或业务审计。监控自定义包装器也须创建Recorder并传给`run(..., telemetry=recorder)`；保留已有auxiliary核心检查，不能直接覆盖生产包装器导致漏检。
-- 每分钟保留最差观测，最多10080分钟（7天）；事件最多256条。24小时5分钟聚合、7天30分钟聚合，分别最多约289/337点。CPU为观测峰值、内存/Swap/磁盘为最低可用量；时间缺口不补0，初次部署没有历史可回填。数据库查询有时间/文件大小/返回数量边界。
-- 固定目录由root所有且不可被组/其他用户写入的`monitor.json`中`storage_paths`配置，格式见example；最多8个id/label/path项，不接受网页传入路径。单个后台扫描线程每小时一次，GNU du仅统计同文件系统、不跟随符号链接；每目录5秒超时。失败不清空保护状态，扫描不在主监控循环内等待；扫描线程/子进程仍属于原192MiB/25% slice。
-- 保留systemd沙箱，不为扫描扩大`ProtectHome`或核心访问权限。示例`/root/.../backups`可能被沙箱阻止，显示不可读/未知，不能当0或自动放宽权限。分类根目录可能嵌套、Docker卷可能与游戏数据重叠，分类量不可直接求和。没有任何删除动作。
-- 保护停止事件记录当时的可用资源。过去发生过的“恢复请求成功”不代表当前健康；GM停止时网页可能502，恢复后回看持久历史。诊断SQLite忙碌/损坏/写失败不会绕过、停止或降级原资源保护；旧的仅采集故障自动恢复机制不扩展到资源/核心故障。
-- 只读列出至多扫描100个发布目录条目，显式标记列表截断和current/previous保护。目录mtime不是部署时间，其他目录也不是自动清理许可。另有默认关闭的独立受控清理流程，须使用专门签名清单、预览确认和执行收据，不能把只读盘点作为删除授权；无通用SQL/Shell/重启接口。
-- 升级须包含新的`deploy/telemetry.py`，按现有安装流程只更新GM与其监控，不动mihomo/cliproxyapi/Docker。生产上线后验证历史持续增长、超时状态、采集延迟及共享slice资源；本地测试不是这项生产验收。
-
-
-### 受控旧 GM 产物清理（开发版，默认关闭）
-
-参见[完整安装、保护与故障恢复指南](RELEASE-CLEANUP.md)。普通安装不激活执行器；需显式启用专用timer、授予应用仅inbox写权限，并设置`cleanup_enabled=true`。root执行器不连MySQL，仍属于原192MiB/25% slice。安装/回滚/清理共用维护锁；回滚禁用timer并保留全部审计/收据。不能删除当前、回滚、最新两个版本及游戏/备份/日志。
-
-本批没有新增依赖或管理库迁移；仍需前几批004/005/006及相关最小权限。关闭/回滚应用不会撤销已经完成的目录删除。上线前仍须验证systemd沙箱实际权限、采集时长、资源预算与专用测试包流程；本地文件系统测试不能代替生产验收。
-
-
-### 原生在线会话查询（开发版，默认关闭）
-
-参见[原生接口说明](NATIVE-MONITOR.md)。本批无需新数据库迁移或权限；升级应用和监控后，先验证快照的程序指纹、镜像与已有私网IP放行，再显式启用`native_monitor_enabled`。只读UDP查询固定到数据库所在私网主机的monitor，不发布端口、不引入执行器或注入。缺少程序指纹仅禁用该查询，不触发核心故障停机。回滚到旧版前移除新增配置键；保留原审计与诊断数据。生产沙箱、资源及真实在线正向仍待验收。
-
-
-### 原生公告、踢人与封禁联动（开发版，默认关闭）
-
-本地已有预览、确认、防重审计、控制历史、账号快捷入口和断线只读恢复。无业务成功回执：发送与游戏效果分开；封禁数据库提交与踢人结果也分开。详见[NATIVE-MONITOR.md](NATIVE-MONITOR.md)。
-
-现有实例先完成前置004/005/006，再用维护权限执行：
+## 回滚与恢复
 
 ```bash
-python3 deploy/upgrade-native-controls.py --container YOUR_DNF_CONTAINER --mysql-port 4000 --db-account-host YOUR_EXISTING_APP_HOST
+# 在当前发布目录中执行；需已存在可用 previous。
+bash /opt/dnf-gm/current/deploy/rollback.sh
 ```
 
-只新增007管理索引表和SELECT/INSERT权限，幂等执行，不修改游戏表结构或数据，不激活任何动作。占位参数必须来自当前实例；勿照抄。第十批单独版本 `/health` 要求007；第十一批定时版本要求001至008，第十三批装备维护版本要求001至009全部存在；第十四批合并版要求001至010；当前第十五批要求001至011。新版本仅重启GM，不触碰mihomo、cliproxyapi或共享Docker。回滚保留管理表与审计，恢复旧版兼容配置；不要删除不确定操作以“修复”重试。
+回滚器核对维护空闲、阻止自动恢复、停止 GM 后检查旧版本兼容性，必要时拒绝回退。配置键不兼容时恢复对应私有配置；数据库保留向前兼容表、审计、防重及快照，不做破坏性降级迁移。Nginx 路由由维护者单独核验。
 
-`native_control_actions`默认空；公告/踢人需要逐项明确激活与`write_approvals`，封禁联动另需原有ban能力。测试限制下不允许广播。真实客户端显示、生产沙箱、资源与游戏效果仍待验证；未验收项不得宣称通过。
+**应用回滚不会撤回已充值货币或已领取物品。** 不用整库恢复取消一笔奖励；先核查原编号，再做新的纠正操作。游戏恢复和管理库恢复分别处理；禁止先停止会移除容器的 `dnf.service` 再尝试从中备份 MySQL。
 
+## 常见问题
 
-## 开发版第十一批：定时运营（未部署）
+| 现象 | 优先检查 |
+| --- | --- |
+| 安装器拒绝、GM没有启动 | 新目录校验、维护是否空闲、`journalctl -u dnf-gm.service -u dnf-gm-monitor.service -n 80`；先脱敏再共享日志 |
+| health 正常但 ready 失败 | 实时组件、快照时间、内存／Swap／磁盘阈值；不要伪造状态或关闭监控 |
+| 登录失败／Origin 拒绝 | 精确协议、主机、端口、代理 Host、Cookie、公网模式；不是开放 CORS |
+| 搜索角色中文乱码 | 当前镜像字符编码适配；不要直接批量修改玩家名称 |
+| 能查询但不能发放 | 能力策略、私有配置、指纹、测试范围、索引版本、监控准入，存档类还要维护窗口 |
+| 不显示图标 | 是否安装有权使用的匹配私有图片包；仓库不会自动附带客户端素材 |
+| 请求超时，不知道是否成功 | 保留原操作编号查询，不刷新页面后再执行一次 |
 
-先完成前置001–007迁移，再用维护权限执行（占位值须取自当前实例）：
-
-```bash
-python deploy/upgrade-schedules.py --container '<实际游戏容器>' --mysql-port '<实际容器内端口>' --db-account-host '<现有专用数据库用户host>'
-```
-
-仅新增008管理表及SELECT/INSERT/UPDATE权限，不修改游戏数据、不发送公告或重启服务。第十一批版本 `/health` 要求001至008；第十三批装备维护版本要求001至009；第十四批合并版要求001至010；当前第十五批要求001至011，新安装bootstrap包含011。不得重复provision现有实例。
-
-配置 `schedule_worker_enabled: false` 为默认。只有明确启用后才可激活和执行计划；奖励及公告各自仍需原有适配、权限、资源和测试范围条件。定时扫描与奖励逐目标处理共用一个线程，不新增systemd服务或扩大内存/CPU预算。实际名单在触发时确定，超过5分钟错过期次聚合记为跳过，公告不确定时只读核对、不重发。
-
-回滚前暂停计划并核对原子任务，仅停止GM；保留008表、历史、审计和防重记录。旧版本不认识新配置键时恢复兼容配置，不删除期次或重置原生占位。具体操作及状态见[定时运营说明](SCHEDULES.md)。生产迁移、资源占用与回滚验证仍待完成。
-
-
-## 开发版装备维护（默认关闭，未完成生产适配）
-
-第十二批提供编解码/维护协议，第十三批接入009管理迁移、不可变快照、事务API及网页，见[维护说明](INVENTORY-MAINTENANCE.md)。第十三批版本健康检查要求001–009；第十四批合并版要求001–010；当前第十五批要求001–011；不要重复provision现有实例。
-
-仅安装管理表、索引及权限，不授予游戏存档UPDATE：
-
-```bash
-python3 deploy/upgrade-inventory.py --container '<实际游戏容器>' --mysql-port '<实际容器内端口>' --db-account-host '<现有专用数据库用户host>'
-```
-
-`inventory_program_sha256` 默认空；`writes` 与 `write_approvals` 中的 `item-edit`、`item-reclaim`、`item-restore` 默认不激活。`monitor.json` 的 `inventory_maintenance_enabled` 默认false。不新增常驻工作进程，不提高192MiB/25%配额。
-
-只有在真实镜像适配、隔离恢复和维护窗口验证通过后，才安排单独授权：同一升级命令追加 `--enable-storage-writes --acknowledge-maintenance-protocol`。这只授予四类存档字段UPDATE，不修改存档、不激活应用动作、不签发维护窗口。不要因为看到网页按钮就提前执行生产授权。
-
-维护者配置 `/etc/dnf-gm/inventory-maintenance.json` 必须root拥有，示例指纹/进程策略故意留空，不能直接启用。禁止用停止 `dnf.service` 替代保留MySQL的维护流程；网页/脚本都没有停服接口。关闭窗口现在需连接固定管理库核对未决事务：独占文件锁、撤销许可、等待数据库操作行锁，然后才能返回 `safe_to_resume:true`。失败时不能恢复游戏；用原ID重试，不能把“许可不存在”当成成功。
-
-维护期间不切换数据库目标/部署配置、不回滚应用，不运行外部游戏写入工具。先由同版工具close并确认完成，再恢复游戏、核对状态，最后才可回滚应用/监控。回滚保留009快照、执行意向、审计和幂等键；不删除表，也不自动撤销已提交的物品修改。旧版不识别新配置键时恢复兼容配置。
-
-生产进程规则、维护探测成本、真实属性语义及游戏效果仍待验证；本批未授予生产存档写权限、未安排真实停服、未修改mihomo/cliproxyapi/共享Docker。
-
-
-## 开发版第十四批：玩家问题工作台（未部署）
-
-第十四批健康检查要求001–010；当前第十五批要求001–011，新安装bootstrap包含011。前置迁移完成后，维护者执行：
-
-```bash
-python3 deploy/upgrade-support.py --container '<实际游戏容器>' --mysql-port '<实际容器内端口>' --db-account-host '<现有专用数据库用户host>'
-```
-
-仅安装管理表与最小管理权限，不修改游戏数据、不添加游戏权限、不激活能力、不重启服务。奖励补偿仍依赖原有游戏写入条件，不能通过建立问题绕过。无需新工作进程、数据库连接池或额外资源额度。回滚保留010记录、审计、幂等收据，不回滚已发奖励；未决请求保留原编号核查。安装前按已有流程核实备份与回退版本，不重复provision生产实例。详见[工作台手册](SUPPORT-DESK.md)。
-
-
-## 开发版第十五批：GM发放统计（未部署）
-
-前置001–010迁移及授权完成后，维护者核验备份/回退版本，执行：
-
-```bash
-sudo /opt/dnf-gm/venv/bin/python deploy/upgrade-economy.py \
-  --container <实际容器名> --mysql-port 4000 --db-account-host <现有运行账号host>
-```
-
-此命令从源码目录执行，路径/端口/host必须核对实际实例。只创建011管理投影表并赋予SELECT/INSERT，不写游戏、不发奖、不重启服务。新安装bootstrap包含011，现有安装不得重复provision。合并版健康检查要求001–011；迁移完成后才按原流程切换版本，仅重启GM。
-
-历史导入单独按页执行；旧邮件台账导入与统计投影导入不能互相替代。回滚保留011、审计与幂等结果，旧版产生的新审计在再次升级时补导。无新增常驻进程、数据库连接额度或资源上限。报表/导出含玩家信息，仅向管理员开放，下载文件按私有资料保管。详见[统计手册](ECONOMY.md)和[第十五批验证报告](reports/MANAGEMENT-EXPANSION-15.md)。
-
-
-## 开发版第十六批：升级引用检查（未部署）
-
-无新增迁移和数据库授权，仍要求合并版001–011。可选维护配置 `upgrade_catalog_file`、`upgrade_assets_dir`、`upgrade_image_digest` 默认空；按[升级检查手册](UPGRADE-CHECK.md)将候选文件放在独立私有目录，运行账号只读，不能覆盖当前索引/图片包。只有维护配置可选候选路径，网页无上传、路径输入或自动激活接口。
-
-安装应用/读取新配置只重启GM，不影响游戏、mihomo、cliproxyapi或共享Docker。报告中“声明镜像”未拉取/运行，不等于结构已验证。完整引用导出也不是发布许可。回滚旧版应用前移除其不认识的三个`upgrade_*`配置键或恢复旧配置，不删除游戏、审计或候选报告。
-
-## 可选独立健康告警
-
-维护者按[主动告警手册](ALERTS.md)安装独立`dnfgm-alert`观察器。渠道配置为`/etc/dnf-gm-alerts.json`，不开放原数据库凭据目录；普通安装默认不启用定时器。已有告警部署升级时重新运行`deploy/enable-alerts.sh`更新单元；回滚不含告警代码的旧版前先停用自身timer并保留状态。本地验证不代表生产通知/资源已验收。
-
-## 管理库备份与恢复证据
-
-按[备份手册](BACKUP-HEALTH.md)在人工安排的GM维护窗口内制作私有一致性快照，再在socket-only本地实验室实际恢复核对。`/var/lib/dnf-gm/backup-health.json`只包含脱敏证据；网页无备份下载或生产整库恢复。可选告警开关默认为false，不能替代备份生成或游戏库备份。应用新增`backup_health_file`可选配置，没有新增迁移、运行库权限或常驻数据库连接。
-
-
-## 第二十八批：事务屏障与自动安装（开发中，未部署）
-
-先在已核验的升级窗口完成013管理库迁移与专用账号对`dnf_gm.gameplay_fence`的SELECT授权；不要重新provision。该表只有固定协议行，不存玩家数据。普通写事务持共享锁，root维护核对持独占锁，两者已在隔离MySQL5.7以SELECT-only权限验证。
-
-`install.sh`在停止GM、准备依赖后、切换current及启动GM之前，自动运行`configure_write_gate.py`：核对真实数据库协议、初始化固定`/var/lib/dnf-gm/write-gate`、保持锁inode和旧状态、原子写入`gameplay_gate_dir`，不修改任何网页能力选择或凭据。配置转为root:dnfgm、0640；应用仅接受root所属且本应用组可读的0640，仍兼容私有0600。不是增加需要管理员日常SSH操作的功能开关。
-
-重装遇到冻结、缺失的旧状态、不一致路径或协议，拒绝继续，不自动解冻。预检在旧虚拟环境缺失时仍可用纯Python标准库读取冻结文件，并同时检查固定目录与已有配置指向的目录。启用该协议后，回滚目标必须声明`gameplay_transaction_fence:1`；不以删除状态或配置键绕过兼容检查。
-
-本批安装器只配置普通写入保护，不安装完整停服／恢复服务，不改变DNF、mihomo、cliproxyapi或共享Docker。完整维护执行仍待接入；详见[写入协议](WRITE-ADMISSION.md)和[第二十八批报告](reports/MANAGEMENT-EXPANSION-28.md)。
-
-### 维护前普通结果核对迁移（014）
-
-新安装`grants.py`和既有`upgrade-gameplay-fence.py`同时包含013/014。014仅给`dnf_gm.operations`增加`(status,action,operation_id)`索引，不更改游戏表和功能权限；脚本可重复执行。执行维护核对前检查索引列及相关表InnoDB引擎，不接受同名错误索引。普通应用兼容013，但新完整维护适配器要求014；不要把旧应用健康检查通过理解为新执行器已安装。升级仍须通过原维护空闲预检，不能清除冻结文件或原审计绕过。当前本地未部署。
-
-## 015 玩家收藏与最近访问升级
-
-新版健康检查要求001–015。先由维护者在安装锁与空闲维护状态下应用 `migrations/015-player-preferences.sql`，调用 `deploy/grants.py` 中 `player_preferences_sql` 为既有专用运行用户添加精确列授权，再安装构建产物。不得重新执行新实例bootstrap，不修改管理员密码或现有功能策略。
-
-015仅新增管理库界面偏好表，没有游戏数据或游戏表结构修改。通过原有安装器仅重启GM组件。回滚应用保留015，不删除审计、奖励、维护记录或玩家偏好；旧版按限定版本范围检查迁移，不拒绝015的存在。
+历史开发批次已移入[旧部署记录](history/DEPLOYMENT-BATCHES-202610-20261106.md)，其中的默认值和未部署结论不作为本版安装步骤。

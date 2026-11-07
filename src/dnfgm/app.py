@@ -6,6 +6,7 @@ import re
 import time
 from fastapi import Path as PathParameter, FastAPI, Request, Response, HTTPException, Query
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
+from . import __version__
 from .config import load_settings
 from .db import Database, Busy
 from .models import Login, Preview, Confirm, Gift, CatalogPolicyPreview, ItemFavorite, ItemSelection, RewardJob, StartRewardJob, RewardJobControl, UnlockBatchPreview, CleanupPreview, CleanupConfirm
@@ -175,7 +176,7 @@ def create_app(settings=None, database=None):
             from .gameplay_transactions import inspect_protocol
             try:inspect_protocol(q)
             except Exception:raise HTTPException(503,'管理库事务屏障不可核验；不会自动修复或开启维护') from None
-        return {'ok':True,'version':'0.3.1'}
+        return {'ok':True,'version':__version__}
 
     @app.get(API+'/ready')
     def ready():

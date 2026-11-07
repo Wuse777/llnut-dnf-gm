@@ -21,7 +21,7 @@ def test_report_is_admin_only_and_does_not_expose_secrets(env):
     c,s,db,app=env
     d=c.get(P+'/capabilities');assert d.status_code==200,d.text
     assert d.json()['policy']['state']=='legacy'
-    assert d.json()['application']['version']=='0.3.1'
+    assert d.json()['application']['version']=='0.4.0'
     for secret in (s.secret,s.db_password,s.status_file,s.catalog_file):assert secret not in d.text
     assert all(i['verification']['state']=='not_recorded' for i in d.json()['items'])
     c.cookies.clear();assert c.get(P+'/capabilities').status_code==401
