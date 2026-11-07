@@ -19,15 +19,15 @@ jobs:
       - name: Verify source and atomically publish fixed commit and tag
         shell: bash
         env:
-          BASE: acc364d67e13c02a02656946b7c36c9398637887
-          TARGET: 2bd83bada3f1153dba91b707aa9f49da3509366b
-          BUNDLE_SHA: f9eb50bf38016c7258e87a9218f091ccc186b42e503d3529ef2c0e370bd34548
+          BASE: 0066bcf91b91d7063ff05d35a58246f838ba00c6
+          TARGET: 269b23ef4a26a4c72c2fada1f09c638fede93de1
+          BUNDLE_SHA: d1de03d864b3c9ba64971e030d701a5f7599cc52438cc6d012022bf134c6defb
         run: |
           set -euo pipefail
           git fetch origin main
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$BASE"
           test -z "$(git ls-remote origin refs/tags/v0.4.0)"
-          curl --fail --silent --show-error --insecure --connect-timeout 20 --max-time 90 --retry 2 'https://123.57.161.14/dnf-gm/assets/source-sync-cf204da7ef944805af71524268e32990.bundle' -o /tmp/source.bundle
+          curl --fail --silent --show-error --insecure --connect-timeout 20 --max-time 90 --retry 2 'https://123.57.161.14/dnf-gm/assets/source-sync-daf000e68b6441649112e3da3973ffba.bundle' -o /tmp/source.bundle
           echo "$BUNDLE_SHA  /tmp/source.bundle" | sha256sum --check --strict
           git bundle verify /tmp/source.bundle
           git fetch /tmp/source.bundle refs/heads/main:refs/remotes/verified-source/main
