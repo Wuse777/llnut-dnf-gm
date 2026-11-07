@@ -1,0 +1,52 @@
+name: One-time verified documentation and v0.4.0 release
+on:
+  push:
+    branches: [codex/source-sync-20261106]
+    paths: [.github/workflows/source-release-v040-once.yml]
+permissions:
+  contents: write
+concurrency:
+  group: dnf-gm-source-main-sync
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify source and atomically publish fixed commit and tag
+        shell: bash
+        env:
+          BASE: acc364d67e13c02a02656946b7c36c9398637887
+          TARGET: 2bd83bada3f1153dba91b707aa9f49da3509366b
+          BUNDLE_SHA: f9eb50bf38016c7258e87a9218f091ccc186b42e503d3529ef2c0e370bd34548
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$BASE"
+          test -z "$(git ls-remote origin refs/tags/v0.4.0)"
+          curl --fail --silent --show-error --insecure --connect-timeout 20 --max-time 90 --retry 2 'https://123.57.161.14/dnf-gm/assets/source-sync-cf204da7ef944805af71524268e32990.bundle' -o /tmp/source.bundle
+          echo "$BUNDLE_SHA  /tmp/source.bundle" | sha256sum --check --strict
+          git bundle verify /tmp/source.bundle
+          git fetch /tmp/source.bundle refs/heads/main:refs/remotes/verified-source/main
+          test "$(git rev-parse refs/remotes/verified-source/main)" = "$TARGET"
+          git merge-base --is-ancestor "$BASE" "$TARGET"
+          git tag v0.4.0 "$TARGET"
+          git push --atomic origin "$TARGET:refs/heads/main" refs/tags/v0.4.0
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$TARGET"
+          git checkout --detach "$TARGET"
+          rm -f /tmp/source.bundle
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and publish source, static web and checksums (no full tests or deployment)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/publish_github_release.sh v0.4.0
