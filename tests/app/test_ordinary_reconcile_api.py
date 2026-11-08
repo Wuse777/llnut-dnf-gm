@@ -99,7 +99,8 @@ def test_native_uncertainty_preserved_without_sending_again(env, control, gate, 
     op = native_preview(control)
     session = read(env[2], 'SELECT session_hash FROM dnf_gm.operations WHERE operation_id=%s', (op,))[0]['session_hash']
     calls = []
-    def send(data):
+    def send(data, operation_id=None):
+        assert operation_id == op
         calls.append(data)
         if kind == 'dispatching': raise SystemExit('synthetic process exit')
         return {'transport_status': 'uncertain', 'effect_status': 'unknown', 'reason_code': 'test', 'automatic_retry_allowed': False}
@@ -251,7 +252,9 @@ def test_unrecognized_persistent_intent_prevents_service_exit(env, gate, broker)
 def test_unproven_native_claim_does_not_become_valid_unknown(env, control, gate, broker, damage):
     ops = control[4]; op = native_preview(control)
     session = read(env[2], 'SELECT session_hash FROM dnf_gm.operations WHERE operation_id=%s', (op,))[0]['session_hash']
-    def crash(data): raise SystemExit('fixture crash')
+    def crash(data, operation_id=None):
+        assert operation_id == op
+        raise SystemExit('fixture crash')
     ops.send_once = crash
     with pytest.raises(SystemExit): ops.confirm(session, op, 'fixture-native-preflight-0002')
     sql = {'audit':'DELETE FROM dnf_gm.audit WHERE operation_id=%s',

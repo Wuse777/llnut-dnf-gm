@@ -88,6 +88,43 @@ class GameAssets:
                 except (sqlite3.Error,ValueError,TypeError):state='unavailable'
             return self.image(None,pvf_sha,state)
 
+    def job_preview(self,pvf_sha,job):
+        """Exact job's offline client default pose, separate from worn appearance."""
+        with self.connection(pvf_sha) as (c,state):
+            if c:
+                try:
+                    metadata=dict(c.execute('SELECT key,value FROM metadata'))
+                    if metadata.get('job_previews_version')!='1':
+                        return {'state':'missing','url':None,'note':'尚未安装此客户端的默认职业站姿'}
+                    row=c.execute('SELECT j.*,f.width,f.height FROM job_previews j LEFT JOIN files f ON f.sha256=j.sha256 WHERE j.job=?',(job,)).fetchone()
+                    image=self.image(row,pvf_sha,'missing')
+                    if image['state']=='ready':
+                        if row['source_kind']!='client_default_pose' or row['pose']!='waiting_first_frame':raise ValueError()
+                        image.update(source_kind='client_default_pose',pose='waiting_first_frame',
+                            note='匹配客户端的基础职业默认站姿首帧；不代表当前角色时装、武器外观或精确觉醒阶段',client_verified=False)
+                    return image
+                except (sqlite3.Error,ValueError,TypeError):state='unavailable'
+            return self.image(None,pvf_sha,state)
+
+    def outfit_preview(self,pvf_sha,job,recipe_sha256):
+        """Serve only the exact saved-avatar recipe from an offline private pack."""
+        if type(job) is not int or not 0<=job<=255 or not isinstance(recipe_sha256,str) or not SHA.fullmatch(recipe_sha256):
+            return {'state':'unsupported','url':None,'note':'装扮配方无法确认'}
+        with self.connection(pvf_sha) as (c,state):
+            if c:
+                try:
+                    metadata=dict(c.execute('SELECT key,value FROM metadata'))
+                    if metadata.get('outfit_previews_version')!='1':
+                        return {'state':'missing','url':None,'note':'尚未安装此客户端的装扮配方预览'}
+                    row=c.execute('SELECT o.*,f.width,f.height FROM outfit_previews o LEFT JOIN files f ON f.sha256=o.sha256 WHERE o.job=? AND o.recipe_sha256=?',(job,recipe_sha256)).fetchone()
+                    image=self.image(row,pvf_sha,'missing')
+                    if image['state']=='ready':
+                        image.update(source_kind='saved_avatar_outfit',pose='waiting_first_frame',recipe_sha256=recipe_sha256,
+                            note='匹配客户端的时装存档首帧；不含武器外观、染色、透明替代或实时变化',client_verified=False)
+                    return image
+                except (sqlite3.Error,ValueError,TypeError):state='unavailable'
+            return self.image(None,pvf_sha,state)
+
     def coverage(self,pvf_sha,state='all',page=1):
         from contextlib import closing
         from .catalog import Catalog

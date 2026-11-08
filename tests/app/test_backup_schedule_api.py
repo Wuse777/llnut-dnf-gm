@@ -2,9 +2,11 @@ import json
 import os
 from pathlib import Path
 import uuid
+import sys
 import pymysql
 from dnfgm.backup import restore_drill
 from dnfgm_m0.lab import connect
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'deploy'))
 from backup_worker import BackupWorker
 
 P='/dnf-gm/api/v1'

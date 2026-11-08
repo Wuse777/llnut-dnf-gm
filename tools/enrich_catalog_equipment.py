@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 import sqlite3
 from dnfgm.pvf import Reader
-from dnfgm.equipment_metadata import equipment_definition,enchant_definition
+from dnfgm.equipment_metadata import equipment_definition,enchant_definition,attribute_definition
 
 
 def enrich(source,pvf,output):
@@ -17,14 +17,16 @@ def enrich(source,pvf,output):
         meta=dict(c.execute('SELECT key,value FROM metadata'))
         items=c.execute('SELECT id,source_path FROM items ORDER BY id').fetchall()
     if meta.get('pvf_sha256')!=sha:raise ValueError('PVF/index fingerprint mismatch')
-    reader=Reader(pvf,meta.get('encoding','gbk'));equipment=[];enchants=[];failures=0
+    reader=Reader(pvf,meta.get('encoding','gbk'));equipment=[];attributes=[];enchants=[];failures=0
     try:
         for item_id,path in items:
             try:
                 tokens=reader.tokens(path)
                 if path.startswith('equipment/'):
                     row=equipment_definition(tokens)
-                    if row:equipment.append((item_id,row['part_code'],row['rarity']))
+                    if row:
+                        equipment.append((item_id,row['part_code'],row['rarity']))
+                        attributes.append((item_id,json.dumps(attribute_definition(tokens),ensure_ascii=False)))
                 if path.startswith('stackable/'):
                     row=enchant_definition(tokens)
                     if row:enchants.append((item_id,json.dumps(row['targets'],ensure_ascii=False),json.dumps(row['effects'],ensure_ascii=False),row['summary']))
@@ -38,12 +40,16 @@ def enrich(source,pvf,output):
         with sqlite3.connect(output) as c:
             c.execute('DROP TABLE IF EXISTS equipment_details')
             c.execute('DROP TABLE IF EXISTS enchantments')
+            c.execute('DROP TABLE IF EXISTS equipment_attributes')
             c.execute('CREATE TABLE equipment_details(item_id INTEGER PRIMARY KEY,part_code TEXT NOT NULL,rarity INTEGER)')
             c.execute('CREATE TABLE enchantments(item_id INTEGER PRIMARY KEY,targets_json TEXT NOT NULL,effects_json TEXT NOT NULL,summary TEXT NOT NULL)')
+            c.execute('CREATE TABLE equipment_attributes(item_id INTEGER PRIMARY KEY,attributes_json TEXT NOT NULL)')
+            c.execute('CREATE INDEX equipment_part_rarity ON equipment_details(part_code,rarity,item_id)')
             c.executemany('INSERT INTO equipment_details VALUES(?,?,?)',equipment)
             c.executemany('INSERT INTO enchantments VALUES(?,?,?,?)',enchants)
+            c.executemany('INSERT INTO equipment_attributes VALUES(?,?)',attributes)
             c.executemany('INSERT OR REPLACE INTO metadata VALUES(?,?)',[
-                ('equipment_index_version','1'),('equipment_index_failures',str(failures))])
+                ('equipment_index_version','1'),('equipment_attributes_version','2'),('equipment_index_failures',str(failures))])
         return {'pvf_sha256':sha,'equipment':len(equipment),'enchantments':len(enchants),'extraction_failures':failures,'item_permissions_changed':False}
     except Exception:
         if created:output.unlink(missing_ok=True)

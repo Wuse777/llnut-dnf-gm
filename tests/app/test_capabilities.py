@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 from dnfgm.app import create_app
+from dnfgm import __version__
 from dnfgm.capability_policy import SWITCHES
 
 P='/dnf-gm/api/v1'
@@ -21,7 +22,7 @@ def test_report_is_admin_only_and_does_not_expose_secrets(env):
     c,s,db,app=env
     d=c.get(P+'/capabilities');assert d.status_code==200,d.text
     assert d.json()['policy']['state']=='legacy'
-    assert d.json()['application']['version']=='0.4.0'
+    assert d.json()['application']['version']==__version__
     for secret in (s.secret,s.db_password,s.status_file,s.catalog_file):assert secret not in d.text
     assert all(i['verification']['state']=='not_recorded' for i in d.json()['items'])
     c.cookies.clear();assert c.get(P+'/capabilities').status_code==401
@@ -32,7 +33,7 @@ def test_owner_can_enable_all_and_remove_test_uid_restriction_without_restart(en
     assert set(r.json()['enabled'])==set(SWITCHES)
     effective=app.state.settings
     assert effective.test_uids==() and effective.batch_worker_enabled and effective.schedule_worker_enabled
-    assert effective.native_control_actions==('native-notice','native-kick')
+    assert effective.native_control_actions==('native-notice','native-kick','native-message')
     assert 'item-edit' in effective.writes
     d=c.get(P+'/capabilities').json();assert d['policy']['account_scope']=='all'
     assert not d['scope']['test_only'] and d['policy']['revision']==1

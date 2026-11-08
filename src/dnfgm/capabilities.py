@@ -51,7 +51,7 @@ FEATURES = (
  ('economy','GM发放统计','记录与维护','economy',None,'只统计可覆盖的GM操作，不冒充全服完整经济流水。'),
  ('compatibility','升级引用检查','记录与维护','compatibility',None,'只读核对候选资源，不自动激活PVF或暂停任务。'),
  ('assets','物品图标与职业头像','展示与素材','catalog','assets','图片包匹配不代表像素或客户端一致性已验收。'),
- ('private-message','指定玩家系统消息','待适配',None,'unimplemented','尚未接入当前镜像可靠的私信通道。'),
+ ('private-message','指定玩家系统消息','在线控制','native-controls','native-message','独立定向系统消息桥接已实现；须在维护窗口显式安装插件、通过运行程序指纹与握手后启用。发送结果不证明客户端已显示。'),
  ('character-quests','任务检索与异常线索','角色维护','accounts',None,'读取20个任务槽和已完成标记，显示重复任务及PVF缺失等线索，单槽清理使用独立预览入口，不自动完成任务。'),
  ('character-advanced','转职／觉醒维护','存档维护','accounts','char-profession','同基础职业内按PVF选择转职／觉醒；关联成长和两套PvE技能，需显式维护窗口，不冒充在线原生转职。'),
 )
@@ -64,6 +64,7 @@ REASONS = {
  'resource_unknown':'资源数据缺失或低于保护阈值', 'catalog_unknown':'只读物品索引不可用',
  'catalog_mismatch':'物品索引与配置PVF不匹配', 'worker_disabled':'批量执行器未启用',
  'assets_unknown':'匹配图片包尚未可用', 'activation_missing':'缺少显式能力激活记录',
+ 'bridge_unavailable':'定向系统消息插件未就绪；需要显式安装和程序指纹握手',
 }
 
 
@@ -155,12 +156,17 @@ def report(settings, db):
         elif switch=='assets':enabled=bool(settings.assets_dir);errors=[] if asset_state=='ready' else ['assets_unknown']
         elif switch=='schedules':enabled=settings.schedule_worker_enabled;errors=list(write_errors)
         elif switch=='native-session':enabled=settings.native_monitor_enabled;errors=list(write_errors)
-        elif switch in ('native-notice','native-kick','native-ban-kick'):
+        elif switch in ('native-notice','native-kick','native-ban-kick','native-message'):
             action='native-kick' if switch=='native-ban-kick' else switch
             enabled=settings.native_monitor_enabled and action in settings.native_control_actions
             if switch=='native-ban-kick':enabled=enabled and 'ban' in settings.writes
             errors=list(write_errors)
             if settings.write_approvals.get(action) is not True or (switch=='native-ban-kick' and settings.write_approvals.get('ban') is not True):errors.append('activation_missing')
+            if switch=='native-message' and enabled:
+                from .native_monitor import NativeMonitor
+                from .native_control import NativeControlTransport
+                from .private_message import PrivateMessageTransport
+                if not PrivateMessageTransport(NativeControlTransport(NativeMonitor(settings))).status()['ready']:errors.append('bridge_unavailable')
         elif switch:
             enabled=switch in settings.writes;errors=list(write_errors)
             if settings.write_approvals.get(switch) is not True:errors.append('activation_missing')

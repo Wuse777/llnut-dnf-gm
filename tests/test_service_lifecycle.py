@@ -100,7 +100,15 @@ def stopped(rig):
     p,plan=planned(rig);c,h,d=rig
     result=c.confirm(RID,p['fingerprint'])
     assert result['state']=='writers_stopped',result
-    return result,plan
+    return durable_status(c,result),plan
+
+
+def durable_status(c,result):
+    # Status also projects current recovery availability. Command receipts keep
+    # their original fields; replay checks compare the full durable projection.
+    status=c.status(RID)
+    assert {key:status[key] for key in result}==result
+    return status
 
 
 def test_full_plan_binds_60_services_and_skips_residents_and_dormant(rig):
@@ -198,7 +206,7 @@ def test_durable_failure_never_replays_auxiliary_commands(rig,phase,after):
         if hit and not after:once[0]=False;raise OSError('synthetic receipt failure')
         atomic_json(path,doc,mode=mode)
         if hit:once[0]=False;raise OSError('synthetic saved-response loss')
-    c.writer=writer;result=c.confirm(RID,p['fingerprint']);before=copy.deepcopy(h.calls)
+    c.writer=writer;result=durable_status(c,c.confirm(RID,p['fingerprint']));before=copy.deepcopy(h.calls)
     restarted=DrainCoordinator(c.root,h,owner=os.geteuid(),admission=c.admission,lifecycle=d)
     assert restarted.confirm(RID,p['fingerprint'])==result and h.calls==before
     assert result['state']==('writers_stopped' if phase=='writers-stopped' and after else 'needs_review')
@@ -394,7 +402,7 @@ def test_auxiliary_stop_timeout_never_escalates_or_replays(rig):
             raise TimeoutError('synthetic graceful exit timeout')
         return original(args,timeout)
     h.command=command
-    result=c.confirm(RID,p['fingerprint']);calls=copy.deepcopy(h.calls)
+    result=durable_status(c,c.confirm(RID,p['fingerprint']));calls=copy.deepcopy(h.calls)
     assert result['state']=='needs_review'
     assert c.confirm(RID,p['fingerprint'])==result and h.calls==calls
     assert c.admission.gate.read()['state']=='frozen'

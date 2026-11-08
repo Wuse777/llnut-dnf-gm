@@ -149,7 +149,7 @@ def test_batch_reacquires_transaction_lock_after_durable_dispatch_marker(env,gat
 def test_health_requires_new_migration(env):
     c,s,db,app=env;assert c.get(P+'/health').status_code==200
     write(db,'DELETE FROM dnf_gm.schema_versions WHERE version=13')
-    response=c.get(P+'/health');assert response.status_code==503 and '013' in response.text
+    response=c.get(P+'/health');assert response.status_code==503 and '迁移未完成' in response.text
 
 
 @pytest.mark.parametrize('sql',['DELETE FROM dnf_gm.gameplay_fence','UPDATE dnf_gm.gameplay_fence SET protocol_version=2','DROP TABLE dnf_gm.gameplay_fence'])

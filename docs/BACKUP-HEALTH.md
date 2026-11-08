@@ -2,6 +2,8 @@
 
 当前状态：2026-11-06已上线网页管理的在线定时备份，默认北京时间04:00、保留7天；最新执行与恢复记录以下文及网页为准。
 
+2026-11-08补充完成最新自动备份的真实隔离恢复：36表、632行、499871字节，SHA-256为`811c731d8ea030b0bdcf5aae5c093de45db19f2e31200c74504c3bc58d6ed011`。逐表定义、主键顺序字段值摘要、行数及文件摘要一致；隔离用户和库清理后再次核对，原备份未改变。临时socket-only MySQL无网络、无游戏数据挂载，结束后容器和临时数据均已删除；DNF及既有组件PID保持。私有恢复收据保存在维护目录，未将生产库作为恢复目标。
+
 历史首次演练：2026-11-05已完成生产管理库备份及本机隔离恢复，并接通公网健康证据。33张表、200行、190224字节；表定义、全部字段值摘要及行数一致。此功能不等于全服备份。
 
 本次私有备份目录 `/var/backups/dnf-gm/verified-management-20261105-184753`；公开健康报告仅包含摘要，不暴露备份内容。该次为一次性备份/演练，随后已于2026-11-06配置定时备份；24小时未重新核对文件时仍显示证据过期。下文“生产准备”为再次备份的操作说明，不表示本次尚未执行。
@@ -54,6 +56,18 @@ API统一在`/dnf-gm/api/v1`：`GET /backups`、`POST /backups/policy`、`GET /b
 部署只重启GM组件，6项受保护服务PID保持；在线备份过程中包括GM应用和单执行器的8项PID全部保持。slice检查约91.4MiB/192MiB，CPU限额25%；不把单次采样视为长期峰值。公网桌面/390px检查无JS错误及横向溢出；仅保存备份计划与创建备份任务，没有游戏存档写操作。没有运行全量套件。
 
 ## 本地隔离操作
+
+新增`rehearse-latest`将“选择最新完整自动备份→校验文件与原收据→隔离恢复→再次校验→生成新证据”串为一次命令。它只扫描最多1024个严格私有的`management-<32位任务编号>`目录；拒绝符号链接、未知权限及最新文件损坏，不会悄悄改用较旧文件。必须给出既有的独立MySQL5.7 socket与准确datadir，实例仍须满足server_id57044及skip_networking=1。输出收据和报告必须是保留目录之外的新文件，不覆盖已有证据；该工具不创建数据库服务、不接触生产恢复，也不把私有内容送入网页。
+
+```bash
+PYTHONPATH=src python tools/management_backup.py rehearse-latest \
+  --backup-root /absolute/private/automatic \
+  --lab-socket /absolute/isolated/mysql.sock --lab-datadir /absolute/isolated/data \
+  --receipt /absolute/private/new-restore-receipt.json \
+  --health-output /absolute/private/new-health.json
+```
+
+维护者核对后可把恢复收据安装到现有公共健康文件同目录的`restore-receipt.json`（root所有、600）。下一次自动备份发布健康摘要时保留这份历史恢复证据：仅当文件哈希、表数、行数与当前备份完全匹配才显示当前文件恢复通过；新备份生成后会明确变为`other_artifact`，不会用旧恢复证明新文件。私有收据仍不会通过API返回。
 
 使用已准备好的socket-only实验室和项目Python环境；所有输出放私有目录，以下为占位路径：
 

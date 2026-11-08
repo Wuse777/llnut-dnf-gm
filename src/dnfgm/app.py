@@ -344,6 +344,12 @@ def create_app(settings=None, database=None):
         limits.check('native-history:'+key,30)
         return native_ops.history(uid,page)
 
+    @app.get(API+'/native-controls/status')
+    def native_status(request:Request):
+        key=user(request)
+        limits.check('native-status:'+key,20)
+        return {'private_message':native_ops.private_message.status()}
+
     @app.post(API+'/native-controls/preview')
     def native_preview(data:NativePreview,request:Request):
         key=user(request,True,True)
@@ -903,9 +909,9 @@ def create_app(settings=None, database=None):
         return UnlockCenter(service).preview(key,data.model_dump())
 
     @app.get(API+'/catalog')
-    def catalog(request:Request,q:str=Query('',max_length=80),category:str=Query('',max_length=24),page:int=Query(1,ge=1,le=10000),allowed_only:bool=False,state:Literal['','trial','verified','blocked']=''):
+    def catalog(request:Request,q:str=Query('',max_length=80),category:Literal['','equipment','material','consumable','special']='',page:int=Query(1,ge=1,le=10000),allowed_only:bool=False,state:Literal['','trial','verified','blocked']='',part:str=Query('',max_length=80),rarity:int|None=Query(None,ge=0,le=255),min_level:int|None=Query(None,ge=0,le=1000),max_level:int|None=Query(None,ge=0,le=1000),sort:Literal['id','level_asc','level_desc','name']='id'):
         user(request)
-        return service.catalog.search(q,category,page,allowed_only,state)
+        return service.catalog.search(q,category,page,allowed_only,state,part=part,rarity=rarity,min_level=min_level,max_level=max_level,sort=sort)
 
     @app.get(API+'/catalog/enchantments')
     def enchantments(request:Request,q:str=Query('',max_length=80),page:int=Query(1,ge=1,le=10000)):

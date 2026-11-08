@@ -217,6 +217,10 @@ CREATE TABLE taiwan_cain_2nd.user_items (
  ui_id int NOT NULL AUTO_INCREMENT PRIMARY KEY,
  charac_no int NOT NULL DEFAULT 0,
  it_id int NOT NULL DEFAULT 0,
+ slot int NOT NULL DEFAULT 0,
+ clear_avatar_id int NOT NULL DEFAULT 0,
+ color1 smallint NOT NULL DEFAULT 0,
+ color2 smallint NOT NULL DEFAULT 0,
  jewel_socket blob NOT NULL,
  expire_date datetime NOT NULL,
  reg_date datetime NOT NULL,
@@ -254,6 +258,28 @@ CREATE TABLE taiwan_cain.account_cargo (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 -- Synthetic QF1031 PvE skill archive; no real learned-skill data.
+-- Synthetic linkage tables required by the current minimal rename grants.
+CREATE TABLE d_taiwan.guild_member (
+ guild_id int NOT NULL,charac_no int NOT NULL,server_id int NOT NULL,m_id int NOT NULL,
+ charac_name varchar(20) NOT NULL,PRIMARY KEY(guild_id,charac_no,server_id,m_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+CREATE TABLE d_taiwan.guild_info (
+ guild_id int NOT NULL,master_no int NOT NULL,server_id int NOT NULL,master_id int NOT NULL,
+ master_name varchar(20) NOT NULL,PRIMARY KEY(guild_id,master_no,server_id,master_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+CREATE TABLE d_taiwan.guild_recommend (
+ no int NOT NULL,guild_id int NOT NULL,charac_no int NOT NULL,server_id int NOT NULL,
+ charac_name varchar(20) NOT NULL,PRIMARY KEY(no,guild_id,charac_no,server_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+CREATE TABLE d_taiwan.dnf_master_charac (
+ m_id int NOT NULL,global_type int NOT NULL,server_id int NOT NULL,charac_no int NOT NULL,
+ charac_name varchar(20) NOT NULL,PRIMARY KEY(m_id,global_type,server_id,charac_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+CREATE TABLE taiwan_cain_2nd.charac_black_list (
+ m_id int NOT NULL,charac_no int NOT NULL,charac_name varchar(20) NOT NULL,
+ PRIMARY KEY(m_id,charac_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+
 CREATE TABLE taiwan_cain_2nd.skill (
  charac_no int NOT NULL PRIMARY KEY,
  remain_sp int unsigned NOT NULL DEFAULT 0,

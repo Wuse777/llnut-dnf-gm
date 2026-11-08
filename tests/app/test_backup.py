@@ -164,3 +164,17 @@ def test_cli_actual_backup_restore_publish_and_refuse_overwrite(env,tmp_path):
     assert r.returncode!=0 and hashlib.sha256(artifact.read_bytes()).hexdigest()==b['artifact_sha256']
     r=run('backup','--output',artifact,'--receipt',bp,'--lab-socket',args['socket'],'--lab-datadir',args['datadir'])
     assert r.returncode!=0
+
+
+def test_cli_latest_rehearsal_restores_actual_snapshot_and_cleans_lab(env,tmp_path):
+    import subprocess,sys
+    args=labargs(env);root=tmp_path/'automatic';root.mkdir(mode=0o700)
+    folder=root/('management-'+'a'*32);folder.mkdir(mode=0o700)
+    receipt=backup(env,folder/'management.ndjson');atomic(folder/'backup-receipt.json',receipt)
+    before=summaries(env);private=tmp_path/'restore.json';public=tmp_path/'health.json'
+    script=Path(__file__).resolve().parents[2]/'tools/management_backup.py'
+    result=subprocess.run([sys.executable,str(script),'rehearse-latest','--backup-root',str(root),
+        '--lab-socket',args['socket'],'--lab-datadir',args['datadir'],'--receipt',str(private),'--health-output',str(public)],capture_output=True,text=True,timeout=60)
+    assert result.returncode==0,result.stderr
+    assert json.loads(result.stdout)['restore']=='verified' and read_health(public,time.time())['restore']['state']=='recent'
+    assert summaries(env)==before and 'password' not in result.stdout and str(root) not in result.stdout

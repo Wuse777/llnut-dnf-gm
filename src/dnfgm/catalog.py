@@ -9,6 +9,7 @@ from .limits import MAIL_ITEM_QUANTITY_MAX
 from .item_preferences import ItemPreferences
 from .game_assets import GameAssets
 from .equipment_metadata import read_metadata, decode_enchantment
+from .catalog_filters import predicates,facets,ORDERS
 
 
 def snapshot(settings):
@@ -96,7 +97,9 @@ class Catalog:
         # never materialize the entire PVF catalogue in application memory.
         q, category = filters.get('q',''), filters.get('category','')
         creature_types = self.creature_types(c)
-        rows = c.execute("SELECT * FROM items WHERE (?='' OR instr(name,?)>0 OR CAST(id AS TEXT)=?) AND (?='' OR category=?) ORDER BY id", (q,q,q,category,category))
+        extra,args=predicates(c,filters)
+        clause=' AND '+ ' AND '.join('('+s+')' for s in extra) if extra else ''
+        rows = c.execute("SELECT * FROM items WHERE (?='' OR instr(name,?)>0 OR CAST(id AS TEXT)=?) AND (?='' OR category=?)"+clause+' ORDER BY id', (q,q,q,category,category,*args))
         for row in rows:
             item = self.annotate(row,overrides,creature_types)
             if filters.get('allowed_only') and not item['sendable']:
@@ -105,13 +108,15 @@ class Catalog:
                 continue
             yield item
 
-    def search(self, q='', category='', page=1, allowed_only=False, state=''):
+    def search(self, q='', category='', page=1, allowed_only=False, state='', *, part='',rarity=None,min_level=None,max_level=None,sort='id'):
+        filters={'part':part,'rarity':rarity,'min_level':min_level,'max_level':max_level}
+        if sort not in ORDERS:raise HTTPException(422,'未知的物品排序方式')
         if self.db:
             with self.db.connect() as con, con.cursor() as cursor:
-                return self._search(q,category,page,allowed_only,state,cursor)
-        return self._search(q,category,page,allowed_only,state,None)
+                return self._search(q,category,page,allowed_only,state,cursor,filters,sort)
+        return self._search(q,category,page,allowed_only,state,None,filters,sort)
 
-    def _search(self, q, category, page, allowed_only, state, cursor):
+    def _search(self, q, category, page, allowed_only, state, cursor, filters=None, sort='id'):
         with closing(self.connect()) as c:
             m = self.meta(c)
             revision, overrides = self.policy(cursor,m.get('pvf_sha256'))
@@ -119,6 +124,8 @@ class Catalog:
             # Python scans of 66k rows per page exceed the 25%-CPU slice budget.
             where = ["(?='' OR instr(name,?)>0 OR CAST(id AS TEXT)=?)", "(?='' OR category=?)"]
             args = [q,q,q,category,category]
+            extra,extra_args=predicates(c,filters or {})
+            where+=extra;args+=extra_args
             creature_types = self.creature_types(c)
             def in_set(ids, negate=False):
                 if not ids:
@@ -145,16 +152,17 @@ class Catalog:
                     args += verified_args
             clause = ' AND '.join('('+part+')' for part in where)
             total = c.execute('SELECT COUNT(*) FROM items WHERE '+clause,args).fetchone()[0]
-            rows = c.execute('SELECT * FROM items WHERE '+clause+' ORDER BY id LIMIT 50 OFFSET ?',args+[(page-1)*50])
+            rows = c.execute('SELECT * FROM items WHERE '+clause+' ORDER BY '+ORDERS[sort]+' LIMIT 50 OFFSET ?',args+[(page-1)*50])
             result = []
             for row in rows:
                 item = self.annotate(row,overrides,creature_types)
                 item.pop('source_path',None)
                 result.append(item)
+            read_metadata(c,{item['id']:item for item in result})
             if cursor is not None:
                 ItemPreferences.decorate(cursor,m.get('pvf_sha256'),result)
             self.assets.decorate(m.get('pvf_sha256'),result)
-            return {'items':result,'page':page,'total':total,'metadata':{**m,'policy_revision':revision},'assets':self.assets.status(m.get('pvf_sha256'))}
+            return {'items':result,'page':page,'total':total,'facets':facets(c),'metadata':{**m,'policy_revision':revision},'assets':self.assets.status(m.get('pvf_sha256'))}
 
     def selection(self, cursor, data, lock=False):
         with closing(self.connect()) as c:

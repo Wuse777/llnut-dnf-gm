@@ -83,7 +83,9 @@ def test_artifact_replacement_during_read_rejected(tmp_path):
 
 def test_health_projection_does_not_import_database_runtime():
     import subprocess
-    r=subprocess.run([sys.executable,'-c','import sys; from dnfgm.backup_health import read_health; assert "pymysql" not in sys.modules'],capture_output=True,text=True,timeout=10)
+    source=str(Path(__file__).resolve().parents[1]/'src')
+    code=f'import sys; sys.path.insert(0,{source!r}); from dnfgm.backup_health import read_health; assert "pymysql" not in sys.modules'
+    r=subprocess.run([sys.executable,'-c',code],capture_output=True,text=True,timeout=10)
     assert r.returncode==0,r.stderr
 
 

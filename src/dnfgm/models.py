@@ -73,6 +73,16 @@ class CatalogFilters(Model):
     category: Literal['', 'equipment', 'material', 'consumable', 'special'] = ''
     allowed_only: bool = False
     state: Literal['', 'trial', 'verified', 'blocked'] = ''
+    part: str = Field(default='',max_length=80)
+    rarity: StrictInt | None = Field(default=None,ge=0,le=255)
+    min_level: StrictInt | None = Field(default=None,ge=0,le=1000)
+    max_level: StrictInt | None = Field(default=None,ge=0,le=1000)
+
+    @model_validator(mode='after')
+    def level_range(self):
+        if self.min_level is not None and self.max_level is not None and self.min_level>self.max_level:
+            raise ValueError('最低等级不能大于最高等级')
+        return self
 
 
 class CatalogPolicyPreview(Model):
@@ -153,8 +163,9 @@ class CleanupConfirm(Confirm):
 
 
 class NativePreview(Model):
-    action: Literal['native-notice', 'native-kick', 'native-ban-kick']
+    action: Literal['native-notice', 'native-kick', 'native-ban-kick', 'native-message']
     uid: StrictInt | None = Field(default=None, ge=1, le=2147483647)
+    charac_no: StrictInt | None = Field(default=None, ge=1, le=2147483647)
     message: str = Field(default='', max_length=254)
     reason: str = Field(min_length=1, max_length=200)
 
@@ -165,10 +176,15 @@ class NativePreview(Model):
         if not self.reason:
             raise ValueError('请填写操作原因')
         if self.action == 'native-notice':
-            if self.uid is not None:
+            if self.uid is not None or self.charac_no is not None:
                 raise ValueError('全服公告不能指定单个账号')
             notice_packet(self.message)
-        elif self.uid is None or self.message:
+        elif self.action == 'native-message':
+            from .private_message import message_text
+            if self.uid is None or self.charac_no is None:
+                raise ValueError('系统消息必须选择账号和角色')
+            message_text(self.message)
+        elif self.uid is None or self.message or self.charac_no is not None:
             raise ValueError('踢人须选择账号，不能附加聊天内容')
         return self
 

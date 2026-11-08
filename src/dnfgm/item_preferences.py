@@ -62,6 +62,8 @@ class ItemPreferences:
                         'policy_reason':'索引中没有该物品，请重新核对','policy_state':'blocked', 'category':'unknown'}
                     item.pop('source_path',None)
                     result.append({**item,**entry,'favorite':bool(entry['favorite']),'pvf_sha256':sha})
+                from .equipment_metadata import read_metadata
+                read_metadata(catalog,{item['id']:item for item in result})
         self.catalog.assets.decorate(sha,result)
         return {'items':result,'page':page,'total':total,'pvf_sha256':sha,'collection':collection,
                 'note':'最近选择只表示加入过草稿，不代表发放或领取；收藏不改变发放策略。'}

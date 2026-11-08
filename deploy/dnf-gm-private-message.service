@@ -1,0 +1,38 @@
+[Unit]
+Description=DNF GM optional targeted system-message relay
+After=dnf.service
+
+[Service]
+Type=simple
+User=root
+Group=dnfgm
+Slice=dnf-gm.slice
+Environment=PYTHONPATH=/opt/dnf-gm/current/src
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/dnf-gm/venv/bin/python /opt/dnf-gm/current/deploy/private_message_relay.py
+RuntimeDirectory=dnf-gm-message
+RuntimeDirectoryMode=0750
+StateDirectory=dnf-gm/private-message
+StateDirectoryMode=0700
+UMask=0077
+Restart=no
+MemoryMax=32M
+TasksMax=4
+CPUQuota=10%
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/run/dnf-gm-message /var/lib/dnf-gm/private-message
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+RestrictAddressFamilies=AF_UNIX
+InaccessiblePaths=-/var/run/docker.sock -/run/docker.sock
+
+[Install]
+WantedBy=multi-user.target

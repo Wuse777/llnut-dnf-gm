@@ -65,15 +65,60 @@ def equipment_definition(tokens):
         'rarity':rarity[0] if rarity and type(rarity[0]) is int else None}
 
 
+def attribute_definition(tokens):
+    """Only unambiguous top-level values, excluding explicitly paired sections.
+
+    PVF scalar tags have no closing marker. Discover paired sections before
+    reading values, then omit their entire contents (including unknown nested
+    sections). Known conditional/enchant openers without a closing marker and
+    malformed nesting invalidate the extraction. Repeated top-level attributes
+    are omitted instead of being added, merged or silently taking the last one.
+    This is a bounded source projection, not a full PVF expression evaluator.
+    """
+    tokens=list(tokens)
+    headers=[value for kind,value in tokens if kind==5 and isinstance(value,str)]
+    paired={'['+value[2:] for value in headers if value.startswith('[/') and value.endswith(']')}
+    conditional={'[enchant]','[if]','[then]','[else]','[condition]','[random]'}
+    if any(value in conditional and value not in paired for value in headers):return []
+    stack=[];data={};repeated=set();key=None
+    for kind,value in tokens:
+        if kind==5:
+            key=None
+            if not isinstance(value,str):return []
+            if value.startswith('[/') and value.endswith(']'):
+                opening='['+value[2:]
+                if not stack or stack.pop()!=opening:return []
+            elif value in paired:
+                stack.append(value)
+            elif not stack and value in EFFECTS:
+                if value in data:repeated.add(value)
+                else:data[value]=[]
+                key=value
+        elif not stack and key is not None:
+            data[key].append(value)
+    if stack:return []
+    result=[]
+    for tag,label in EFFECTS.items():
+        values=data.get(tag,[])
+        if tag not in repeated and values and len(values)<=16 and all(type(v) in (int,float) and math.isfinite(v) for v in values):
+            result.append({'tag':tag,'label':label,'values':values})
+    return result
+
+
 def read_metadata(connection,labels):
     """Optional enrichment: older indexes retain their original functionality."""
-    tables={r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('equipment_details','enchantments')")}
+    tables={r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('equipment_details','equipment_attributes','enchantments')")}
+    attribute_version=connection.execute("SELECT value FROM metadata WHERE key='equipment_attributes_version'").fetchone() if 'equipment_attributes' in tables else None
+    attributes_verified=bool(attribute_version and attribute_version[0]=='2')
     ids=list(labels)
     for start in range(0,len(ids),400):
         batch=ids[start:start+400];marks=','.join('?' for _ in batch)
         if 'equipment_details' in tables:
             for r in connection.execute(f'SELECT * FROM equipment_details WHERE item_id IN ({marks})',batch):
                 labels[r['item_id']].update(part_code=r['part_code'],part_name=PARTS.get(r['part_code'],r['part_code']),rarity=r['rarity'])
+        if attributes_verified:
+            for r in connection.execute(f'SELECT * FROM equipment_attributes WHERE item_id IN ({marks})',batch):
+                labels[r['item_id']]['base_attributes']=json.loads(r['attributes_json'])
         if 'enchantments' in tables:
             for r in connection.execute(f'SELECT * FROM enchantments WHERE item_id IN ({marks})',batch):
                 labels[r['item_id']]['enchantment_definition']=decode_enchantment(r)

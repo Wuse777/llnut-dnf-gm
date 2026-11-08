@@ -18,10 +18,5 @@
     "path": "downloads/libtinfo5.deb",
     "url": "https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.3_amd64.deb",
     "sha256": "4df4288404108f1a156d014e8764a064e977e34e6d44931ab60451694c03c90d"
-  },
-  {
-    "path": "pip.pyz",
-    "url": "https://bootstrap.pypa.io/pip/pip.pyz",
-    "sha256": "e5ef64ef63ff89a746014ad81658b76c1940385fdcdbc4fcbfa6e3ef1887352d"
   }
 ]

@@ -45,6 +45,41 @@ def pack(tmp_path,sha='a'*64):
     return root,digest,png
 
 
+def test_job_preview_is_optional_exact_job_and_never_worn_appearance(tmp_path):
+    root,digest,_=pack(tmp_path)
+    assets=GameAssets(Settings(assets_dir=str(root),pvf_sha256='a'*64,status_file=str(tmp_path/'absent')))
+    assert assets.job_preview('a'*64,0)['state']=='missing'
+    with sqlite3.connect(root/'manifest.sqlite') as c:
+        c.execute('CREATE TABLE job_previews(job INTEGER PRIMARY KEY,sha256 TEXT,state TEXT,pose TEXT,source_kind TEXT,detail TEXT)')
+        c.execute("INSERT INTO metadata VALUES('job_previews_version','1')")
+        c.execute('INSERT INTO job_previews VALUES(?,?,?,?,?,?)',(0,digest,'ready','waiting_first_frame','client_default_pose','private source must not leak'))
+    image=assets.job_preview('a'*64,0)
+    assert image['state']=='ready' and image['source_kind']=='client_default_pose' and image['client_verified'] is False
+    assert image['url'].endswith(digest+'.png') and 'private' not in json.dumps(image)
+    assert assets.job_preview('a'*64,1)['state']=='missing'
+    assert assets.job_preview('b'*64,0)['state']=='mismatch'
+
+
+def test_outfit_preview_binds_job_recipe_and_pack_without_private_recipe_sources(tmp_path):
+    root,digest,_=pack(tmp_path)
+    assets=GameAssets(Settings(assets_dir=str(root),pvf_sha256='a'*64,status_file=str(tmp_path/'absent')))
+    recipe='c'*64
+    assert assets.outfit_preview('a'*64,0,recipe)['state']=='missing'
+    with sqlite3.connect(root/'manifest.sqlite') as c:
+        c.execute('CREATE TABLE outfit_previews(job INTEGER,recipe_sha256 TEXT,sha256 TEXT,state TEXT,detail TEXT,PRIMARY KEY(job,recipe_sha256))')
+        c.execute("INSERT INTO metadata VALUES('outfit_previews_version','1')")
+        c.execute('INSERT INTO outfit_previews VALUES(?,?,?,?,?)',(0,recipe,digest,'ready','private paths and recipe data'))
+    image=assets.outfit_preview('a'*64,0,recipe)
+    assert image['state']=='ready' and image['source_kind']=='saved_avatar_outfit'
+    assert image['recipe_sha256']==recipe and image['client_verified'] is False
+    assert 'private' not in json.dumps(image) and str(tmp_path) not in json.dumps(image)
+    assert assets.outfit_preview('a'*64,1,recipe)['state']=='missing'
+    assert assets.outfit_preview('a'*64,0,'d'*64)['state']=='missing'
+    assert assets.outfit_preview('b'*64,0,recipe)['state']=='mismatch'
+    for job,bad in [(True,recipe),(0,'../escape'),(0,None)]:
+        assert assets.outfit_preview('a'*64,job,bad)['state']=='unsupported'
+
+
 @pytest.mark.parametrize('fmt,raw,expected',[(16,b'\x30\x20\x10\xff',b'\x10\x20\x30\xff'),(14,struct.pack('<H',0xfc00),b'\xff\0\0\xff'),(15,struct.pack('<H',0xf123),b'\x11\x22\x33\xff')])
 @pytest.mark.parametrize('compressed',[False,True])
 def test_decode_formats_canvas_and_png(fmt,raw,expected,compressed):

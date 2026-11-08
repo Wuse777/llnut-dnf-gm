@@ -4,7 +4,7 @@
 
 后端集成夹具会删除重建实验库。实验连接只支持本地 Unix socket，检查 `VERSION()` 为 5.7 且 `@@server_id=57044`；**这个标记不是生产保护的替代品，绝不能在正式实例设置它来跑测试**。夹具只使用合成账号和物品，不包含玩家密码。
 
-在 Linux x86_64 维护电脑（需要 `dpkg-deb`，无需 sudo）可构建固定版本实验室：
+在 Linux x86_64 维护电脑（需要 `dpkg-deb`、含 `ensurepip` 的 Python 3.12，无需 sudo）可构建固定版本实验室：
 
 ```bash
 python3.12 tools/bootstrap_lab.py --runtime "$PWD/.runtime"
@@ -15,7 +15,7 @@ DNF_GM_M0_SOCKET="$PWD/.runtime/mysql.sock" PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
 .runtime/venv/bin/python tools/local_mysql.py stop --runtime "$PWD/.runtime"
 ```
 
-依赖下载校验见 `tools/runtime-sources.json`；若旧官方档案链接不可用，先验证并更新来源，不跳过哈希检查。MySQL 5.7 是兼容性实验目标，不建议作为新的公网数据库。不设置 socket 时集成用例会 skip，因此不能将全 skip 说成完整通过。
+依赖下载校验见 `tools/runtime-sources.json`；若旧官方档案链接不可用，先验证并更新来源，不跳过哈希检查。新下载在校验后才进入缓存，已有缓存也会重新核对。pip 由 Python 自带的 `ensurepip` 在实验室 venv 内初始化，再安装 `requirements.lock` 的固定依赖；不再下载内容会变化的 `pip.pyz`，不修改全局包。MySQL 5.7 是兼容性实验目标，不建议作为新的公网数据库。不设置 socket 时集成用例会 skip，因此不能将全 skip 说成完整通过。
 
 前端：
 

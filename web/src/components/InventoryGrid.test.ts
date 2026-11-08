@@ -43,3 +43,38 @@ it('groups equipment by adapted slot while preserving unknown positions',()=>{
  expect(w.findAll('.equipment-group-title').map(h=>h.text())).toEqual(['武器与称号1 / 2','防具0 / 5','首饰0 / 3','特殊装备0 / 2','其他存档槽位1 / 1'])
  expect(w.findAll('.inventory-slot')).toHaveLength(13);w.unmount()
 })
+it('equipment layout keeps exact stored slots and opens the same protected item details',async()=>{
+ vi.stubGlobal('fetch',vi.fn());const w=mount(InventoryGrid,{props:{items:[item,{...item,id:102,slot:12,slot_label:'扩展槽'}],slotCount:13,equipment:true,anatomy:true,manageable:true},attachTo:document.body})
+ expect(w.findAll('.inventory-slot')).toHaveLength(13);expect(w.text()).toContain('非角色实际外观');expect(w.find('.equipment-extra-slots').text()).toContain('扩展槽')
+ await w.find('button.equipment-body-slot').trigger('click');await flushPromises();expect(w.get('[role=region]').text()).toContain('合成测试装备')
+ await w.findAll('[role=region] button').find(b=>b.text()==='维护此物品')!.trigger('click');expect(w.emitted('manage')?.[0]).toEqual([item]);expect(fetch).not.toHaveBeenCalled();w.unmount()
+})
+it('equipment filtering falls back to matching cells rather than showing unfiltered empty positions',async()=>{
+ const w=mount(InventoryGrid,{props:{items:[item],slotCount:12,equipment:true,anatomy:true,filtered:true}})
+ expect(w.find('.equipment-body-board').exists()).toBe(false);expect(w.findAll('.inventory-slot')).toHaveLength(1);expect(w.find('.empty-slot').exists()).toBe(false);w.unmount()
+})
+it('shows an optional verified default base job pose with explicit appearance limits and a schematic toggle',async()=>{
+ const url='/dnf-gm/api/v1/assets/'+'a'.repeat(64)+'/'+'b'.repeat(64)+'.png'
+ const w=mount(InventoryGrid,{props:{items:[item],slotCount:12,equipment:true,anatomy:true,jobPreview:{state:'ready',url,source_kind:'client_default_pose',note:'客户端基础职业默认站姿首帧'}}})
+ expect(w.get('img.equipment-default-pose').attributes('src')).toBe(url);expect(w.text()).toContain('非当前装备外观');expect(w.text()).toContain('不代表转职或觉醒形态')
+ await w.findAll('.equipment-pose-switch button').find(b=>b.text()==='槽位示意')!.trigger('click');expect(w.find('img.equipment-default-pose').exists()).toBe(false);expect(w.find('.equipment-outline svg').exists()).toBe(true)
+ await w.findAll('.equipment-pose-switch button').find(b=>b.text()==='基础职业默认站姿')!.trigger('click');await w.get('img.equipment-default-pose').trigger('error');expect(w.find('.equipment-pose-switch').exists()).toBe(false);expect(w.find('.equipment-outline svg').exists()).toBe(true);w.unmount()
+})
+it('does not treat an arbitrary promotional image or unavailable job preview as a default pose',async()=>{
+ const w=mount(InventoryGrid,{props:{items:[item],slotCount:12,equipment:true,anatomy:true,jobPreview:{state:'ready',url:'/unsafe.png',source_kind:'client_default_pose'}}})
+ expect(w.find('img.equipment-default-pose').exists()).toBe(false)
+ await w.setProps({jobPreview:{state:'ready',url:'/dnf-gm/api/v1/assets/'+'a'.repeat(64)+'/'+'b'.repeat(64)+'.png',source_kind:'official_promotional'}});expect(w.find('.equipment-pose-switch').exists()).toBe(false);w.unmount()
+})
+it('prefers an exact saved outfit and falls back to the honest default pose after image failure',async()=>{
+ const base='/dnf-gm/api/v1/assets/'+'a'.repeat(64)+'/'
+ const w=mount(InventoryGrid,{props:{items:[item],slotCount:12,equipment:true,anatomy:true,jobPreview:{state:'ready',url:base+'b'.repeat(64)+'.png',source_kind:'client_default_pose'},outfitPreview:{state:'ready',url:base+'c'.repeat(64)+'.png',source_kind:'saved_avatar_outfit',pose:'waiting_first_frame',note:'已核实服装存档配方'}}})
+ expect(w.get('img.equipment-default-pose').attributes('src')).toBe(base+'c'.repeat(64)+'.png');expect(w.text()).toContain('服装存档首帧');expect(w.text()).toContain('不含武器、染色或变身效果');expect(w.text()).not.toContain('非当前装备外观')
+ await w.get('img.equipment-default-pose').trigger('error');expect(w.get('img.equipment-default-pose').attributes('src')).toBe(base+'b'.repeat(64)+'.png');expect(w.text()).toContain('非当前装备外观')
+ await w.get('img.equipment-default-pose').trigger('error');expect(w.find('.equipment-outline svg').exists()).toBe(true);w.unmount()
+})
+it('keeps unsupported outfit reasons visible and refuses an unverified outfit source',async()=>{
+ const base='/dnf-gm/api/v1/assets/'+'a'.repeat(64)+'/'
+ const w=mount(InventoryGrid,{props:{items:[item],slotCount:12,equipment:true,anatomy:true,jobPreview:{state:'ready',url:base+'b'.repeat(64)+'.png',source_kind:'client_default_pose'},outfitPreview:{state:'unsupported',note:'穿戴时装含透明替代或染色标识'}}})
+ expect(w.text()).toContain('服装预览：穿戴时装含透明替代或染色标识');expect(w.get('img.equipment-default-pose').attributes('src')).toBe(base+'b'.repeat(64)+'.png')
+ await w.setProps({outfitPreview:{state:'ready',url:base+'c'.repeat(64)+'.png',source_kind:'saved_avatar_outfit'}});expect(w.get('img.equipment-default-pose').attributes('src')).toBe(base+'b'.repeat(64)+'.png');w.unmount()
+})

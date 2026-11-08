@@ -59,6 +59,7 @@ def main():
     b=sub.add_parser('backup');b.add_argument('--output',required=True);b.add_argument('--receipt',required=True)
     b.add_argument('--lab-socket');b.add_argument('--lab-datadir');b.add_argument('--connection-file')
     r=sub.add_parser('restore-check');r.add_argument('--artifact',required=True);r.add_argument('--sha256',required=True);r.add_argument('--lab-socket',required=True);r.add_argument('--lab-datadir',required=True);r.add_argument('--receipt',required=True)
+    d=sub.add_parser('rehearse-latest');d.add_argument('--backup-root',required=True);d.add_argument('--lab-socket',required=True);d.add_argument('--lab-datadir',required=True);d.add_argument('--receipt',required=True);d.add_argument('--health-output',required=True)
     h=sub.add_parser('publish-health');h.add_argument('--artifact',required=True);h.add_argument('--backup-receipt',required=True);h.add_argument('--restore-receipt');h.add_argument('--output',required=True)
     args=p.parse_args()
     if args.command!='publish-health' and (Path(args.receipt).exists() or Path(args.receipt).is_symlink()):raise FileExistsError('Receipt already exists')
@@ -70,6 +71,19 @@ def main():
     elif args.command=='restore-check':
         receipt=restore_drill(args.artifact,args.sha256,socket=args.lab_socket,datadir=args.lab_datadir)
         write_new(args.receipt,receipt);print(json.dumps({k:receipt[k] for k in ('state','scope','tables','rows')}))
+    elif args.command=='rehearse-latest':
+        from dnfgm.backup_rehearsal import rehearse_latest
+        output=Path(args.health_output)
+        if (not output.is_absolute() or os.path.lexists(output)
+                or output.resolve().is_relative_to(Path(args.backup_root).resolve())
+                or output.resolve()==Path(args.receipt).resolve()):
+            raise ValueError('New health output outside backup retention required')
+        report=rehearse_latest(args.backup_root,args.receipt,socket=args.lab_socket,datadir=args.lab_datadir)
+        # No replace of an old report or of private evidence during rehearsal.
+        fd=os.open(output,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o644)
+        with os.fdopen(fd,'wb') as f:f.write(canonical(report)+b'\n');f.flush();os.fsync(f.fileno())
+        print(json.dumps({'state':'verified','scope':'management_only','restore':'verified',
+            **{key:report['backup'][key] for key in ('artifact_sha256','bytes','tables','rows')}}))
     else:
         output=Path(args.output)
         if not output.is_absolute():raise ValueError('Absolute public report path required')

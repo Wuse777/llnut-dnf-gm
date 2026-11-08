@@ -13,10 +13,10 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 WRITES=('currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','char-fatigue','char-rename','char-rescue','quest-clear','char-sp-tp','char-skill-reset','char-profession','char-level','maintenance')
-SWITCHES=(*WRITES,'native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup','health-alerts','backup-alerts','task-alerts')
+SWITCHES=(*WRITES,'native-monitor','native-notice','native-kick','native-message','batch-worker','schedule-worker','release-cleanup','health-alerts','backup-alerts','task-alerts')
 FLAGS={'native_monitor_enabled':'native-monitor','batch_worker_enabled':'batch-worker','schedule_worker_enabled':'schedule-worker','cleanup_enabled':'release-cleanup','health_alerts_enabled':'health-alerts','backup_alerts_enabled':'backup-alerts','task_alerts_enabled':'task-alerts'}
-LABELS=dict(zip(SWITCHES,('余额调整','物品／金币邮件','封禁','解封','装备提前解锁','组合奖励','批量奖励','装备编辑','物品回收','快照恢复','角色疲劳恢复／调整','角色改名','卡死位置救援','单任务槽清理','SP／TP技能点维护','PvE技能重置','转职／觉醒维护','等级／经验维护','网页维护申请','原生会话查询','公告','踢下线','批量执行器','定时执行器','旧GM产物清理','核心与资源告警','备份与恢复证据告警','运营任务告警')))
-Switch=Literal['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','char-fatigue','char-rename','char-rescue','quest-clear','char-sp-tp','char-skill-reset','char-profession','char-level','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup','health-alerts','backup-alerts','task-alerts']
+LABELS=dict(zip(SWITCHES,('余额调整','物品／金币邮件','封禁','解封','装备提前解锁','组合奖励','批量奖励','装备编辑','物品回收','快照恢复','角色疲劳恢复／调整','角色改名','卡死位置救援','单任务槽清理','SP／TP技能点维护','PvE技能重置','转职／觉醒维护','等级／经验维护','网页维护申请','原生会话查询','公告','踢下线','指定玩家系统消息','批量执行器','定时执行器','旧GM产物清理','核心与资源告警','备份与恢复证据告警','运营任务告警')))
+Switch=Literal['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','char-fatigue','char-rename','char-rescue','quest-clear','char-sp-tp','char-skill-reset','char-profession','char-level','maintenance','native-monitor','native-notice','native-kick','native-message','batch-worker','schedule-worker','release-cleanup','health-alerts','backup-alerts','task-alerts']
 
 
 class PolicyUpdate(BaseModel):
@@ -31,7 +31,7 @@ def normalized(enabled):
     if not isinstance(enabled,list) or len(enabled)!=len(set(enabled)) or not set(enabled)<=set(SWITCHES):
         raise ValueError('Invalid fixed capability set')
     enabled=set(enabled)
-    if enabled&{'native-notice','native-kick'}:enabled.add('native-monitor')
+    if enabled&{'native-notice','native-kick','native-message'}:enabled.add('native-monitor')
     if 'batch-worker' in enabled:enabled.add('batch-reward')
     return sorted(enabled)
 
@@ -39,7 +39,7 @@ def normalized(enabled):
 def overrides(enabled):
     active=set(enabled)
     return {'writes':tuple(k for k in WRITES if k in active),
-            'native_control_actions':tuple(k for k in ('native-notice','native-kick') if k in active),
+            'native_control_actions':tuple(k for k in ('native-notice','native-kick','native-message') if k in active),
             'write_approvals':{k:True for k in active},'test_uids':(),
             **{field:key in active for field,key in FLAGS.items()}}
 

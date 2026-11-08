@@ -5,6 +5,7 @@ import OperationsDashboard from './OperationsDashboard.vue'
 import {api} from '../api'
 vi.mock('./TaskHealth.vue',()=>({default:{template:'<div />'}}))
 vi.mock('./BackupHealth.vue',()=>({default:{template:'<div />'}}))
+vi.mock('./BackupControls.vue',()=>({default:{template:'<div />'}}))
 vi.mock('./AlertHealth.vue',()=>({default:{template:'<div />'}}))
 vi.mock('./ReleaseCleanup.vue',()=>({default:{template:'<div />'}}))
 vi.mock('../api',()=>({api:vi.fn(),uncertainMessage:(e:any)=>e.message}))

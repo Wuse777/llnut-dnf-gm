@@ -32,7 +32,7 @@ async function query(){
  <Modal title="物品发放策略" :busy="busy" @close="emit('close')">
   <div class="catalog-policy">
    <p v-if="item"><b>{{item.name}}</b> <span class="mono">#{{item.id}}</span><small class="cell-note">{{item.policy_reason}}</small></p>
-   <template v-else><p><b>作用于完整筛选结果，不仅是当前页。</b></p><dl class="character-facts"><div><dt>名称或编号</dt><dd>{{filters.q||'不限'}}</dd></div><div><dt>物品类型</dt><dd>{{categories[String(filters.category)]||'所有类型'}}</dd></div><div><dt>发放状态</dt><dd>{{filters.allowed_only?'仅可发放':'全部状态'}}</dd></div></dl></template>
+   <template v-else><p><b>作用于完整筛选结果，不仅是当前页。</b></p><dl class="character-facts"><div><dt>名称或编号</dt><dd>{{filters.q||'不限'}}</dd></div><div><dt>物品类型</dt><dd>{{categories[String(filters.category)]||'所有类型'}}</dd></div><div><dt>发放状态</dt><dd>{{filters.allowed_only?'仅可发放':'全部状态'}}</dd></div><div><dt>装备部位</dt><dd>{{filters.part||'不限'}}</dd></div><div><dt>PVF 品级</dt><dd>{{filters.rarity==null?'不限':filters.rarity}}</dd></div><div><dt>等级范围</dt><dd>{{filters.min_level??'不限'}} ～ {{filters.max_level??'不限'}}</dd></div></dl></template>
    <p class="field-hint">开放仅表示“允许试发、未验证”。原审核项也不冒充客户端已验证。支持全部索引类型；发放数量不受PVF堆叠上限限制，装备类按件投递。PVF版本、整数存储范围与20条物品配置限制仍然生效。</p>
    <template v-if="!preview">
     <label>变更方式<select v-model="enabled" :disabled="busy" aria-label="策略变更方式"><option :value="true">允许试发（未验证）</option><option :value="false">禁止发放</option></select></label>

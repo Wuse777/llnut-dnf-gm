@@ -40,7 +40,7 @@ it('allows unknown-stack material quantity above PVF values and removing never s
 })
 it('requires explicit all-server phrase and repeated account acknowledgement',async()=>{
  const {w,fetcher}=setup({request:{targets:{mode:'all'},account_reward_mode:'per_character',reward:{currency_rewards:{cera:10}}}});await flushPromises();await fill(w);await preview(w);await click(w,'确认启动该任务');expect(w.text()).toContain('请在启动按钮上方输入');await w.find('[aria-label="全服确认"]').setValue('全服发放');await click(w,'确认启动该任务');expect(w.text()).toContain('请确认同一账号');expect(fetcher.mock.calls.some(([u])=>String(u).endsWith('/start'))).toBe(false)
- await w.find('input[type=checkbox]').setValue(true);await click(w,'确认启动该任务');expect(fetcher.mock.calls.some(([u])=>String(u).endsWith('/start'))).toBe(true)
+ await w.get('.check-label input[type=checkbox]').setValue(true);await click(w,'确认启动该任务');expect(fetcher.mock.calls.some(([u])=>String(u).endsWith('/start'))).toBe(true)
 })
 it('retains uncertain start across remount and only reads original job',async()=>{
  const x=setup();await flushPromises();await fill(x.w);await preview(x.w);x.lose();await click(x.w,'确认启动该任务');expect(x.w.text()).toContain('启动结果待确认');expect(x.w.findAll('button').find(b=>b.text()==='确认启动该任务')!.attributes('disabled')).toBeDefined()

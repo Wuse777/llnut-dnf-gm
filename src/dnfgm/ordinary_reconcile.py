@@ -13,7 +13,7 @@ LIMIT = 100
 TABLES = ('operations', 'audit', 'reward_jobs', 'reward_targets', 'native_controls',
           'mail_batches', 'mail_deliveries', 'economy_operations', 'economy_values',
           'reward_account_credits')
-NATIVE = ('native-notice', 'native-kick', 'native-ban-kick')
+NATIVE = ('native-notice', 'native-kick', 'native-ban-kick', 'native-message')
 
 
 def one(q, sql, args=()):

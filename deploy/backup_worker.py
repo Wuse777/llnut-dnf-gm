@@ -117,11 +117,17 @@ class BackupWorker:
     def publish(self,folder):
         private_directory(folder,self.owner)
         receipt=validate_receipt(private_receipt(folder/'backup-receipt.json'),'backup')
-        evidence=verify_evidence(folder/'management.ndjson',folder/'backup-receipt.json',now=self.clock())
+        # A new daily snapshot must not erase the previous recovery rehearsal.
+        # Different hashes remain explicitly "other_artifact", never green for
+        # this snapshot. The root-owned private receipt is installed separately.
+        restored=Path(self.settings.backup_health_file).parent/'restore-receipt.json'
+        evidence=verify_evidence(folder/'management.ndjson',folder/'backup-receipt.json',
+            restored if os.path.lexists(restored) else None,now=self.clock())
         if evidence['integrity']!='verified':raise Refused('backup_verification_failed')
         atomic(Path(self.settings.backup_health_file),evidence,mode=0o644)
         return {k:receipt[k] for k in ('completed_at','artifact_sha256','bytes','tables','rows','scope')}|{
-            'consistency':'innodb_consistent_snapshot','restore_verified':False,'offsite_copy':False}
+            'consistency':'innodb_consistent_snapshot',
+            'restore_verified':(evidence.get('restore') or {}).get('state')=='verified','offsite_copy':False}
 
     def retention(self,days):
         entries=[]

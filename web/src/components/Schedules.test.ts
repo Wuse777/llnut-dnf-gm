@@ -21,6 +21,7 @@ beforeEach(()=>{
   if(path.includes('/runs?'))return {items:[],page:1}
   if(path==='/schedules/'+id)return JSON.parse(JSON.stringify(state))
   if(path.startsWith('/schedules?'))return {items:state?[JSON.parse(JSON.stringify(state))]:[],worker_enabled:true}
+  if(path.startsWith('/characters?'))return {items:[]}
   throw Error('Unexpected '+path)
  })
 })
@@ -33,7 +34,8 @@ it('uses Beijing time even for browsers in other zones and rejects invalid dates
 })
 it('reuses reward draft without querying or creating immediate batch jobs',async()=>{
  const w=setup();await flushPromises()
- expect(vi.mocked(api).mock.calls.every(c=>c[0].startsWith('/schedules'))).toBe(true)
+ expect(vi.mocked(api).mock.calls.every(c=>c[0].startsWith('/schedules')||c[0].startsWith('/characters?'))).toBe(true)
+ expect(vi.mocked(api).mock.calls.every(c=>!c[1])).toBe(true)
  await w.get('[aria-label="计划名称"]').setValue('周末礼包')
  await w.get('[aria-label="角色编号名单"]').setValue('900001')
  await w.get('[aria-label="批量点券"]').setValue(100)

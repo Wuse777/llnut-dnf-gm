@@ -28,6 +28,7 @@ def bootstrap_sql(config,ph):
     grant('SELECT(id,operation_id,error_type,created_at),INSERT','dnf_gm.failures')
     grant('SELECT(UID,accountname)','d_taiwan.accounts')
     sql += character_read_sql(user)
+    sql += character_outfit_read_sql(user)
     sql += warehouse_read_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/005-item-preferences.sql').read_text()
     sql += item_preferences_sql(user)
@@ -86,6 +87,10 @@ def character_read_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     return (f'GRANT SELECT({columns}) ON taiwan_cain.charac_info TO {user};\n'
             f'GRANT SELECT(charac_no,exp,fatigue,premium_fatigue,used_fatigue,last_play_time) ON taiwan_cain.charac_stat TO {user};\n'
             f'GRANT SELECT(charac_no,money,coin,inventory_capacity,inventory,equipslot) ON taiwan_cain_2nd.inventory TO {user};\n')
+
+
+def character_outfit_read_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return f'GRANT SELECT(charac_no,slot,it_id,stat,expire_date,clear_avatar_id,color1,color2) ON taiwan_cain_2nd.user_items TO {user};\n'
 
 
 def catalog_policy_sql(user="'dnf_gm_app'@'127.0.0.1'"):
@@ -171,7 +176,8 @@ def initialize_owner_capabilities_sql():
     # Installation-time explicit owner activation; does not overwrite later web
     # choices. No game rows, rewards, schedules or maintenance windows created.
     import json
-    switches=['currency','mail','ban','unban','equipment-unlock','reward','batch-reward','item-edit','item-reclaim','item-restore','char-fatigue','char-rename','char-rescue','quest-clear','char-sp-tp','char-skill-reset','char-profession','char-level','maintenance','native-monitor','native-notice','native-kick','batch-worker','schedule-worker','release-cleanup']
+    from dnfgm.capability_policy import SWITCHES
+    switches=list(SWITCHES)
     enabled=json.dumps(sorted(switches),separators=(',',':'))
     return ("START TRANSACTION;\nSELECT revision FROM dnf_gm.capability_policy WHERE id=1 FOR UPDATE;\n"
             "INSERT INTO dnf_gm.audit(operation_id,actor,action,reason,request_json,result_json) "

@@ -60,7 +60,7 @@ def seed(env):
     with db.connect() as conn,conn.cursor() as q:
         q.execute('UPDATE taiwan_cain.charac_info SET lev=27,job=0,grow_type=1,maxHP=14000,phy_attack=1300 WHERE charac_no=900001')
         q.execute('INSERT INTO taiwan_cain_2nd.inventory VALUES(%s,%s,%s,%s,%s,%s)',(900001,150460,3,8,blob(slot(990002,3,55),slot(888888,2,2)),blob(slot())))
-        q.execute("INSERT INTO taiwan_cain.charac_stat VALUES(900001,12345,20,7,'2026-10-24 07:00:00')")
+        q.execute("INSERT INTO taiwan_cain.charac_stat(charac_no,exp,fatigue,used_fatigue,last_play_time) VALUES(900001,12345,20,7,'2026-10-24 07:00:00')")
         conn.commit()
     with sqlite3.connect(s.catalog_file) as cat:
         cat.execute('INSERT INTO metadata VALUES(?,?)',('jobs',json.dumps({'0':{'grow_names':['鬼剑士','剑魂']}})))

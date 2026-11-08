@@ -82,7 +82,7 @@ def test_monitor_binds_restored_process_identity_not_just_pid(session):
     c.writer=writer;s.close_restore(RID)
     monitor=SessionMonitor(c,s.window.root);assert monitor.status()['verified']
     first=plan['service_cycle']['start_order'][0];h.processes[first]['start_ticks']+=1
-    assert not monitor.status()['verified']
+    with pytest.raises(Refused,match='maintenance_restore_unexpected_state'):monitor.status()
 
 
 def test_completed_root_request_requires_valid_complete_session(session):
@@ -162,7 +162,7 @@ def test_installed_monitor_dispatches_restoration_observer_without_refresh_lock(
     before=copy.deepcopy(h.calls)
     with s.window.locked(True):  # Real restore lock must not block the monitor.
         status=adapter.status()
-    assert status['verified'] and status['authority']=='restore-transition'
+    assert status['verified'] and status['authority']=='recovery-only'
     assert not status['maintenance_permit'] and h.calls==before
 
 
@@ -183,8 +183,8 @@ assert not any(n in sys.modules for n in ('pymysql','fastapi','cryptography'))
 @pytest.mark.parametrize('required',['game_template','missing_service'])
 def test_restore_does_not_waive_original_core_component_failure(session,required):
     s,c,h,plan=session;interrupted(session)
-    result=SessionMonitor(c,s.window.root,required_components=(required,)).status()
-    assert not result['verified'] and result['reason']=='maintenance_preexisting_component_failure'
+    with pytest.raises(Refused,match='maintenance_preexisting_component_failure'):
+        SessionMonitor(c,s.window.root,required_components=(required,)).status()
 
 
 def test_expired_window_keeps_recovery_available_without_renewing_writes(session):

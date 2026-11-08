@@ -19,6 +19,6 @@ it('disabled optional evidence is not presented as a new fault',async()=>{const 
 it('shows task faults separately from unavailable task evidence, and never exposes token controls',async()=>{
  const d=sample();d.rules=[{key:'tasks',label:'运营任务需要处理',active:true,observed:'bad',pending_confirmation:false},{key:'task_probe',label:'运营任务检查不可用或不完整',active:true,observed:'unknown',pending_confirmation:false}]
  vi.mocked(api).mockResolvedValue(d);const w=render();await flushPromises()
- expect(w.text()).toContain('任务规则需维护者单独启用');expect(w.findAll('article')).toHaveLength(2);expect(w.findAll('article')[0].text()).toContain('故障中');expect(w.findAll('article')[1].text()).toContain('故障尚未确认恢复')
+ expect(w.text()).toContain('规则可在“功能与版本”中开关');expect(w.text()).toContain('未启用不代表任务正常');expect(w.findAll('article')).toHaveLength(2);expect(w.findAll('article')[0].text()).toContain('故障中');expect(w.findAll('article')[1].text()).toContain('故障尚未确认恢复')
  expect(w.findAll('input')).toHaveLength(0);expect(w.findAll('button')).toHaveLength(1)
 })

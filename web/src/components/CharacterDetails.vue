@@ -2,28 +2,29 @@
 import {ref,computed,watch,onUnmounted,nextTick} from 'vue'
 import {api,uncertainMessage} from '../api'
 import Modal from './Modal.vue'
+import {asyncPanel} from '../asyncPanel'
 import GameImage from './GameImage.vue'
 import InventoryGrid from './InventoryGrid.vue'
-import InventoryEditor from './InventoryEditor.vue'
-import CharacterMaintenance from './CharacterMaintenance.vue'
-import CharacterSkills from './CharacterSkills.vue'
-import CharacterRename from './CharacterRename.vue'
-import CharacterRescue from './CharacterRescue.vue'
-import CharacterQuests from './CharacterQuests.vue'
-import CharacterProgression from './CharacterProgression.vue'
-import CharacterLevels from './CharacterLevels.vue'
-import CharacterProfession from './CharacterProfession.vue'
+const InventoryEditor=asyncPanel(()=>import('./InventoryEditor.vue'))
+const CharacterMaintenance=asyncPanel(()=>import('./CharacterMaintenance.vue'))
+const CharacterSkills=asyncPanel(()=>import('./CharacterSkills.vue'))
+const CharacterRename=asyncPanel(()=>import('./CharacterRename.vue'))
+const CharacterRescue=asyncPanel(()=>import('./CharacterRescue.vue'))
+const CharacterQuests=asyncPanel(()=>import('./CharacterQuests.vue'))
+const CharacterProgression=asyncPanel(()=>import('./CharacterProgression.vue'))
+const CharacterLevels=asyncPanel(()=>import('./CharacterLevels.vue'))
+const CharacterProfession=asyncPanel(()=>import('./CharacterProfession.vue'))
 const professionBusy=ref(false),professionPending=ref(false),professionVisited=ref(false)
 const levelsBusy=ref(false),levelsPending=ref(false),levelsVisited=ref(false),progressionRefresh=ref(0)
 const questBusy=ref(false),questPending=ref(false),questVisited=ref(false)
 const rescueBusy=ref(false),rescuePending=ref(false),rescueVisited=ref(false)
 const renameBusy=ref(false),renamePending=ref(false),renameVisited=ref(false)
-import MailCenter from './MailCenter.vue'
-import CharacterActivity from './CharacterActivity.vue'
+const MailCenter=asyncPanel(()=>import('./MailCenter.vue'))
+const CharacterActivity=asyncPanel(()=>import('./CharacterActivity.vue'))
 const fatigueBusy=ref(false),fatiguePending=ref(false),fatigueVisited=ref(false)
 const skillsBusy=ref(false),skillsPending=ref(false),skillsVisited=ref(false)
-const visual=ref(true),moreOpen=ref(false)
-import UnlockRequests from './UnlockRequests.vue'
+const visual=ref(true),equipmentLayout=ref(true),moreOpen=ref(false)
+const UnlockRequests=asyncPanel(()=>import('./UnlockRequests.vue'))
 const props=withDefaults(defineProps<{characNo:number,initialSection?:string}>(),{initialSection:'basic'})
 const emit=defineEmits<{close:[],reauth:[],expired:[],visited:[value:{uid:number,charac_no:number}],action:[value:{action:string,uid:number,charac_no:number}],draft:[value:any],inspect:[id:string]}>()
 const inventoryPending=ref(false),inventoryStale=ref(false)
@@ -137,12 +138,12 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
       <template v-else>
        <form class="toolbar" @submit.prevent><input v-model="search" aria-label="筛选角色物品" placeholder="当前容器内搜索名称或物品编号"><select v-model="kind" aria-label="角色物品类型"><option value="">全部类型</option><option v-for="[id,label] in kinds" :key="id" :value="id">{{label}}</option></select><button type="button" @click="search='';kind=''">清除筛选</button></form>
        <p class="field-hint">共 {{items.length}} 个非空槽位，筛选后 {{filtered.length}} 条；容器共 {{container.slot_count}} 个存档槽位（不代表已解锁格数）。{{storageNotes[section]}}物品可查看不代表可通过邮件发放。</p>
-       <div class="button-row inventory-view-switch" role="group" aria-label="物品展示方式"><button type="button" :aria-pressed="!visual" @click="visual=false">列表视图</button><button type="button" :aria-pressed="visual" @click="visual=true">格子视图</button></div>
-       <InventoryGrid v-if="visual" :items="filtered" :slot-count="container.slot_count" :equipment="section==='equipment'" :filtered="!!search.trim()||!!kind" manageable @manage="manageItem"/>
+       <div class="button-row inventory-view-switch" role="group" aria-label="物品展示方式"><button v-if="section==='equipment'" type="button" :aria-pressed="visual&&equipmentLayout" @click="visual=true;equipmentLayout=true">装备槽位图</button><button type="button" :aria-pressed="visual&&(section!=='equipment'||!equipmentLayout)" @click="visual=true;equipmentLayout=false">格子视图</button><button type="button" :aria-pressed="!visual" @click="visual=false">列表视图</button></div>
+       <InventoryGrid v-if="visual" :items="filtered" :slot-count="container.slot_count" :equipment="section==='equipment'" :anatomy="section==='equipment'&&equipmentLayout" :job-preview="section==='equipment'?data.job_preview:null" :outfit-preview="section==='equipment'?data.outfit_preview:null" :filtered="!!search.trim()||!!kind" manageable @manage="manageItem"/>
        <template v-else>
-       <div v-if="visible.length" class="table-wrap character-items"><table><thead><tr><th>槽位</th><th>物品 / 编号</th><th>类型</th><th>数量</th><th>装备信息</th><th>维护</th></tr></thead><tbody><tr v-for="i in visible" :key="i.slot"><td>{{i.slot_label}}<small class="cell-note">#{{i.slot}}</small></td><td><GameImage :image="i.image" :label="i.name"/><b>{{i.name}}</b><small class="cell-note">#{{i.id}} · {{i.level===null?'等级未知':'Lv.'+i.level}}</small></td><td>{{i.type_name}}</td><td>{{number(i.quantity)}}</td><td v-if="i.enhancement!==null"><span>强化 +{{i.enhancement}} · 锻造 +{{i.forge}}</span><small class="cell-note">耐久 {{i.durability}} · 增幅类型 {{i.amplify_type}} / 数值 {{i.amplify_value}}</small><small class="cell-note" :title="i.enchantment?.summary">{{i.enchantment?.name||'附魔 #'+i.orb_id}}<template v-if="i.orb_id"> · #{{i.orb_id}}</template> · 封装原始标记 {{i.sealed_raw}}</small></td><td v-else>—</td><td><button type="button" @click="manageItem(i)">维护此物品</button></td></tr></tbody></table></div>
+       <div v-if="visible.length" class="table-wrap character-items"><table><thead><tr><th>槽位</th><th>物品 / 编号</th><th>类型</th><th>数量</th><th>装备信息</th><th>维护</th></tr></thead><tbody><tr v-for="i in visible" :key="i.slot"><td>{{i.slot_label}}<small class="cell-note">#{{i.slot}}</small></td><td><GameImage :image="i.image" :label="i.name" :rarity-name="i.rarity_name" :rarity="i.rarity"/><b>{{i.name}}</b><small class="cell-note">#{{i.id}} · {{i.level===null?'等级未知':'Lv.'+i.level}}</small></td><td>{{i.type_name}}</td><td>{{number(i.quantity)}}</td><td v-if="i.enhancement!==null"><span>强化 +{{i.enhancement}} · 锻造 +{{i.forge}}</span><small class="cell-note">耐久 {{i.durability}} · 增幅类型 {{i.amplify_type}} / 数值 {{i.amplify_value}}</small><small class="cell-note" :title="i.enchantment?.summary">{{i.enchantment?.name||'附魔 #'+i.orb_id}}<template v-if="i.orb_id"> · #{{i.orb_id}}</template> · 封装原始标记 {{i.sealed_raw}}</small></td><td v-else>—</td><td><button type="button" @click="manageItem(i)">维护此物品</button></td></tr></tbody></table></div>
        <div v-if="visible.length" class="inventory-mobile-cards"><article v-for="i in visible" :key="i.slot">
-        <div class="section-title"><GameImage :image="i.image" :label="i.name"/><b>{{i.name}}</b><span class="pill">{{i.slot_label}} / #{{i.slot}}</span></div>
+        <div class="section-title"><GameImage :image="i.image" :label="i.name" :rarity-name="i.rarity_name" :rarity="i.rarity"/><b>{{i.name}}</b><span class="pill">{{i.slot_label}} / #{{i.slot}}</span></div>
         <p class="field-hint">物品 #{{i.id}} · {{i.type_name}} · {{i.level===null?'等级未知':'Lv.'+i.level}}</p>
         <dl class="character-facts"><div><dt>数量</dt><dd>{{number(i.quantity)}}</dd></div><template v-if="i.enhancement!==null"><div><dt>强化 / 锻造</dt><dd>+{{i.enhancement}} / +{{i.forge}}</dd></div><div><dt>耐久</dt><dd>{{i.durability}}</dd></div><div><dt>增幅类型 / 数值</dt><dd>{{i.amplify_type}} / {{i.amplify_value}}</dd></div><div><dt>附魔</dt><dd>{{i.enchantment?.name||i.orb_id}}<small v-if="i.orb_id">#{{i.orb_id}}</small><small v-if="i.enchantment?.summary">{{i.enchantment.summary}}</small></dd></div><div><dt>封装原始标记</dt><dd>{{i.sealed_raw}}</dd></div></template></dl>
        <button type="button" @click="manageItem(i)">维护此物品</button></article></div>

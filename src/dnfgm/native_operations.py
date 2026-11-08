@@ -1,4 +1,4 @@
-"""Audited at-most-once native dispatch. MySQL and UDP are NOT atomic.
+"""Audited at-most-once native dispatch. MySQL and native transports are not atomic.
 
 Commit the dispatch claim before opening a socket. Any ambiguous commit aborts
 sending; a durable claim without a final result stays uncertain indefinitely.
@@ -7,6 +7,7 @@ Confirming that original operation never sends again, including after restart.
 from contextlib import ExitStack
 import hashlib
 import json
+import math
 import re
 import time
 import uuid
@@ -15,14 +16,16 @@ from fastapi import HTTPException
 
 from .catalog import snapshot
 from .native_control import NativeControlTransport, notice_packet, kick_packet
+from .private_message import PrivateMessageTransport, message_text
 from .service import OWNER, dump, one
 
-ACTIONS = ('native-notice', 'native-kick', 'native-ban-kick')
+ACTIONS = ('native-notice', 'native-kick', 'native-ban-kick', 'native-message')
 REASONS = {'disabled': '该原生控制能力尚未激活', 'invalid_endpoint': '原生私网地址未配置',
            'stale_snapshot': '采集快照已过期', 'image_mismatch': '游戏镜像指纹不匹配',
            'protocol_unverified': '原生程序指纹未通过核验', 'core_unhealthy': '核心服务状态异常',
            'broadcast_test_scope': '测试账号限制生效时不能发送全服广播',
-           'test_target_only': '当前仅允许对专用测试账号操作'}
+           'test_target_only': '当前仅允许对专用测试账号操作',
+           'bridge_unavailable': '定向系统消息插件未安装或核验未通过'}
 
 
 class NativeOperations:
@@ -30,16 +33,20 @@ class NativeOperations:
         self.service = service
         self.db, self.settings = service.db, service.settings
         self.transport = NativeControlTransport(monitor)
+        self.private_message = PrivateMessageTransport(self.transport)
 
     def ready(self, action, uid):
-        reason = self.transport.unavailable_reason('native-notice' if action == 'native-notice' else 'native-kick', uid)
+        reason = self.transport.unavailable_reason('native-kick' if action == 'native-ban-kick' else action, uid)
         if reason:
             raise HTTPException(409, '原生控制暂不可用：' + REASONS.get(reason, '状态未知'))
         live = snapshot(self.settings)
-        if live.get('mem_available_mib', 0) < 256 or live.get('swap_free_mib', 0) < 1536:
+        if any(type(live.get(key)) not in (int,float) or not math.isfinite(live[key]) or live[key] < minimum
+               for key,minimum in (('mem_available_mib',256),('swap_free_mib',1536))):
             raise HTTPException(503, '资源保护阈值触发，暂不发送控制指令')
         if action == 'native-ban-kick' and ('ban' not in self.settings.writes or self.settings.write_approvals.get('ban') is not True):
             raise HTTPException(403, '封禁能力未激活')
+        if action == 'native-message' and not self.private_message.status()['ready']:
+            raise HTTPException(409, '定向系统消息插件未就绪；请先完成维护窗口安装和适配核验')
 
     @staticmethod
     def engines(q):
@@ -49,12 +56,17 @@ class NativeOperations:
             raise HTTPException(409, '防重、审计或原生控制索引表未就绪，拒绝原生控制')
 
     @staticmethod
-    def target(q, uid):
+    def target(q, uid, charac_no=None):
         if uid is None:
             return {'uid': None, 'accountname': '当前monitor管理的全部游戏服务器'}
         row = one(q, 'SELECT UID AS uid,accountname FROM d_taiwan.accounts WHERE UID=%s', (uid,))
         if not row:
             raise HTTPException(404, '账号不存在')
+        if charac_no is not None:
+            char = one(q, 'SELECT charac_no,charac_name FROM taiwan_cain.charac_info WHERE m_id=%s AND charac_no=%s AND delete_flag=0', (uid, charac_no))
+            if not char:
+                raise HTTPException(409, '目标角色不属于账号、已删除或发生变化')
+            row.update(char)
         return row
 
     @staticmethod
@@ -75,11 +87,13 @@ class NativeOperations:
         action, uid = data['action'], data['uid']
         if action == 'native-notice':
             notice_packet(data['message'])
+        elif action == 'native-message':
+            message_text(data['message'])
         else:
             kick_packet(uid)
         self.ready(action, uid)
         self.engines(q)
-        preview = {'action': action, 'target': self.target(q, uid), 'reason': data['reason'],
+        preview = {'action': action, 'target': self.target(q, uid, data['charac_no']), 'reason': data['reason'],
                    'message': data['message'], 'image_digest': self.settings.image_digest,
                    'note': '只记录发送状态，没有业务回执；不能据此证明游戏内生效。封禁与踢人不是一个原子操作。'}
         if action == 'native-ban-kick':
@@ -172,7 +186,7 @@ class NativeOperations:
                 lease.protect_transaction(q)
                 self.ready(data['action'], data['uid'])
                 self.engines(q)
-                if self.target(q, data['uid']) != preview['target']:
+                if self.target(q, data['uid'], data.get('charac_no')) != preview['target']:
                     raise HTTPException(409, '目标发生变化，请重新预览')
                 result = {'operation_id': op, 'action': data['action'], 'transport_status': 'uncertain',
                           'effect_status': 'unknown', 'reason_code': 'dispatch_claimed',
@@ -208,7 +222,7 @@ class NativeOperations:
             transport = {'transport_status': 'not_sent', 'effect_status': 'unknown',
                          'reason_code': 'readiness_changed_after_claim', 'automatic_retry_allowed': False}
         else:
-            transport = self.send_once(data)
+            transport = self.send_once(data, op)
         result.update(transport)
         try:
             with self.db.connect() as c, c.cursor() as q:
@@ -223,8 +237,10 @@ class NativeOperations:
             raise HTTPException(503, '指令处理后的结果记录待确认；请只查询原编号，禁止自动重发') from None
         return self.detail(op)
 
-    def send_once(self, data):
+    def send_once(self, data, operation_id=None):
         try:
+            if data['action'] == 'native-message':
+                return self.private_message.send(operation_id, data['uid'], data['charac_no'], data['message'])
             return (self.transport.notice(data['message']) if data['action'] == 'native-notice'
                     else self.transport.kick(data['uid']))
         except Exception:

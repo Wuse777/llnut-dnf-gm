@@ -20,3 +20,16 @@ it('failed load becomes explicit fallback and resets on asset change',async()=>{
  const w=mount(GameImage,{props:{image,label:'测试'}});await w.find('img').trigger('error');expect(w.find('img').exists()).toBe(false);expect(w.attributes('title')).toContain('读取失败')
  await w.setProps({image:{...image,url:image.url.replace(/b/g,'c')}});expect(w.find('img').exists()).toBe(true);w.unmount()
 })
+it('keeps a small client icon at its integer source dimensions instead of stretching it',()=>{
+ const w=mount(GameImage,{props:{image:{...image,width:28,height:28},label:'像素图标'}})
+ expect(w.get('img').attributes('style')).toContain('width: 28px');expect(w.get('img').attributes('style')).toContain('height: 28px');w.unmount()
+})
+it('colors an explicitly supplied quality label and keeps absent raw metadata neutral',async()=>{
+ const w=mount(GameImage,{props:{image,label:'测试',rarityName:'史诗'}})
+ expect(w.classes()).toContain('quality-epic');expect(w.attributes('title')).toContain('史诗')
+ await w.setProps({rarityName:undefined});expect(w.classes().some(c=>c.startsWith('quality-'))).toBe(false);w.unmount()
+})
+it('groups an explicit PVF number without inventing a quality name',()=>{
+ const w=mount(GameImage,{props:{image,label:'测试',rarity:4}})
+ expect(w.classes()).toContain('quality-raw-4');expect(w.attributes('title')).toContain('PVF 品级 4');expect(w.attributes('title')).not.toContain('史诗');w.unmount()
+})

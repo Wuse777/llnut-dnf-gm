@@ -206,7 +206,9 @@ def test_symlink_and_world_readable_config_rejected(tmp_path):
 
 
 def test_observer_import_no_database_libraries_and_no_new_service_power():
-    result=subprocess.run([sys.executable,'-c',"import sys; sys.path.insert(0,'deploy'); import alert_worker; assert 'pymysql' not in sys.modules; assert 'fastapi' not in sys.modules"],capture_output=True,timeout=10)
+    root=Path(__file__).resolve().parents[1]
+    code=f"import sys; sys.path[:0]=[{str(root/'src')!r},{str(root/'deploy')!r}]; import alert_worker; assert 'pymysql' not in sys.modules; assert 'fastapi' not in sys.modules"
+    result=subprocess.run([sys.executable,'-c',code],capture_output=True,timeout=10)
     assert result.returncode==0,result.stderr
     text=Path(setup.__file__).read_text()
     assert 'subprocess' not in text and 'systemctl' not in text

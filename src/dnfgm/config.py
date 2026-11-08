@@ -89,7 +89,7 @@ class Settings:
             if not private_ipv4(self.db_host) or not self.image_digest:
                 raise ValueError('Native monitor requires an explicit private IPv4 database host and image fingerprint')
         if (not isinstance(self.native_control_actions, (tuple, list))
-                or any(not isinstance(a, str) or a not in ('native-notice', 'native-kick')
+                or any(not isinstance(a, str) or a not in ('native-notice', 'native-kick', 'native-message')
                        for a in self.native_control_actions)
                 or len(set(self.native_control_actions)) != len(self.native_control_actions)):
             raise ValueError('Unknown or duplicate native control action')

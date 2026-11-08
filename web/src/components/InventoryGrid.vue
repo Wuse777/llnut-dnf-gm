@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import {computed,ref,watch,nextTick,onMounted,onUnmounted} from 'vue'
 import GameImage from './GameImage.vue'
+import type {AssetImage} from './GameImage.vue'
 import ItemFacts from './ItemFacts.vue'
 import Modal from './Modal.vue'
+import EquipmentSlots from './EquipmentSlots.vue'
 const emit=defineEmits<{manage:[item:any]}>()
-const props=defineProps<{items:any[],slotCount:number,equipment?:boolean,filtered?:boolean,manageable?:boolean}>()
+const props=defineProps<{items:any[],slotCount:number,equipment?:boolean,anatomy?:boolean,jobPreview?:AssetImage|null,outfitPreview?:AssetImage|null,filtered?:boolean,manageable?:boolean}>()
 const page=ref(1),showEmpty=ref(true),selected=ref<any>(null),detail=ref<HTMLElement|null>(null)
 let trigger:HTMLElement|null=null
 const mobile=ref(false)
@@ -40,14 +42,14 @@ function number(v:unknown){return v===null||v===undefined?'未知':Number(v).toL
  <div class="inventory-visual">
   <label class="inventory-empty-toggle"><input v-model="showEmpty" type="checkbox" :disabled="filtered">显示空存档槽位<span v-if="filtered">（筛选期间隐藏）</span></label>
   <div class="inventory-layout">
-   <div><div class="inventory-groups" :class="{'equipment-groups':equipment}" role="group" aria-label="存档物品槽位">
+   <div><EquipmentSlots v-if="equipment&&anatomy&&!filtered" :slots="visible" :selected-slot="selected?.slot" :job-preview="jobPreview" :outfit-preview="outfitPreview" @select="select"/><div v-else class="inventory-groups" :class="{'equipment-groups':equipment}" role="group" aria-label="存档物品槽位">
     <section v-for="group in groups" :key="group.title" class="inventory-slot-group" :aria-label="group.title||'背包与仓库槽位'">
      <h3 v-if="group.title" class="equipment-group-title">{{group.title}}<span>{{group.items.filter(i=>!i.empty).length}} / {{group.items.length}}</span></h3>
      <div class="inventory-slot-grid" :class="{'equipment-slot-grid':equipment}">
     <template v-for="i in group.items" :key="i.slot">
      <div v-if="i.empty" class="inventory-slot empty-slot"><small>{{i.slot_label}}</small><span>空</span><small>#{{i.slot}}</small></div>
      <button v-else type="button" class="inventory-slot" :class="{'slot-selected':selected?.slot===i.slot}" :aria-label="i.slot_label+'：'+i.name+'，数量'+number(i.quantity)" :aria-pressed="selected?.slot===i.slot" @click="select(i,$event)">
-      <small>{{i.slot_label}}</small><GameImage :image="i.image" :label="i.name"/><b>{{i.name}}</b><small>×{{number(i.quantity)}}</small><span v-if="i.enhancement" class="slot-enhancement">+{{i.enhancement}}</span>
+      <small>{{i.slot_label}}</small><GameImage :image="i.image" :label="i.name" :rarity-name="i.rarity_name" :rarity="i.rarity"/><b>{{i.name}}</b><small>×{{number(i.quantity)}}</small><span v-if="i.enhancement" class="slot-enhancement">+{{i.enhancement}}</span>
      </button>
     </template>
      </div>

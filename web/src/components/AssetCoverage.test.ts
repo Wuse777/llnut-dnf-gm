@@ -10,6 +10,8 @@ describe('asset coverage',()=>{
   const w=mount(AssetCoverage);await flushPromises()
   expect(w.text()).toContain('5.0');expect(w.text()).toContain('不是从当前客户端NPK提取');expect(w.text()).toContain('基础职业示意');expect(w.text()).toContain('合成物品')
   expect(w.get('a').attributes('rel')).toContain('noopener')
+  expect(w.get('.portrait-browser').attributes('open')).toBeUndefined()
+  expect(w.get('.portrait-gallery').attributes('tabindex')).toBe('0')
   await w.get('select').setValue('unsupported');await flushPromises();expect(api).toHaveBeenLastCalledWith('/assets/coverage?state=unsupported&page=1')
   await w.findAll('button').find(b=>b.text()==='下一页')!.trigger('click');await flushPromises();expect(api).toHaveBeenLastCalledWith('/assets/coverage?state=unsupported&page=2')
   expect(vi.mocked(api).mock.calls.every(c=>c.length===1)).toBe(true);w.unmount()

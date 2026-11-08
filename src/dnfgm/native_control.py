@@ -13,7 +13,7 @@ from .native_monitor import MONITOR_PORT, TIMEOUT
 
 NOTICE = struct.Struct('<HHHIB255s')
 KICK = struct.Struct('<HHHIII')
-ACTIONS = ('native-notice', 'native-kick')
+ACTIONS = ('native-notice', 'native-kick', 'native-message')
 
 
 def notice_packet(text):
@@ -53,7 +53,7 @@ class NativeControlTransport:
         # A broadcast cannot be scoped to dedicated test accounts.
         if action == 'native-notice' and s.test_uids:
             return 'broadcast_test_scope'
-        if action == 'native-kick' and s.test_uids and uid not in s.test_uids:
+        if action in ('native-kick', 'native-message') and s.test_uids and uid not in s.test_uids:
             return 'test_target_only'
         return None
 

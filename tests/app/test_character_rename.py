@@ -16,7 +16,7 @@ def rename(inv):
         # Minimal faithful identifiers and utf8_general_ci names; no real players.
         for schema,table,column,keys,_ in LINKS.values():
             fields=','.join('`'+k+'` INT NOT NULL' for k in keys)
-            q.execute(f'CREATE TABLE `{schema}`.`{table}` ({fields},`{column}` VARCHAR(20) NOT NULL,PRIMARY KEY ({",".join("`"+k+"`" for k in keys)})) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci')
+            q.execute(f'CREATE TABLE IF NOT EXISTS `{schema}`.`{table}` ({fields},`{column}` VARCHAR(20) NOT NULL,PRIMARY KEY ({",".join("`"+k+"`" for k in keys)})) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci')
             row={k:1 for k in keys};row.update({k:900001 for k in ('m_id','master_id','master_no','charac_no') if k in keys})
             if 'server_id' in row:row['server_id']=3
             q.execute(f'INSERT INTO `{schema}`.`{table}` VALUES('+','.join(['%s']*(len(keys)+1))+')',[*(row[k] for k in keys),'OldName'])

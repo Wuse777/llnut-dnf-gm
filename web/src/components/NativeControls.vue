@@ -2,11 +2,13 @@
 import {computed,onMounted,onBeforeUnmount,ref} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
 import {nativeNames,nativeStates,nativeReasons} from '../nativeStatus'
+import TargetedMessageFields from './TargetedMessageFields.vue'
 const props=defineProps<{account?:any}>()
 const emit=defineEmits(['reauth','expired','select-player'])
 const action=ref(props.account?.uid?'native-kick':'native-notice'),message=ref(''),reason=ref(''),error=ref(''),fields=ref<Record<string,string>>({})
 const detail=ref<any>(null),history=ref<any[]>([]),page=ref(1),lookup=ref(''),busy=ref(false),attempted=ref(false),ack=ref(false),key=ref('')
 const historyBusy=ref(false)
+const messageCharacter=ref<number|null>(null),messageReady=ref(false)
 let historyEpoch=0
 const storage='dnfgm-native-operation',bytes=computed(()=>new TextEncoder().encode(message.value).length)
 const pending=computed(()=>attempted.value&&detail.value?.status==='preview'||detail.value?.status==='dispatching')
@@ -30,15 +32,21 @@ async function prepare(){
  if(busy.value||detail.value)return
  error.value='';fields.value={}
  if(!reason.value.trim())fields.value.reason='请填写操作原因'
- if(action.value==='native-notice'){
-  if(!message.value.trim())fields.value.message='请填写公告内容'
-  else if(/\p{C}/u.test(message.value))fields.value.message='公告须为单行文字，不能包含换行或控制字符'
-  else if(bytes.value>254)fields.value.message='公告最多254个UTF-8字节，请缩短内容'
- }else if(!props.account?.uid)fields.value.target='请先在账号与角色页面选择目标账号'
+ if(action.value==='native-notice'||action.value==='native-message'){
+  const name=action.value==='native-notice'?'公告':'消息'
+  if(!message.value.trim())fields.value.message='请填写'+name+'内容'
+  else if(/\p{C}/u.test(message.value))fields.value.message=name+'须为单行文字，不能包含换行或控制字符'
+  else if(bytes.value>254)fields.value.message=name+'最多254个UTF-8字节，请缩短内容'
+ }
+ if(action.value!=='native-notice'&&!props.account?.uid)fields.value.target='请先在账号与角色页面选择目标账号'
+ if(action.value==='native-message'){
+  if(!messageCharacter.value)fields.value.target='请选择当前账号下的收信角色'
+  if(!messageReady.value)fields.value.readiness='定向消息能力未就绪，请核验能力状态'
+ }
  if(Object.keys(fields.value).length)return
  busy.value=true
  try{
-  const r=await api('/native-controls/preview','POST',{action:action.value,uid:action.value==='native-notice'?null:props.account.uid,message:action.value==='native-notice'?message.value:'',reason:reason.value.trim()})
+  const r=await api('/native-controls/preview','POST',{action:action.value,uid:action.value==='native-notice'?null:props.account.uid,...(action.value==='native-message'?{charac_no:messageCharacter.value}:{}),message:['native-notice','native-message'].includes(action.value)?message.value:'',reason:reason.value.trim()})
   if(!alive)return
   remember(r.operation_id);key.value=crypto.randomUUID();detail.value=r;attempted.value=false;ack.value=false;await historyLoad()
  }catch(e){if(alive)fail(e)}finally{if(alive)busy.value=false}
@@ -72,16 +80,17 @@ onMounted(async()=>{
 })
 onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
 </script>
-<template><section class="panel native-controls"><div class="section-title"><div><h2>游戏内控制</h2><p class="muted">公告、账号踢下线与封禁联动 · 每次操作先预览</p></div></div>
- <p class="warning">发送记录不是游戏回执。全服公告会广播到当前monitor管理的游戏服务器；这里不提供私信。封禁和踢人分别记录结果。</p>
+<template><section class="panel native-controls"><div class="section-title"><div><h2>游戏内控制</h2><p class="muted">公告、定向系统消息、账号踢下线与封禁联动 · 每次操作先预览</p></div></div>
+ <p class="warning">发送记录不是游戏回执。全服公告会广播到当前monitor管理的游戏服务器；定向系统消息需先核验桥接能力。封禁和踢人分别记录结果。</p>
  <form v-if="!detail" @submit.prevent="prepare" class="native-form">
   <label for="native-action">操作类型</label><select id="native-action" v-model="action" :disabled="busy"><option v-for="(name,id) in nativeNames" :key="id" :value="id">{{name}}</option></select>
-  <template v-if="action==='native-notice'"><label for="native-message">公告内容 <i class="required-tag">必填</i></label><textarea id="native-message" v-model="message" rows="3" :disabled="busy" :aria-invalid="!!fields.message" aria-describedby="native-message-error" @input="fields.message=''"/><small>{{bytes}} / 254 UTF-8字节 · 单行文字，中文通常占多个字节，不会自动截断</small><p v-if="fields.message" id="native-message-error" role="alert" class="submit-error">{{fields.message}}</p></template>
+  <TargetedMessageFields v-if="action==='native-message'" :account="account" :busy="busy" v-model:charac-no="messageCharacter" :error="fields.target" @ready="messageReady=$event" @select-player="emit('select-player')" @reauth="emit('reauth')" @expired="emit('expired')"/>
+  <template v-if="action==='native-notice'||action==='native-message'"><label for="native-message">{{action==='native-notice'?'公告':'定向消息'}}内容 <i class="required-tag">必填</i></label><textarea id="native-message" v-model="message" rows="3" :disabled="busy" :aria-invalid="!!fields.message" aria-describedby="native-message-error" @input="fields.message=''"/><small>{{bytes}} / 254 UTF-8字节 · 单行文字，中文通常占多个字节，不会自动截断</small><p v-if="fields.message" id="native-message-error" role="alert" class="submit-error">{{fields.message}}</p></template>
   <div v-else class="native-target"><strong v-if="account">{{account.accountname}} · UID {{account.uid}}</strong><span v-else>尚未选择账号</span><button type="button" :disabled="busy" @click="emit('select-player')">{{account?'更换账号':'选择账号'}}</button><p v-if="fields.target" role="alert" class="submit-error">{{fields.target}}</p><p class="field-hint">操作作用于账号当前会话，不指定某个角色。请核对UID，不以登录表状态保证玩家在线。</p></div>
   <label for="native-reason">操作原因 <i class="required-tag">必填</i></label><input id="native-reason" v-model="reason" maxlength="200" :disabled="busy" :aria-invalid="!!fields.reason" aria-describedby="native-reason-error" @input="fields.reason=''"/><p v-if="fields.reason" id="native-reason-error" role="alert" class="submit-error">{{fields.reason}}</p>
-  <button type="submit" class="primary" :disabled="busy">生成控制预览</button>
+  <p v-if="fields.readiness" class="submit-error" role="alert">{{fields.readiness}}</p><button type="submit" class="primary" :disabled="busy||action==='native-message'&&!messageReady">生成控制预览</button>
  </form>
- <section v-else class="native-preview"><h3>{{nativeNames[detail.preview.action]}}</h3><p><b>{{detail.preview.target.accountname}}</b><span v-if="detail.preview.target.uid"> · UID {{detail.preview.target.uid}}</span></p><blockquote v-if="detail.preview.message">{{detail.preview.message}}</blockquote><p>原因：{{detail.preview.reason}}</p><p class="warning" role="status">{{nativeStates[detail.status]||'状态未知'}}<span v-if="pending">。仅查询原编号，不自动重发。</span></p>
+ <section v-else class="native-preview"><h3>{{nativeNames[detail.preview.action]}}</h3><p><b>{{detail.preview.target.accountname}}</b><span v-if="detail.preview.target.uid"> · UID {{detail.preview.target.uid}}</span><span v-if="detail.preview.target.charac_no"> · {{detail.preview.target.charac_name||'角色'}} #{{detail.preview.target.charac_no}}</span></p><blockquote v-if="detail.preview.message">{{detail.preview.message}}</blockquote><p>原因：{{detail.preview.reason}}</p><p v-if="detail.preview.action==='native-message'" class="field-hint">仅向以上账号的指定角色请求显示系统消息。sent 只表示服务器调用，不证明客户端已显示或玩家已阅读。</p><p class="warning" role="status">{{nativeStates[detail.status]||'状态未知'}}<span v-if="pending">。仅查询原编号，不自动重发。</span></p>
   <p v-if="detail.result?.ban_status==='committed_login_test_pending'" class="warning">封禁数据库已提交，重新登录阻断效果未核验；踢下线结果独立显示，不因踢人失败撤销封禁。</p>
   <p v-if="detail.result">游戏效果：未知 · {{nativeReasons[detail.result.reason_code]||'暂无可确认的发送说明'}}</p><p class="mono operation-number">{{detail.operation_id}}</p>
   <template v-if="detail.status==='preview'"><p class="field-hint">预览有效期至 {{new Date(detail.expires_at*1000).toLocaleString('zh-CN',{hour12:false})}}；确认时重新核对目标与能力。</p><label v-if="detail.preview.action==='native-notice'&&!attempted" class="native-check"><input v-model="ack" type="checkbox" :disabled="busy"/>我确认发送全服广播，不是单人私信</label><div class="button-row"><button :disabled="busy" @click="cancel">取消未发送预览</button><button v-if="!attempted" class="danger" :disabled="busy||!key" @click="confirm">确认执行一次</button></div></template>

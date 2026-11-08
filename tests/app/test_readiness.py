@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import time
 import pytest
+from dnfgm import __version__
 
 P = '/dnf-gm/api/v1'
 
@@ -20,7 +21,7 @@ def test_readiness_exposes_degraded_collector_without_breaking_health(env, state
     assert client.get(P + '/health').status_code == 200
     result = client.get(P + '/ready')
     assert result.status_code == (200 if state == 'healthy' else 503)
-    if state == 'healthy': assert result.json()['version'] == '0.4.0'
+    if state == 'healthy': assert result.json()['version'] == __version__
 
 
 def test_health_requires_mail_ledger_migration(env):
@@ -35,7 +36,7 @@ def test_health_requires_preferences_migration(env):
     with db.connect() as c,c.cursor() as q:
         q.execute('DELETE FROM dnf_gm.schema_versions WHERE version>=5');c.commit()
     response=client.get(P+'/health')
-    assert response.status_code==503 and '012' in response.text
+    assert response.status_code==503 and '迁移未完成' in response.text
 
 
 def test_health_requires_native_history_migration(env):

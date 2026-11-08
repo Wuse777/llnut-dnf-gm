@@ -2,7 +2,8 @@
 import {supportNames,inventoryNames,nativeNames} from '../nativeStatus'
 import {ref,watch,onBeforeUnmount} from 'vue'
 import {api,uncertainMessage} from '../api'
-import MailCenter from './MailCenter.vue'
+import {asyncPanel} from '../asyncPanel'
+const MailCenter=asyncPanel(()=>import('./MailCenter.vue'))
 const props=defineProps<{account:any,busy?:boolean,viewState?:{tab:string,page:number}}>()
 const emit=defineEmits<{action:[value:{action:string,uid:number,charac_no?:number}],draft:[value:any],inspect:[id:string],correction:[value:any],'view-state':[value:{tab:string,page:number}]}>()
 const tab=ref(props.viewState?.tab||'roles'),rows=ref<any[]>([]),page=ref(props.viewState?.page||1),loading=ref(false),error=ref('')

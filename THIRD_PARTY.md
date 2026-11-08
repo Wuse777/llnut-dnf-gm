@@ -31,6 +31,13 @@
 - Microsoft官方Direct3D文档：`MicrosoftDocs/win32`的`desktop-src/direct3d10/d3d10-graphics-programming-guide-resources-block-compression.md`（核对时blob `4ff2dd9c512dddc7cc071ff234e5fefbcf5defd4`），以及Direct3D9的Opaque and 1-Bit Alpha Textures、Textures with Alpha Channels。用于独立实现BC1／BC2／BC3块布局、RGB565、显式／插值Alpha、物理块边界；不复制文档代码或插图。
 - `npk_assets.py`、`asset_builder.py`独立实现；未复制这些项目代码、图片、客户端或素材，不将其安装为运行依赖。格式实现已进行合成数据测试，但尚缺匹配客户端NPK实物验证。支持与未支持范围见`docs/ASSETS.md`。
 
+## ANI 默认站姿与装扮图层（独立实现）
+
+- 格式资料：`sjy0727/DNFToolKit`，commit `c4d08cec8f675af1c8a640e27737502133eee49e` 的 `dnf-toolkit-pvf/src/main/java/com/dnf/toolkit/pvf/parser/AniParser.java`。仅核对二进制帧／路径／参数段与参数载荷类型；该文件中的二进制转换器为注释状态，不作为可直接使用的依赖。
+- `character_assets.py` 独立实现有界 ANI 读取、CHR／EQU／LAY 精确身份核对与直通 Alpha 合成，未复制 Java 实现、第三方业务代码或客户端图片。未知参数、变换、冲突来源、缺失装扮映射均拒绝，不扫描二进制猜帧。
+- 2026-11-09 使用部署者本地匹配客户端，离线解析出 11 个基础职业的默认着装等待首帧，并验证 5 个显式上衣配方可合成；透明 1×1／压缩 0×0 空图层经过像素／解压验证，不放宽物品图标解码器的越界策略。这是离线素材及合成核对，不等于实际玩家穿戴、精确觉醒头像或游戏客户端逐项验收。
+- 原始 NPK／PVF、PNG、派生清单与配方包只保留在私有素材目录，不随源码或 Release 分发。能力和边界见 `docs/CHARACTER-APPEARANCE.md`。
+
 
 ## 解锁申请与存档关联（独立适配）
 

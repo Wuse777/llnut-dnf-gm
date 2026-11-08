@@ -145,8 +145,8 @@ def test_target_binding_checked_by_issue_under_exclusive_fence(session):
 
 def test_restored_process_replaced_before_release_remains_frozen(session):
     s,c,h,plan=session;s.open(RID);original=c.lifecycle.restore
-    def restore(*args):
-        result=original(*args)
+    def restore(*args,**kwargs):
+        result=original(*args,**kwargs)
         h.processes['guild']['start_ticks']+=1
         return result
     c.lifecycle.restore=restore
