@@ -14,7 +14,7 @@ def enrich_portraits(source,mapping,output):
     if output.exists():raise FileExistsError('Refusing to overwrite an asset pack')
     if source.is_symlink() or (source/'manifest.sqlite').is_symlink():raise ValueError('Asset pack symlink refused')
     if mapping.stat().st_size>262144:raise ValueError('Portrait mapping too large')
-    rows=json.loads(mapping.read_text());seen=set();prepared=[]
+    rows=json.loads(mapping.read_text(encoding='utf-8'));seen=set();prepared=[]
     if not isinstance(rows,list) or not rows or len(rows)>512:raise ValueError('Invalid portrait mapping')
     for row in rows:
         if not isinstance(row,dict) or set(row)-{'job','grow_type','sex','png','kind','label','page','focus_x','focus_y'}:raise ValueError('Invalid portrait entry')

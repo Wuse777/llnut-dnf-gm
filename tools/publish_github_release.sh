@@ -36,10 +36,16 @@ cp -R web/dist "$OUT/static/web/"
 printf '%s\n' "$REVISION" > "$OUT/static/SOURCE_REVISION"
 tar -C "$OUT/static" -czf "$OUT/$WEB" web/dist SOURCE_REVISION
 (cd "$OUT"; sha256sum "$SOURCE" "$WEB" > SHA256SUMS; sha256sum -c SHA256SUMS)
+TITLE=$(python3 - "$TAG" <<'PY'
+import sys
+from pathlib import Path
+print(Path(f'docs/releases/{sys.argv[1]}.md').read_text(encoding='utf-8').splitlines()[0].lstrip('# '))
+PY
+)
 # A draft prevents publishing a release whose attachments are only half uploaded.
 # A failed job may leave that draft for manual reconciliation; reruns refuse it.
 gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --target "$REVISION" \
-  --draft --title "$TAG · 中文 GM 工作台与文档焕新" --notes-file "docs/releases/$TAG.md"
+  --draft --title "$TITLE" --notes-file "docs/releases/$TAG.md"
 gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" "$OUT/$SOURCE" "$OUT/$WEB" "$OUT/SHA256SUMS"
 gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
 printf 'Published %s from %s. No server deployment performed.\n' "$TAG" "$REVISION"

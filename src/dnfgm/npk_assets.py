@@ -224,7 +224,10 @@ def decode_img(data,index):
         if pos+36>len(data):raise AssetFormatError('Truncated frame table')
         fmt,extra,w,h,size,x,y,cw,ch=struct.unpack_from('<9i',data,pos);pos+=36
         if fmt not in (14,15,16,18,19,20) or extra not in (5,6):raise AssetFormatError('Unsupported IMG pixel/compression variant')
-        if not 1<=w<=512 or not 1<=h<=512 or not 1<=cw<=512 or not 1<=ch<=512 or not 0<=x<=cw-w or not 0<=y<=ch-h:
+        # Every payload must remain bounded so offsets can be checked, but a
+        # different frame's placement does not determine this icon's canvas.
+        # Real client sheets contain unused frames just outside that canvas.
+        if not 1<=w<=512 or not 1<=h<=512 or not 1<=cw<=512 or not 1<=ch<=512:
             raise AssetFormatError('Icon canvas out of bounds')
         if fmt in (18,19,20):
             if palette:raise AssetFormatError('Unsupported palette/DXT combination')
@@ -249,7 +252,10 @@ def decode_img(data,index):
     while 'link' in frames[index]:
         if index in seen:raise AssetFormatError('Cyclic IMG frame link')
         seen.add(index);index=frames[index]['link']
-    f=frames[index];raw=data[f['offset']:f['offset']+f['size']]
+    f=frames[index]
+    if not 0<=f['x']<=f['cw']-f['w'] or not 0<=f['y']<=f['ch']-f['h']:
+        raise AssetFormatError('Icon canvas out of bounds')
+    raw=data[f['offset']:f['offset']+f['size']]
     if f['extra']==6:raw=inflate(raw,f['decoded'])
     pixels=bytearray()
     if f['fmt'] in (18,19,20):

@@ -97,8 +97,8 @@ class GameAssets:
             try:
                 meta=dict(c.execute('SELECT key,value FROM metadata'))
                 where='' if state=='all' else ' WHERE state=?';args=() if state=='all' else (state,)
-                rows=c.execute('SELECT item_id,state FROM item_images'+where+' ORDER BY item_id LIMIT 21 OFFSET ?',(*args,(page-1)*20)).fetchall()
-                items=[{'id':r['item_id'],'state':r['state'],'note':MESSAGES.get(r['state'],MESSAGES['unavailable'])} for r in rows[:20]]
+                rows=c.execute('SELECT i.item_id,i.state,i.sha256,f.width,f.height FROM item_images i LEFT JOIN files f ON f.sha256=i.sha256'+where+' ORDER BY item_id LIMIT 21 OFFSET ?',(*args,(page-1)*20)).fetchall()
+                items=[{'id':r['item_id'],'state':r['state'],'note':MESSAGES.get(r['state'],MESSAGES['unavailable']),'image':self.image(r,pvf_sha,'missing')} for r in rows[:20]]
                 with closing(Catalog(self.settings).connect()) as catalog:
                     binding=dict(catalog.execute('SELECT key,value FROM metadata'))
                     if binding.get('pvf_sha256')!=pvf_sha:raise HTTPException(409,'物品索引与图片包PVF不匹配')

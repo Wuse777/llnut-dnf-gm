@@ -1,6 +1,6 @@
 # 文档中心
 
-[项目首页](../README.md) · [界面导览](SCREENSHOTS.md) · [部署指南](DEPLOYMENT.md) · [版本说明](releases/v0.4.0.md)
+[项目首页](../README.md) · [界面导览](SCREENSHOTS.md) · [部署指南](DEPLOYMENT.md) · [版本说明](releases/v0.4.1.md)
 
 先按你的任务选择指南。**首页与本指南描述当前源码；历史报告只证明对应日期和版本的检查，不代表新安装自动具备生产配置。**
 
@@ -40,7 +40,7 @@
 ## 开发、发布与证据
 
 - [开发](DEVELOPMENT.md)、[测试与验收](TESTING.md)、[贡献](../CONTRIBUTING.md)、[第三方声明](../THIRD_PARTY.md)
-- [v0.4.0 发布说明](releases/v0.4.0.md)、[发布流程](RELEASING.md)、[更新记录](../CHANGELOG.md)
+- [v0.4.1 发布说明](releases/v0.4.1.md)、[发布流程](RELEASING.md)、[更新记录](../CHANGELOG.md)
 - [实施台账](ROADMAP-IMPLEMENTATION.md)、[历史报告](reports/)、[旧部署批次记录](history/DEPLOYMENT-BATCHES-202610-20261106.md)
 - [文档维护约定及参考项目](DOCUMENTATION.md)
 

@@ -62,6 +62,22 @@ def test_links_palette_and_reject_cycles():
     with pytest.raises(AssetFormatError,match='Palette'):decode_img(img(raw=b'\x02',compressed=True,version=4,palette=b'\0'*4),0)
 
 
+def test_unrelated_frame_placement_does_not_hide_valid_icon():
+    # A sheet may contain an unused one-pixel frame beyond its right edge.
+    # This must not invalidate other icons or relax the requested frame check.
+    valid=struct.pack('<9i',16,5,1,1,4,0,0,1,1)
+    outside=struct.pack('<9i',16,5,1,1,4,1,0,1,1)
+    link=struct.pack('<2i',17,1)
+    table=valid+outside+link
+    header=b'Neople Img File'.ljust(16,b'\0')+struct.pack('<4i',len(table),0,2,3)
+    data=header+table+b'\x30\x20\x10\xff'*2
+    assert decode_img(data,0)==Raster(1,1,b'\x10\x20\x30\xff')
+    for index in (1,2):
+        with pytest.raises(AssetFormatError,match='canvas'):decode_img(data,index)
+    # Even an unrequested payload must fit inside the archive member.
+    with pytest.raises(AssetFormatError,match='outside file'):decode_img(data[:-1],0)
+
+
 @pytest.mark.parametrize('data,index',[(b'',0),(img()[:-1],0),(img(),-1),(img(),True),(img(version=5),0),(img(fmt=20),0)])
 def test_reject_bad_img(data,index):
     with pytest.raises(AssetFormatError):decode_img(data,index)
@@ -131,6 +147,24 @@ def test_invalid_dimensions_never_advertised_ready(tmp_path):
     with sqlite3.connect(root/'manifest.sqlite') as c:c.execute('UPDATE files SET width=0')
     items=[{'id':990001}];GameAssets(Settings(assets_dir=str(root),pvf_sha256='a'*64)).decorate('a'*64,items)
     assert items[0]['image']['state']=='unavailable' and items[0]['image']['url'] is None
+
+
+def test_coverage_previews_only_registered_images_without_private_sources(tmp_path):
+    root,digest,_=pack(tmp_path)
+    catalog=tmp_path/'catalog.sqlite'
+    with sqlite3.connect(catalog) as c:
+        c.executescript('CREATE TABLE metadata(key TEXT,value TEXT);CREATE TABLE items(id INTEGER,name TEXT)')
+        c.execute('INSERT INTO metadata VALUES(?,?)',('pvf_sha256','a'*64))
+        c.executemany('INSERT INTO items VALUES(?,?)',[(990001,'Synthetic icon'),(990002,'Missing icon')])
+    with sqlite3.connect(root/'manifest.sqlite') as c:
+        c.execute("UPDATE item_images SET source_img='private/client.img'")
+        c.execute("INSERT INTO item_images(item_id,state) VALUES(990002,'missing')")
+    settings=Settings(assets_dir=str(root),pvf_sha256='a'*64,catalog_file=str(catalog),status_file=str(tmp_path/'status'))
+    result=GameAssets(settings).coverage('a'*64)
+    assert result['items'][0]['image']['url'].endswith('/'+digest+'.png')
+    assert result['items'][1]['image']['url'] is None
+    assert 'private/client.img' not in json.dumps(result) and str(tmp_path) not in json.dumps(result)
+    assert [r['id'] for r in GameAssets(settings).coverage('a'*64,'missing')['items']]==[990002]
 
 
 def builder_setup(tmp_path,monkeypatch):

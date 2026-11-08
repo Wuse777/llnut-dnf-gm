@@ -14,4 +14,11 @@ describe('asset coverage',()=>{
   await w.findAll('button').find(b=>b.text()==='下一页')!.trigger('click');await flushPromises();expect(api).toHaveBeenLastCalledWith('/assets/coverage?state=unsupported&page=2')
   expect(vi.mocked(api).mock.calls.every(c=>c.length===1)).toBe(true);w.unmount()
  })
+ it('keeps a small remaining gap visible and previews authenticated icons',async()=>{
+  const image={state:'ready',url:'/dnf-gm/api/v1/assets/'+'a'.repeat(64)+'/'+'b'.repeat(64)+'.png'}
+  vi.mocked(api).mockResolvedValue({pvf_sha256:'a'.repeat(64),item_states:{ready:66450,missing:3,missing_reference:1,unsupported:2},portrait_total:0,portraits:[],items:[{id:990001,name:'合成图标',state:'ready',image}],page:1,has_more:false})
+  const w=mount(AssetCoverage);await flushPromises()
+  expect(w.text()).toContain('>99.9');expect(w.text()).not.toContain('100.0');expect(w.text()).toContain('仍有 6 项图标不可读取')
+  expect(w.get('img').attributes('src')).toBe(image.url);w.unmount()
+ })
 })

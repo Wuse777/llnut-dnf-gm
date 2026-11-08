@@ -4,7 +4,7 @@
 
 **为 llnut/dnf 清风 1031 适配的轻量中文 GM 控制台**
 
-玩家查询 · 邮件奖励 · 角色维护 · 运营与审计
+玩家查询 · 图标选物 · 邮件奖励 · 角色维护 · 运营与审计
 
 [![Release](https://img.shields.io/github/v/release/Wuse777/llnut-dnf-gm?color=8b8780&style=flat-square)](https://github.com/Wuse777/llnut-dnf-gm/releases)
 [![License](https://img.shields.io/badge/license-MIT-8b8780?style=flat-square)](LICENSE)
@@ -24,6 +24,7 @@
 
 把账号查询、奖励发放和受控维护放进一个可追踪的中文工作台：先选定玩家，预览变更，再确认执行；遇到响应中断，按原操作编号查询，而不是重复发放。
 
+- **真实图标选物**：匹配客户端离线解析与 PVF 绑定；已验证样本覆盖 66,450／66,456 项，缺图状态、职业插画出处和鉴权保持明确。游戏素材需部署者自行提供。
 - **面向日常使用**：CPAMC 风格主题、桌面双栏与手机卡片、紧凑目标区、就近错误提示、角色上下文快捷操作。
 - **奖励流程完整**：点券／代币券／商城积分、物品与金币邮件、版本化礼包、批量任务、定时运营和投递记录。
 - **维护边界明确**：存档类修改通过显式维护窗口；不可变快照、幂等记录与审计保留历史，不把数据库成功写成游戏效果已验收。
@@ -57,9 +58,9 @@
 
 ### 已知边界
 
-- **源码发布 ≠ 服务器已升级**。`v0.4.0` 汇集当前 `main`；上一轮维护实例运行包为 `20261106-comparison-a201f26`，本次发布不部署该实例。不要将别人的运行参数当成自己的安装条件。
+- **源码、素材与服务器分别管理**。`v0.4.1` 提供解析器及覆盖预览改进；公开下载不带游戏素材。实例部署与验证范围见[本批记录](docs/reports/CLIENT-ASSETS-20261108.md)，不要将维护实例参数当作新安装条件。
 - **并非每项都完成游戏客户端验收**。各功能的实现、验证和部署证据见[实施台账](docs/ROADMAP-IMPLEMENTATION.md)；自动化检查不能证明在线消费、领取和重登都正确。
-- **图片链路与素材分开**。支持离线素材索引和受保护图片接口，但公开包不带游戏图标／头像；素材补充暂缓，见[图片指南](docs/ASSETS.md)。
+- **图片链路与素材分开**。支持离线素材索引和受保护图片接口；匹配客户端样本已生成 66,450 项可读图标，剩余 6 项明确保留缺口。公开包不带游戏图标／头像，见[图片指南](docs/ASSETS.md)。
 - 可靠指定玩家系统消息尚未接通；插件证据页不提供“0CD／无敌”等效果开关；没有任意 SQL／Shell 入口，也没有玩家兑换码网站。
 - 默认密码登录，不要求 TOTP。运行权限、网页能力开关、索引／程序指纹及维护窗口分别生效，不因显示按钮而绕过校验。
 
@@ -73,16 +74,16 @@
 | 已有 GM，准备升级 | [部署指南：已有实例升级](docs/DEPLOYMENT.md#已有实例升级)；不要重新运行 provision |
 | 想了解操作流程 | [界面导览](docs/SCREENSHOTS.md) → [文档中心](docs/README.md) |
 | 准备修改代码 | [开发指南](docs/DEVELOPMENT.md) → [贡献说明](CONTRIBUTING.md) |
-| 下载发布文件 | [GitHub Releases](https://github.com/Wuse777/llnut-dnf-gm/releases) → [v0.4.0 说明](docs/releases/v0.4.0.md) |
+| 下载发布文件 | [GitHub Releases](https://github.com/Wuse777/llnut-dnf-gm/releases) → [v0.4.1 说明](docs/releases/v0.4.1.md) |
 
 ### 从固定版本构建
 
 维护电脑需要 Python 3.12（含 pip／venv）、Node.js 24.15+ 的 24.x、npm 和 Git。以下**只构建，不连接生产数据库、不安装服务**：
 
 ```bash
-git clone --branch v0.4.0 --depth 1 https://github.com/Wuse777/llnut-dnf-gm.git
+git clone --branch v0.4.1 --depth 1 https://github.com/Wuse777/llnut-dnf-gm.git
 cd llnut-dnf-gm
-PYTHON_BIN=python3.12 bash tools/build_release.sh "$HOME/dnf-gm-build-v0.4.0"
+PYTHON_BIN=python3.12 bash tools/build_release.sh "$HOME/dnf-gm-build-v0.4.1"
 ```
 
 输出路径必须尚不存在；wheels 必须与服务器 OS／CPU 架构匹配。完成后继续[安装步骤](docs/DEPLOYMENT.md)，不要直接把源码压缩包交给安装器。

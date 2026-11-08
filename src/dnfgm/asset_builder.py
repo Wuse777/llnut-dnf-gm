@@ -48,7 +48,7 @@ def build_assets(pvf,catalog,output,npk_dir=None,portraits=None):
     if portraits:
         config=Path(portraits)
         if config.stat().st_size>262144:raise ValueError('Portrait mapping too large')
-        portrait_rows=json.loads(config.read_text())
+        portrait_rows=json.loads(config.read_text(encoding='utf-8'))
         if not isinstance(portrait_rows,list) or len(portrait_rows)>512:raise ValueError('Invalid portrait mapping')
         seen=set()
         for p in portrait_rows:

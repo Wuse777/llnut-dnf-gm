@@ -18,10 +18,10 @@ DOCS=('README.md','CHANGELOG.md','docs/README.md','docs/DEPLOYMENT.md',
 
 def check():
     errors=[]
-    version=tomllib.loads((ROOT/'pyproject.toml').read_text())['project']['version']
+    version=tomllib.loads((ROOT/'pyproject.toml').read_text(encoding='utf-8'))['project']['version']
     files=[ROOT/p for p in DOCS]+[ROOT/f'docs/releases/v{version}.md']
     for path in files:
-        text=path.read_text()
+        text=path.read_text(encoding='utf-8')
         targets=re.findall(r'\]\(([^\s)]+)(?:\s+"[^"]*")?\)',text)
         targets+=re.findall(r'(?:src|href)="([^"]+)"',text)
         for target in targets:
@@ -31,16 +31,16 @@ def check():
             dest=(path.parent/relative).resolve()
             if not dest.is_relative_to(ROOT) or not dest.exists():
                 errors.append(f'{path.relative_to(ROOT)}: missing or external local path {target}')
-    package=json.loads((ROOT/'web/package.json').read_text())
-    lock=json.loads((ROOT/'web/package-lock.json').read_text())
-    tree=ast.parse((ROOT/'src/dnfgm/__init__.py').read_text())
+    package=json.loads((ROOT/'web/package.json').read_text(encoding='utf-8'))
+    lock=json.loads((ROOT/'web/package-lock.json').read_text(encoding='utf-8'))
+    tree=ast.parse((ROOT/'src/dnfgm/__init__.py').read_text(encoding='utf-8'))
     namespace={target.id:ast.literal_eval(node.value) for node in tree.body
                if isinstance(node,ast.Assign) for target in node.targets
                if isinstance(target,ast.Name) and target.id=='__version__'}
     for label,value in [('python',namespace['__version__']),('web',package['version']),
                         ('lock',lock['version']),('lock-root',lock['packages']['']['version'])]:
         if value!=version:errors.append(f'{label} version mismatch: {value} vs {version}')
-    app=(ROOT/'src/dnfgm/app.py').read_text()
+    app=(ROOT/'src/dnfgm/app.py').read_text(encoding='utf-8')
     if "return {'ok':True,'version':__version__}" not in app:
         errors.append('Readiness must use shared application version')
     for name in ('mail-desktop.jpg','picker-mobile.jpg','character-mobile.jpg'):
