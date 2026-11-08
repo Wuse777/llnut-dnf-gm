@@ -5,6 +5,7 @@ permissions:
 jobs:
   frontend:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -12,10 +13,13 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Validate targeted message bridge
+        run: node --test tests/private_message_bridge.test.cjs
       - run: npm ci && npm test && npm run build
         working-directory: web
   backend:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -23,13 +27,20 @@ jobs:
           python-version: '3.12'
       - name: Validate deployment shell syntax
         run: |
-          for script in deploy/*.sh tools/build_release.sh; do bash -n "$script"; done
+          for script in deploy/*.sh tools/*.sh; do bash -n "$script"; done
+      - name: Validate documentation and version agreement
+        run: python tools/check_documentation.py
+      - name: Cache checksum-pinned laboratory downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/dnfgm-lab/downloads
+          key: dnfgm-lab-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/runtime-sources.json') }}
       - run: python tools/bootstrap_lab.py --runtime "$RUNNER_TEMP/dnfgm-lab"
       - run: |
           "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" tools/local_mysql.py init --runtime "$RUNNER_TEMP/dnfgm-lab"
           "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" tools/local_mysql.py start --runtime "$RUNNER_TEMP/dnfgm-lab"
       - run: |
-          DNF_GM_M0_SOCKET="$RUNNER_TEMP/dnfgm-lab/mysql.sock" PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+          DNF_GM_M0_SOCKET="$RUNNER_TEMP/dnfgm-lab/mysql.sock" PYTHONPATH=src PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
             "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" -m pytest -q
       - if: always()
         run: '"$RUNNER_TEMP/dnfgm-lab/venv/bin/python" tools/local_mysql.py stop --runtime "$RUNNER_TEMP/dnfgm-lab"'
