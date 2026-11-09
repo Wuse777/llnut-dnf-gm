@@ -32,7 +32,7 @@ jobs:
         working-directory: web
   backend:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -61,7 +61,7 @@ jobs:
       - run: |
           mkdir -p outputs
           DNF_GM_M0_SOCKET="$RUNNER_TEMP/dnfgm-lab/mysql.sock" PYTHONPATH=src PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-            "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" -m pytest -q --junitxml=outputs/backend-junit.xml
+            "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" -m pytest -vv -o faulthandler_timeout=60 --maxfail=1 --junitxml=outputs/backend-junit.xml tests/app/test_campaigns.py tests/app/test_character_overview.py tests/app/test_game_backup_mysql.py tests/app/test_rollback_workspace.py tests/app/test_workbench.py tests/app/test_workbench_redesign.py tests/test_campaign_contracts.py tests/test_game_backup.py tests/test_game_backup_requests.py tests/test_game_backup_transport.py tests/test_game_backup_worker.py tests/test_mail_workbench_contracts.py tests/test_rollback_compatibility.py tests/test_workbench_contracts.py
       - name: Preserve integration test evidence
         if: always()
         uses: actions/upload-artifact@v4
