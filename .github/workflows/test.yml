@@ -8,14 +8,27 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '12.10.1'
+          package_json_file: web/package.json
+          run_install: false
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
       - name: Validate targeted message bridge
         run: node --test tests/private_message_bridge.test.cjs
-      - run: npm ci && npm test && npm run build
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+      - run: pnpm lint:check
+        working-directory: web
+      - run: pnpm typecheck
+        working-directory: web
+      - run: pnpm test
+        working-directory: web
+      - run: pnpm build
         working-directory: web
   backend:
     runs-on: ubuntu-24.04
