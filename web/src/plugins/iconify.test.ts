@@ -28,3 +28,9 @@ it('includes both collapsed menu and pin toggle states in a small registry', () 
   expect(Object.keys(icons).length).toBeLessThan(100);
   expect(JSON.stringify(icons).length).toBeLessThan(100_000);
 });
+
+it('falls back for local icon names retained by old tabs instead of referencing removed symbols', () => {
+  const wrapper = mount(SvgIcon, { props: { localIcon: 'expectation' } });
+  expect(wrapper.find('use').element.getAttribute('xlink:href')).toBe('#icon-local-no-icon');
+  wrapper.unmount();
+});

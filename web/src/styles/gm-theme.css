@@ -41,38 +41,36 @@ html.dark .gm-workspace,html.dark .modal-overlay,html.dark .feedback-toast {
 .gm-eyebrow{display:block;font-size:11px;letter-spacing:.18em;font-weight:700;color:#7b7fe0;margin-bottom:16px}
 .gm-login {
  --login-accent:#6265e8;--text-primary:#292e51;--text-secondary:#737a96;
- width:100%;min-width:0;min-height:100dvh;padding:clamp(24px,4.5vw,64px);
- display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,440px);
- align-items:center;align-content:center;gap:clamp(32px,6vw,100px);
- color:var(--text-primary);background:radial-gradient(ellipse at 25% 30%,#e7e8ff,transparent 60%),#f5f6fc;
+ width:100%;min-width:0;min-height:100dvh;padding:40px 32px;
+ display:grid;place-items:center;color:var(--text-primary);
+ background:linear-gradient(100deg,#101d3e50,#16284e20 55%,#13234b38),url('../assets/arad-sky-city-v1.webp') center/cover no-repeat;
 }
-.gm-login-story{width:100%;min-width:0;max-width:600px;justify-self:center}
-.gm-login-mark{display:block;width:64px;height:64px;margin-bottom:24px;color:var(--login-accent)}
-.gm-login-story h1{font-size:clamp(32px,3.6vw,54px);font-weight:650;line-height:1.45;letter-spacing:-1px;color:var(--text-primary);margin:0 0 24px;overflow-wrap:anywhere}
-.gm-login-story p{color:var(--text-secondary);line-height:2;font-size:16px}
-.gm-login-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:40px;color:var(--text-secondary);font-size:13px}
-.gm-login-grid span{display:flex;gap:12px;align-items:center;min-width:0}
-.gm-login-grid span:before{content:'';width:6px;height:6px;flex:none;border-radius:2px;background:#a9a7ee}
-.gm-login-form{width:100%;min-width:0;max-width:440px;justify-self:center;padding:0!important;border-radius:20px!important;box-shadow:0 18px 80px #4c4e8c0a}
-.gm-login-form .n-card__content{min-width:0;padding:clamp(24px,3.5vw,40px)!important}
-.gm-login-form h2{font-size:25px;line-height:1.5;margin:0 0 8px;color:var(--text-primary)}
+.gm-login-shell{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,1fr);width:100%;max-width:1000px;min-height:540px;overflow:hidden;border:1px solid #ffffff70;border-radius:24px;box-shadow:0 28px 90px #0b1c4250}
+.gm-login-story{--text-primary:#fff;--text-secondary:#d8e3f3;--login-accent:#efd7a6;display:flex;flex-direction:column;min-width:0;padding:44px;background:linear-gradient(135deg,#11264cef,#1c365bdc)}
+.gm-login-brand{display:flex;align-items:center;gap:14px;color:#fff;font-size:22px;line-height:1.2;letter-spacing:.06em}
+.gm-login-brand strong{color:var(--login-accent)}
+.gm-login-brand small{display:block;margin-top:7px;color:#c2cfdf;font-size:9px;letter-spacing:.18em}
+.gm-login-mark{display:block;flex:none;width:44px;height:44px;color:var(--login-accent)}
+.gm-login-welcome{margin:auto 0;padding:42px 0}
+.gm-login-story .gm-eyebrow{color:var(--login-accent);font-size:10px;margin-bottom:14px}
+.gm-login-story h1{font-size:clamp(28px,2.6vw,36px);font-weight:650;line-height:1.4;letter-spacing:-.03em;color:#fff;margin:0 0 18px;overflow-wrap:anywhere}
+.gm-login-story p{color:var(--text-secondary);line-height:1.9;font-size:15px;margin:0}
+.gm-login-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 14px;padding-top:24px;border-top:1px solid #ffffff21;color:var(--text-secondary);font-size:12px}
+.gm-login-grid span{display:flex;gap:10px;align-items:center;min-width:0}
+.gm-login-grid svg{flex:none;font-size:17px;color:var(--login-accent)}
+.gm-login-form{width:100%;min-width:0;padding:0!important;border-radius:0!important}
+.gm-login-form .n-card-content{display:flex;flex-direction:column;justify-content:center;min-width:0;padding:44px!important}
+.gm-login-form .gm-eyebrow{font-size:10px;margin-bottom:12px}
+.gm-login-form h2{font-size:26px;font-weight:600;line-height:1.5;margin:0 0 8px;color:var(--text-primary)}
 .gm-login .muted{color:var(--text-secondary)}
-.gm-login-description{margin:0 0 24px;line-height:1.6}
-.gm-login-footer{display:block;margin-top:24px;line-height:1.6}
-html.dark .gm-login{--login-accent:#a5a7ff;--text-primary:#e5e7f2;--text-secondary:#a5abc4;background:radial-gradient(ellipse at 25% 30%,#292944,transparent 60%),#181b29}
+.gm-login-description{margin:0 0 28px;font-size:13px;line-height:1.6}
+.gm-login-footer{display:block;margin-top:28px;font-size:11px;line-height:1.6}
+.gm-login-mobile-brand{display:none}
+html.dark .gm-login{--login-accent:#a5a7ff;--text-primary:#e5e7f2;--text-secondary:#a5abc4;background:linear-gradient(100deg,#10152c88,#10152c35 55%,#10152c80),url('../assets/arad-sky-city-v1.webp') center/cover no-repeat}
 html.dark .gm-login .gm-eyebrow{color:var(--login-accent)}
-/* Original generated scene, encoded as WebP; form surfaces stay opaque. */
-.gm-login{background:linear-gradient(90deg,#101d3e75 0%,#13234b24 51%,#eef0f678 100%),url('../assets/arad-sky-city-v1.webp') center/cover no-repeat}
-.gm-login-story{--text-primary:#fff;--text-secondary:#e1e8f6;--login-accent:#efdcac;align-self:end;margin-bottom:clamp(12px,7vh,72px);padding:28px;border:1px solid #ffffff26;border-radius:18px;background:linear-gradient(120deg,#101d3edb,#172956b8);box-shadow:0 12px 48px #0a163b26}
-.gm-login-story .gm-eyebrow{color:#ead9b2}
-.gm-login-story h1{font-size:clamp(30px,3.2vw,46px);margin-bottom:16px}
-.gm-login-story .gm-login-mark{width:48px;height:48px;margin-bottom:18px}
-.gm-login-grid{margin-top:24px;color:#e1e8f6}
-.gm-login-grid span:before{background:#e3c791}
-.gm-login-form{box-shadow:0 20px 80px #101d3e30;border:1px solid #ffffffa0}
-html.dark .gm-login{background:linear-gradient(90deg,#10152c96,#10152c45 50%,#10152c90),url('../assets/arad-sky-city-v1.webp') center/cover no-repeat}
-@media(max-width:960px){.gm-login{grid-template-columns:minmax(0,1fr);padding:clamp(20px,5vw,40px);gap:0}.gm-login-story{display:none}}
-@media(max-width:600px){.gm-login,html.dark .gm-login{background-image:linear-gradient(#14234038,#14234068),url('../assets/arad-sky-city-mobile-v1.webp');background-position:43% center}}
+html.dark .gm-login-story .gm-eyebrow{color:#efd7a6}
+@media(max-width:860px){.gm-login{padding:32px 20px}.gm-login-shell{max-width:440px;min-height:0;grid-template-columns:minmax(0,1fr);border-radius:20px}.gm-login-story{display:none}.gm-login-form .n-card-content{padding:36px!important}.gm-login-mobile-brand{display:flex;align-items:center;gap:10px;margin-bottom:30px;font-size:19px;font-weight:600}.gm-login-mobile-brand svg{width:30px;height:30px;color:var(--login-accent)}.gm-login-mobile-brand strong{color:var(--login-accent)}}
+@media(max-width:600px){.gm-login,html.dark .gm-login{background-image:linear-gradient(#14234038,#14234068),url('../assets/arad-sky-city-mobile-v1.webp');background-position:43% center}.gm-login-form .n-card-content{padding:30px 26px!important}}
 body:has(.modal-overlay){overflow:hidden}
 @media(max-width:640px){.gm-page{padding:14px!important}.gm-workspace .panel{padding:17px}.gm-workspace .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 

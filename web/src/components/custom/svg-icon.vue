@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, useAttrs } from 'vue';
 import { Icon } from '@iconify/vue/offline';
+import { LOCAL_SPRITE_ICONS } from '@/utils/icon';
 
 defineOptions({ name: 'SvgIcon', inheritAttrs: false });
 
@@ -31,7 +32,7 @@ const symbolId = computed(() => {
 
   const defaultLocalIcon = 'no-icon';
 
-  const icon = props.localIcon || defaultLocalIcon;
+  const icon = props.localIcon && LOCAL_SPRITE_ICONS.includes(props.localIcon) ? props.localIcon : defaultLocalIcon;
 
   return `#${prefix}-${icon}`;
 });

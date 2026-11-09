@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref,computed,watch,onUnmounted,nextTick} from 'vue'
+import {ref,computed,watch,onMounted,onUnmounted,nextTick} from 'vue'
 import {api,uncertainMessage} from '../api'
 import Modal from './Modal.vue'
 import {onBeforeRouteLeave,onBeforeRouteUpdate} from 'vue-router'
@@ -53,6 +53,29 @@ const portraitAttribution=computed(()=>{
  const match=({base:'基础职业示意',profession:'同转职示意（觉醒未匹配）',growth:'精确转职映射'} as Record<string,string>)[image.match_level]||'映射范围待核验'
  return source+' · '+match+' · 非角色实际外观'
 })
+const basicPreviewExpanded=ref(typeof window.matchMedia!=='function'||!window.matchMedia('(max-width: 768px)').matches)
+let basicPreviewMedia:MediaQueryList|null=null
+function syncBasicPreview(){if(basicPreviewMedia)basicPreviewExpanded.value=!basicPreviewMedia.matches}
+onMounted(()=>{
+ if(typeof window.matchMedia!=='function')return
+ basicPreviewMedia=window.matchMedia('(max-width: 768px)')
+ basicPreviewMedia.addEventListener('change',syncBasicPreview)
+})
+onUnmounted(()=>basicPreviewMedia?.removeEventListener('change',syncBasicPreview))
+const failedBasicImages=ref<string[]>([])
+const basicPreview=computed(()=>{
+ const usable=(image:any,source?:string)=>image?.state==='ready'&&(!source||image.source_kind===source)&&
+  /^\/dnf-gm\/api\/v1\/assets\/[a-f0-9]{64}\/[a-f0-9]{64}\.png$/.test(image.url??'')&&!failedBasicImages.value.includes(image.url)
+ const outfit=data.value?.outfit_preview
+ if(usable(outfit,'saved_avatar_outfit')&&outfit.pose==='waiting_first_frame')return {image:outfit,kind:'outfit',label:'服装存档首帧',note:'服装存档 · 非实时外观；不含武器、染色或变身效果。'}
+ const pose=data.value?.job_preview
+ if(usable(pose,'client_default_pose'))return {image:pose,kind:'default',label:'基础职业默认站姿',note:'客户端职业首帧 · 默认示意；不代表当前穿戴、转职或觉醒形态。'}
+ const portrait=data.value?.portrait
+ if(usable(portrait))return {image:portrait,kind:'portrait',label:'职业插画示意',note:portraitAttribution.value}
+ return null
+})
+watch(()=>[props.characNo,data.value?.outfit_preview?.url,data.value?.job_preview?.url,data.value?.portrait?.url],()=>{failedBasicImages.value=[]})
+function failBasicPreview(){if(basicPreview.value)failedBasicImages.value=[...failedBasicImages.value,basicPreview.value.image.url]}
 let generation=0
 const tabGroups=[
  {label:'角色资料',tabs:[['basic','基本信息'],['attributes','属性存档'],['appearance','角色外观']]},
@@ -128,8 +151,25 @@ onBeforeRouteUpdate(()=>!props.embedded||!navigationLocked.value)
      <CharacterActivity v-if="section==='activity'" :charac-no="characNo" :busy="navigationLocked" @inspect="inspect" @expired="emit('expired')"/>
      <AppearanceWorkspace v-if="section==='appearance'" :detail="data"/>
      <template v-if="section==='basic'">
+      <div class="character-basic-layout">
+       <details class="character-basic-visual" :open="basicPreviewExpanded" @toggle="basicPreviewExpanded=($event.target as HTMLDetailsElement).open">
+        <summary><span>人物预览</span><small>{{basicPreview?.label||'素材暂不可用'}}</small></summary>
+        <div v-if="basicPreviewExpanded" class="character-basic-visual-body">
+         <figure class="character-basic-figure">
+          <div class="character-basic-stage" :class="{'is-portrait':basicPreview?.kind==='portrait'}">
+           <img v-if="basicPreview" :src="basicPreview.image.url" :alt="basicPreview.label" loading="lazy" decoding="async" @error="failBasicPreview">
+           <div v-else class="character-basic-placeholder"><svg viewBox="0 0 120 200" fill="none" aria-hidden="true"><circle cx="60" cy="29" r="18"/><path d="M39 59L22 113L36 120L47 91L43 139L35 188H52L60 145L68 188H85L77 139L73 91L84 120L98 113L81 59Z"/></svg><span>暂无可用人物图片</span></div>
+          </div>
+          <figcaption><span class="status-badge">{{basicPreview?.label||'缺少预览素材'}}</span><strong>{{data.profession.name}}</strong><p>{{basicPreview?.note||'未返回可用服装首帧、默认站姿或职业插画，文字资料仍可查看。'}}</p><p v-if="basicPreview?.image.note" class="character-basic-image-note">{{basicPreview.image.note}}</p><a v-if="basicPreview?.kind==='portrait'&&data.portrait.source_page" :href="data.portrait.source_page" target="_blank" rel="noopener noreferrer">素材出处 ↗</a></figcaption>
+         </figure>
+         <div class="character-basic-preview-actions"><button type="button" :disabled="navigationLocked" @click="tab('appearance')">查看外观详情</button><button type="button" :disabled="navigationLocked" @click="tab('equipment')">穿戴装备</button></div>
+        </div>
+       </details>
+       <div class="character-basic-data">
       <div class="character-metrics"><article><span>角色携带金币</span><strong>{{number(data.wealth.gold)}}</strong><small>{{data.wealth.state==='ok'?'不含仓库金币、点券或代币券':'金币存档缺失，不能视为0'}}</small></article><article><span>等级</span><strong>{{data.character.lev}}</strong><small>角色存档等级</small></article><article><span>复活币 coin 原始值</span><strong>{{number(data.wealth.revival_coin_raw)}}</strong><small>非多种复活币合计</small></article></div>
       <dl class="character-facts"><div><dt>角色名 / 编号</dt><dd>{{data.character.charac_name}} / #{{data.character.charac_no}}</dd></div><div><dt>所属账号</dt><dd>{{data.account?.accountname??'缺失'}} / UID {{data.character.uid}}</dd></div><div><dt>职业 / 转职</dt><dd>{{data.profession.base_name}} / {{data.profession.name}}<small>job={{data.character.job}}，grow_type={{data.character.grow_type}}；{{data.profession.note}}</small></dd></div><div><dt>账号登录状态 / 频道</dt><dd>{{data.account_online?.login_status===1?'在线':data.account_online?.login_status===0?'离线':'未知'}} / {{data.account_online?.channel??'未知'}}</dd></div><div><dt>经验存档</dt><dd>{{number(data.play_state?.exp??data.character.exp)}}<small>{{data.play_state?'来源：charac_stat':'来源：charac_info（无独立状态记录）'}}</small></dd></div><div><dt>疲劳存档 / 上限</dt><dd>{{number(data.play_state?.fatigue??data.character.fatigue)}} / {{number(data.character.max_fatigue)}}<small>不据此推算客户端剩余疲劳</small></dd></div><div><dt>已用疲劳存档</dt><dd>{{number(data.play_state?.used_fatigue)}}</dd></div><div><dt>公会编号</dt><dd>{{data.character.guild_id||'无公会'}}</dd></div><div><dt>创建时间</dt><dd>{{date(data.character.create_time)}}</dd></div><div><dt>最近游戏存档时间</dt><dd>{{date(data.play_state?.last_play_time??data.character.last_play_time)}}</dd></div></dl>
+       </div>
+      </div>
      </template>
      <template v-else-if="section==='attributes'">
       <p class="field-hint">下列是数据库字段原始存档值，不是游戏内最终面板。速度未擅自换算为百分比；力量、智力、体力、精神及元素抗性等未确认字段映射，暂不猜测显示。</p>
@@ -179,6 +219,35 @@ onBeforeRouteUpdate(()=>!props.embedded||!navigationLocked.value)
 </template>
 
 <style scoped>
+.character-basic-layout{display:grid;grid-template-columns:240px minmax(0,1fr);align-items:start;gap:24px;min-width:0}
+.character-basic-visual{min-width:0;margin:0;padding:0;border:1px solid var(--border-color);border-radius:14px;background:var(--bg-primary);overflow:hidden}
+.character-basic-visual>summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;list-style:none;margin:0;padding:14px 16px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text-primary)}
+.character-basic-visual>summary::-webkit-details-marker{display:none}
+.character-basic-visual>summary small{grid-column:1;font-size:11px;font-weight:400;overflow-wrap:anywhere;color:var(--text-secondary)}
+.character-basic-visual>summary:after{content:'＋';grid-column:2;grid-row:1/3;align-self:center;color:var(--text-secondary);font-size:18px;font-weight:400}
+.character-basic-visual[open]>summary{border-bottom:1px solid var(--border-color)}
+.character-basic-visual[open]>summary:after{content:'−'}
+.character-basic-visual>summary:focus-visible{outline:2px solid var(--primary-color);outline-offset:-3px}
+.character-basic-visual-body{padding:14px}
+.character-basic-figure{min-width:0;margin:0;text-align:center}
+.character-basic-stage{height:240px;display:flex;align-items:center;justify-content:center;overflow:hidden;border-radius:10px;background:radial-gradient(ellipse at 50% 70%,var(--bg-tertiary),var(--bg-secondary) 75%)}
+.character-basic-stage>img{width:100%;height:100%;object-fit:contain;image-rendering:pixelated}
+.character-basic-stage.is-portrait>img{object-fit:cover;object-position:center 22%;image-rendering:auto}
+.character-basic-placeholder{display:flex;flex-direction:column;align-items:center;gap:12px;font-size:12px;color:var(--text-secondary)}
+.character-basic-placeholder svg{width:96px;height:160px;stroke:var(--border-primary);stroke-width:1.5;fill:var(--bg-primary)}
+.character-basic-figure figcaption{padding-top:14px;overflow-wrap:anywhere}
+.character-basic-figure figcaption>strong{display:block;margin-top:10px;font-size:15px}
+.character-basic-figure figcaption>p{margin:8px 0 0;font-size:11px;line-height:1.7;color:var(--text-secondary)}
+.character-basic-figure figcaption>a{display:inline-block;margin-top:8px;font-size:11px}
+.character-basic-preview-actions{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:8px;margin-top:16px}
+.character-basic-preview-actions>button{min-width:0;padding:8px 5px;font-size:11px}
+.character-basic-data{min-width:0}
+.character-basic-data .character-metrics{margin:0 0 16px;gap:10px}
+.character-basic-data .character-metrics article{min-width:0;padding:14px}
+.character-basic-data .character-metrics strong{font-size:24px;overflow-wrap:anywhere}
+.character-basic-data .character-facts{gap:0 20px}
+@media(max-width:1000px){.character-basic-layout{grid-template-columns:220px minmax(0,1fr);gap:18px}.character-basic-data .character-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.character-basic-data .character-metrics article:first-child{grid-column:1/-1}}
+@media(max-width:768px){.character-basic-layout{grid-template-columns:minmax(0,1fr);gap:16px}.character-basic-visual>summary{grid-template-columns:minmax(0,1fr) auto;padding:11px 14px}.character-basic-visual>summary small{font-size:10px}.character-basic-stage{height:220px;max-width:250px;margin-inline:auto}.character-basic-visual-body{padding:12px}.character-basic-figure figcaption{padding-top:10px}.character-basic-preview-actions{max-width:300px;margin:12px auto 0}.character-basic-data .character-metrics{gap:8px;margin-bottom:12px}.character-basic-data .character-metrics article{padding:12px;gap:5px}.character-basic-data .character-metrics strong{font-size:22px}}
 .character-identity-main{flex:1;min-width:0}.character-status{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px;flex:0 1 auto}
 .portrait-attribution{display:block;font-size:10px;color:var(--text-secondary);margin-top:5px}
 .sticky-character-identity{position:sticky;top:-1px;z-index:3;background:var(--bg-primary);padding:12px;border-bottom:1px solid var(--border-color);box-shadow:0 6px 12px #00000008}
