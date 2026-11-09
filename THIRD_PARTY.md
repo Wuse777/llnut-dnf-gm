@@ -8,6 +8,12 @@
 - MIT，Copyright (c) 2021 Soybean；原始声明见 [web/SOYBEAN-LICENSE](web/SOYBEAN-LICENSE)，构建产物保留同一声明。
 - 基础职业插画、物品图标和动作素材继续由部署者私下提供，不属于该模板或本项目的 MIT 授权范围。
 
+## css-render CSP 适配
+
+- 固定 `css-render@0.15.14`（`07akioni/css-render`，包声明 MIT），由 Naive UI 与 vueuc 使用。
+- `web/patches/css-render@0.15.14.patch` 仅为该包创建的样式节点传递服务端文档 nonce；补丁哈希锁定于 pnpm 锁文件，不改变样式内容或全局 DOM API。
+- 对 SoybeanAdmin 的全局主题样式采用同一文档 nonce，保留严格脚本策略。此适配不代表修改上游模板版本。
+
 ## CPAMC 视觉设计与主题变量
 
 - 项目：Router-For.ME / Cli-Proxy-API-Management-Center。

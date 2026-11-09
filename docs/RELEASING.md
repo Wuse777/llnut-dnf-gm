@@ -25,7 +25,7 @@
 也可在干净的标签检出环境设置GitHub CLI的`GH_TOKEN`及`GITHUB_REPOSITORY`，执行：
 
 ```bash
-bash tools/publish_github_release.sh v0.6.1
+bash tools/publish_github_release.sh v0.6.2
 ```
 
 Token仅需要目标仓库Release写权限；不写入源码或配置。脚本拒绝修改已有Release，避免覆盖下载物。若上传中断留下草稿，先在GitHub检查已上传附件与哈希，由维护者完成或删除该草稿后再明确重试；不能盲目自动覆盖。

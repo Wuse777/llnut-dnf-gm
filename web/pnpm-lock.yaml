@@ -172,6 +172,9 @@ overrides:
   vite: npm:@voidzero-dev/vite-plus-core@1.1.0
   typescript: npm:typescript-native-bridge@6.0.3-bridge.18.tsgo.7.0.2
 
+patchedDependencies:
+  css-render@0.15.14: ab51ee222569d65200743cc67cfdeddc9eab222f0a05690d72ce403ef40b5439
+
 importers:
 
   .:
@@ -5256,9 +5259,9 @@ snapshots:
       hashery: 1.5.1
       keyv: 5.6.0
 
-  '@css-render/plugin-bem@0.15.14(css-render@0.15.14)':
+  '@css-render/plugin-bem@0.15.14(css-render@0.15.14(patch_hash=ab51ee222569d65200743cc67cfdeddc9eab222f0a05690d72ce403ef40b5439))':
     dependencies:
-      css-render: 0.15.14
+      css-render: 0.15.14(patch_hash=ab51ee222569d65200743cc67cfdeddc9eab222f0a05690d72ce403ef40b5439)
 
   '@css-render/vue3-ssr@0.15.14(vue@3.5.43(typescript-native-bridge@6.0.3-bridge.18.tsgo.7.0.2))':
     dependencies:
@@ -7008,7 +7011,7 @@ snapshots:
 
   crypto-js@4.2.0: {}
 
-  css-render@0.15.14:
+  css-render@0.15.14(patch_hash=ab51ee222569d65200743cc67cfdeddc9eab222f0a05690d72ce403ef40b5439):
     dependencies:
       '@emotion/hash': 0.8.0
       csstype: 3.0.11
@@ -8273,12 +8276,12 @@ snapshots:
 
   naive-ui@2.45.3(vue@3.5.43(typescript-native-bridge@6.0.3-bridge.18.tsgo.7.0.2)):
     dependencies:
-      '@css-render/plugin-bem': 0.15.14(css-render@0.15.14)
+      '@css-render/plugin-bem': 0.15.14(css-render@0.15.14(patch_hash=ab51ee222569d65200743cc67cfdeddc9eab222f0a05690d72ce403ef40b5439))
       '@css-render/vue3-ssr': 0.15.14(vue@3.5.43(typescript-native-bridge@6.0.3-bridge.18.tsgo.7.0.2))
       '@types/lodash': 4.17.25
       '@types/lodash-es': 4.17.12
       async-validator: 4.2.5
-      css-render: 0.15.14
+      css-render: 0.15.14(patch_hash=ab51ee222569d65200743cc67cfdeddc9eab222f0a05690d72ce403ef40b5439)
       csstype: 3.2.3
       date-fns: 4.4.0
       date-fns-tz: 3.2.0(date-fns@4.4.0)
@@ -9749,7 +9752,7 @@ snapshots:
     dependencies:
       '@css-render/vue3-ssr': 0.15.14(vue@3.5.43(typescript-native-bridge@6.0.3-bridge.18.tsgo.7.0.2))
       '@juggle/resize-observer': 3.4.0
-      css-render: 0.15.14
+      css-render: 0.15.14(patch_hash=ab51ee222569d65200743cc67cfdeddc9eab222f0a05690d72ce403ef40b5439)
       evtd: 0.2.4
       seemly: 0.3.10
       vdirs: 0.1.8(vue@3.5.43(typescript-native-bridge@6.0.3-bridge.18.tsgo.7.0.2))

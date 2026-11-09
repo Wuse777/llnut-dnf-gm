@@ -1,6 +1,6 @@
 # 安装、升级与回滚
 
-[项目首页](../README.md) · [文档中心](README.md) · [开发指南](DEVELOPMENT.md) · [发布说明](releases/v0.6.1.md)
+[项目首页](../README.md) · [文档中心](README.md) · [开发指南](DEVELOPMENT.md) · [发布说明](releases/v0.6.2.md)
 
 适用：**已有 llnut/dnf 清风 1031 + MySQL 5.7 的 Linux 服务器**。GM 以 systemd 服务运行在宿主机，通过私有 Docker 网络连接已有游戏数据库；不是另一套游戏服务端，也没有“通用 Docker 一键安装”承诺。
 
@@ -34,22 +34,22 @@
 ## 1. 在维护电脑构建
 
 ```bash
-git clone --branch v0.6.1 --depth 1 https://github.com/Wuse777/llnut-dnf-gm.git
+git clone --branch v0.6.2 --depth 1 https://github.com/Wuse777/llnut-dnf-gm.git
 cd llnut-dnf-gm
 # 输出目录必须是新的绝对路径；默认只做类型检查／构建，不跑全量测试。
-PYTHON_BIN=python3.12 bash tools/build_release.sh "$HOME/dnf-gm-build-v0.6.1"
+PYTHON_BIN=python3.12 bash tools/build_release.sh "$HOME/dnf-gm-build-v0.6.2"
 ```
 
 完整本机构建目录包含 `src/`、`deploy/`、`migrations/`、`web/dist/`、锁定 wheels、源码版本、构建记录和 `SHA256SUMS`。不包含生产配置、物品库或游戏素材。将整个目录交付服务器，例如：
 
 ```bash
 # 替换实际 SSH 地址；远端使用新目录，不能覆盖 current 指向的版本。
-ssh YOUR_SSH_USER@YOUR_SERVER 'sudo mkdir -p /opt/dnf-gm/releases/v0.6.1'
+ssh YOUR_SSH_USER@YOUR_SERVER 'sudo mkdir -p /opt/dnf-gm/releases/v0.6.2'
 # 上传到维护账号可写目录，再由维护者移入上面的 root 发布目录。
-scp -r "$HOME/dnf-gm-build-v0.6.1" YOUR_SSH_USER@YOUR_SERVER:~/
+scp -r "$HOME/dnf-gm-build-v0.6.2" YOUR_SSH_USER@YOUR_SERVER:~/
 # 以下在服务器 root 会话中执行，按实际上传目录替换。
-cp -a /home/YOUR_SSH_USER/dnf-gm-build-v0.6.1/. /opt/dnf-gm/releases/v0.6.1/
-cd /opt/dnf-gm/releases/v0.6.1
+cp -a /home/YOUR_SSH_USER/dnf-gm-build-v0.6.2/. /opt/dnf-gm/releases/v0.6.2/
+cd /opt/dnf-gm/releases/v0.6.2
 sha256sum --check --strict SHA256SUMS
 ```
 
@@ -59,8 +59,8 @@ sha256sum --check --strict SHA256SUMS
 
 | 文件 | 内容 | 能否直接 `install.sh` |
 | --- | --- | --- |
-| `llnut-dnf-gm-0.6.1-source.tar.gz` | 对应标签的 Git 源码与文档 | 否，先本机构建 |
-| `llnut-dnf-gm-0.6.1-web.tar.gz` | `web/dist/` 静态前端与 `SOURCE_REVISION` | 否，仅供同版后端配套使用 |
+| `llnut-dnf-gm-0.6.2-source.tar.gz` | 对应标签的 Git 源码与文档 | 否，先本机构建 |
+| `llnut-dnf-gm-0.6.2-web.tar.gz` | `web/dist/` 静态前端与 `SOURCE_REVISION` | 否，仅供同版后端配套使用 |
 | `SHA256SUMS` | 上述附件 SHA-256 | 用于 `sha256sum -c SHA256SUMS` |
 
 预构建网页不是单独可连接数据库的管理面板；不要与旧后端混用。GitHub 自动生成的 Source code 压缩包也不是含 wheels 的安装目录。
@@ -72,7 +72,7 @@ sha256sum --check --strict SHA256SUMS
 ### 2.1 初始化环境和私有配置
 
 ```bash
-RELEASE=/opt/dnf-gm/releases/v0.6.1
+RELEASE=/opt/dnf-gm/releases/v0.6.2
 python3.12 -m venv /opt/dnf-gm/venv
 /opt/dnf-gm/venv/bin/python -m pip install --no-index \
   --find-links "$RELEASE/wheels" -r "$RELEASE/requirements.lock"
@@ -144,14 +144,14 @@ PYTHONPATH=src .venv/bin/python tools/build_catalog.py \
 
 ## 已有实例升级
 
-> 不重复 provision，不重置管理员，不清空功能策略、审计、快照或幂等记录。先读[版本说明](releases/v0.6.1.md)及[升级检查](UPGRADE-CHECK.md)。
+> 不重复 provision，不重置管理员，不清空功能策略、审计、快照或幂等记录。先读[版本说明](releases/v0.6.2.md)及[升级检查](UPGRADE-CHECK.md)。
 
 1. 保留可恢复的私有管理库备份，以及配置、权限、外部索引／图片版本；确认没有未决维护、批量发放或提交结果待核查的操作。
 2. 新目录构建、传输并核验。**不能把旧发布目录里的过期 `catalog.sqlite` 复制进新包**：安装器会覆盖外部索引；先检查新包无内嵌旧索引。
 3. 确认维护窗口已正常关闭／恢复游戏，再用同版检查器核对维护空闲。停止 GM 工作者，不停止 DNF 容器：
 
 ```bash
-RELEASE=/opt/dnf-gm/releases/v0.6.1
+RELEASE=/opt/dnf-gm/releases/v0.6.2
 /opt/dnf-gm/venv/bin/python "$RELEASE/deploy/check_maintenance_idle.py"
 touch /var/lib/dnf-gm/no-auto-recover
 # 仅对已安装的 GM 单元执行；停定时器以免备份／清理同时启动。

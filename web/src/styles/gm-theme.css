@@ -29,19 +29,41 @@ html.dark .gm-workspace,html.dark .modal-overlay,html.dark .feedback-toast {
 .gm-workspace .section-title{margin-bottom:18px}
 .gm-workspace .panel+.panel,.gm-workspace>.two-col,.gm-workspace>.metrics{margin-top:20px}
 .gm-workspace .workbench-hero{min-height:210px;border:0;box-shadow:none}
-.gm-workspace button{font-weight:500}
 .gm-workspace h1{font-size:26px}.gm-workspace h2{font-size:17px;letter-spacing:0}
-.gm-workspace input,.gm-workspace textarea,.gm-workspace select{background:var(--bg-primary)}
+/* Naive controls own their typography and surfaces, including nested elements. */
+@scope (.gm-workspace) to (.n-button, .n-input, .n-input-number, .n-select, .n-form, .n-form-item, .n-checkbox, .n-radio, .n-switch, .n-slider, .n-date-picker, .n-color-picker, .n-cascader, .n-tree-select, .n-transfer) {
+ button{font-weight:500}
+ input,textarea,select{background:var(--bg-primary)}
+}
 .gm-workspace .pill{border-radius:6px;font-weight:500}
 .gm-workspace .toolbar{margin-bottom:18px}
 .gm-workspace .character-panel{border-radius:14px}
 .gm-eyebrow{display:block;font-size:11px;letter-spacing:.18em;font-weight:700;color:#7b7fe0;margin-bottom:16px}
-.gm-login{min-height:100dvh;padding:56px;display:grid;grid-template-columns:1.25fr 1fr;align-items:center;gap:8vw;background:radial-gradient(ellipse at 25% 30%,#e7e8ff,transparent 60%),#f5f6fc}
-.gm-login-story{max-width:600px;margin:auto}.gm-login-story h1{font-size:clamp(32px,4vw,54px);font-weight:650;line-height:1.45;letter-spacing:-2px;color:#292e51;margin:0 0 24px}
-.gm-login-story p{color:#7d83a0;line-height:2;font-size:16px}.gm-login-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:48px;color:#626984;font-size:13px}.gm-login-grid span{display:flex;gap:12px;align-items:center}.gm-login-grid span:before{content:'';width:6px;height:6px;border-radius:2px;background:#a9a7ee}
-.gm-login-form{max-width:440px;padding:24px!important;border-radius:20px!important;box-shadow:0 18px 80px #4c4e8c0a}.gm-login-form h2{font-size:25px;line-height:1.5;margin-bottom:8px}
+.gm-login {
+ --login-accent:#6265e8;--text-primary:#292e51;--text-secondary:#737a96;
+ width:100%;min-width:0;min-height:100dvh;padding:clamp(24px,4.5vw,64px);
+ display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,440px);
+ align-items:center;align-content:center;gap:clamp(32px,6vw,100px);
+ color:var(--text-primary);background:radial-gradient(ellipse at 25% 30%,#e7e8ff,transparent 60%),#f5f6fc;
+}
+.gm-login-story{width:100%;min-width:0;max-width:600px;justify-self:center}
+.gm-login-mark{display:block;width:64px;height:64px;margin-bottom:24px;color:var(--login-accent)}
+.gm-login-story h1{font-size:clamp(32px,3.6vw,54px);font-weight:650;line-height:1.45;letter-spacing:-1px;color:var(--text-primary);margin:0 0 24px;overflow-wrap:anywhere}
+.gm-login-story p{color:var(--text-secondary);line-height:2;font-size:16px}
+.gm-login-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:40px;color:var(--text-secondary);font-size:13px}
+.gm-login-grid span{display:flex;gap:12px;align-items:center;min-width:0}
+.gm-login-grid span:before{content:'';width:6px;height:6px;flex:none;border-radius:2px;background:#a9a7ee}
+.gm-login-form{width:100%;min-width:0;max-width:440px;justify-self:center;padding:0!important;border-radius:20px!important;box-shadow:0 18px 80px #4c4e8c0a}
+.gm-login-form .n-card__content{min-width:0;padding:clamp(24px,3.5vw,40px)!important}
+.gm-login-form h2{font-size:25px;line-height:1.5;margin:0 0 8px;color:var(--text-primary)}
+.gm-login .muted{color:var(--text-secondary)}
+.gm-login-description{margin:0 0 24px;line-height:1.6}
+.gm-login-footer{display:block;margin-top:24px;line-height:1.6}
+html.dark .gm-login{--login-accent:#a5a7ff;--text-primary:#e5e7f2;--text-secondary:#a5abc4;background:radial-gradient(ellipse at 25% 30%,#292944,transparent 60%),#181b29}
+html.dark .gm-login .gm-eyebrow{color:var(--login-accent)}
+@media(max-width:960px){.gm-login{grid-template-columns:minmax(0,1fr);padding:clamp(20px,5vw,40px);gap:0}.gm-login-story{display:none}}
 body:has(.modal-overlay){overflow:hidden}
-@media(max-width:640px){.gm-page{padding:14px!important}.gm-workspace .panel{padding:17px}.gm-login{display:flex;min-height:100dvh;align-items:center;padding:20px}.gm-login-story{display:none}.gm-login-form{padding:10px!important}.gm-workspace .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.gm-page{padding:14px!important}.gm-workspace .panel{padding:17px}.gm-workspace .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 html[data-gm-density="compact"] .gm-workspace .panel{padding:16px}html[data-gm-density="compact"] .gm-workspace table th,html[data-gm-density="compact"] .gm-workspace table td{padding-block:8px}
 

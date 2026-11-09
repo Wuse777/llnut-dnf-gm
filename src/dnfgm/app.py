@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import time
 from fastapi import Path as PathParameter, FastAPI, Request, Response, HTTPException, Query
-from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from . import __version__
 from .config import load_settings
 from .db import Database, Busy
@@ -42,56 +42,11 @@ from .catalog import snapshot
 from .audit_export import export_audit
 from .report_stream import ReportStream
 from .upgrade_check import UpgradeCheck
+from .browser_policy import Guard, static_response
 
 BASE = '/dnf-gm'
 API = BASE + '/api/v1'
 
-
-class Guard:
-    """Bound body memory; strict origin for unsafe verbs; no CORS middleware."""
-    def __init__(self, app, settings):
-        self.app, self.settings = app, settings
-
-    async def __call__(self, scope, receive, send):
-        if scope['type'] != 'http':
-            return await self.app(scope, receive, send)
-        headers = {k.decode().lower():v.decode() for k,v in scope['headers']}
-        host = headers.get('host','')
-        from urllib.parse import urlsplit
-        allowed_hosts = {urlsplit(o).netloc for o in self.settings.origins}
-        if host not in allowed_hosts:
-            return await JSONResponse({'detail':'非法Host'},400)(scope,receive,send)
-        if scope['method'] not in ('GET','HEAD'):
-            if headers.get('origin') not in self.settings.origins:
-                return await JSONResponse({'detail':'Origin校验失败'},403)(scope,receive,send)
-        chunks, total = [], 0
-        while True:
-            message = await receive()
-            if message['type'] == 'http.disconnect':
-                return
-            body = message.get('body',b'')
-            total += len(body)
-            if total > 65536:
-                return await JSONResponse({'detail':'请求体过大'},413)(scope,receive,send)
-            chunks.append(body)
-            if not message.get('more_body'):
-                break
-        sent = False
-        async def replay():
-            nonlocal sent
-            if not sent:
-                sent = True
-                return {'type':'http.request','body':b''.join(chunks),'more_body':False}
-            return await receive()
-        async def secure_send(message):
-            if message['type'] == 'http.response.start':
-                message.setdefault('headers',[]).extend([
-                    (b'cache-control',b'no-store'),(b'x-content-type-options',b'nosniff'),
-                    (b'x-frame-options',b'DENY'),(b'referrer-policy',b'no-referrer'),
-                    (b'content-security-policy',b"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"),
-                ])
-            await send(message)
-        await self.app(scope, replay, secure_send)
 
 
 def create_app(settings=None, database=None):
@@ -1132,20 +1087,8 @@ def create_app(settings=None, database=None):
         return service.audit(page,uid)
 
     # Static Vue build, no production Node/Vite process.
-    @app.get(BASE+'/{path:path}')
-    def static(path:str):
-        if path.startswith('api/'):
-            raise HTTPException(404,'接口不存在')
-        root=Path(settings.static_dir).resolve() if settings.static_dir else None
-        if not root or not root.is_dir():
-            raise HTTPException(503,'静态产物尚未构建')
-        target=(root/path).resolve()
-        if not target.is_relative_to(root):
-            raise HTTPException(404,'文件不存在')
-        if target.is_file():
-            return FileResponse(target)
-        if path and ('.' in path or path.startswith('assets/')):
-            raise HTTPException(404,'文件不存在')
-        return FileResponse(root/'index.html')
+    @app.api_route(BASE+'/{path:path}',methods=['GET','HEAD'])
+    def static(path:str,request:Request):
+        return static_response(settings.static_dir,path,request.state.style_nonce,head=request.method=='HEAD')
 
     return app

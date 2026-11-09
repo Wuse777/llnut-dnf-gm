@@ -6,6 +6,7 @@ import { toggleHtmlClass } from '@/utils/common';
 import { localStg } from '@/utils/storage';
 import { overrideThemeSettings, themeSettings } from '@/theme/settings';
 import { themeVars } from '@/theme/vars';
+import { applyStyleNonce } from '@/utils/style-nonce';
 
 /** Init theme settings */
 export function initThemeSettings() {
@@ -158,9 +159,10 @@ export function addThemeVarsToGlobal(tokens: App.Theme.BaseToken, darkTokens: Ap
 
   const styleId = 'theme-vars';
 
-  const style = document.querySelector(`#${styleId}`) || document.createElement('style');
+  const style = document.querySelector<HTMLStyleElement>(`#${styleId}`) || document.createElement('style');
 
   style.id = styleId;
+  applyStyleNonce(style);
 
   style.textContent = css + darkCss;
 

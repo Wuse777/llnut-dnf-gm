@@ -18,3 +18,5 @@ linkWorkspacePackages: true
 minimumReleaseAgeExclude:
   - '@iconify/json@2.2.541'
 
+patchedDependencies:
+  css-render@0.15.14: patches/css-render@0.15.14.patch

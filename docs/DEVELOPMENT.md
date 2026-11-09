@@ -20,6 +20,8 @@ pnpm --dir web build
 
 `web/.env` 随源码提供公开的界面和构建默认值，干净检出可直接构建。个人覆盖写入被忽略的 `web/.env.local`；这些 `VITE_` 字段会进入浏览器，不能存放凭据。
 
+生产 CSP 与本地 Vite 不同：入口由 Python 后端按请求注入 style nonce，Naive/css-render 和主题样式携带同一值。`web/patches/css-render@0.15.14.patch` 是固定依赖的受控适配，不要移除补丁或用 `unsafe-inline` 替代。排查布局时同时检查真实响应头；新网页必须与同版后端部署。
+
 ## 独立配置与启动
 
 在 Git 目录外准备权限0600的配置。`deploy/config.example.json` 是占位模板，不能直接登录真实数据库。数据库、管理库、管理员和测试数据须通过隔离环境另行准备。

@@ -1,0 +1,26 @@
+diff --git a/esm/utils.js b/esm/utils.js
+index b1142ebf776dd9a23d8fa5ed5f40ee80e4c92daf..2d5cfaa04cf9ff8a440c9b3801ef51e36efdb3bd 100644
+--- a/esm/utils.js
++++ b/esm/utils.js
+@@ -14,6 +14,8 @@ export function queryElement(id, parent) {
+ }
+ export function createElement(id) {
+     const el = document.createElement('style');
++    const nonce = document.querySelector('meta[property="csp-nonce"]')?.nonce;
++    if (nonce && /^[A-Za-z0-9_-]{43}$/.test(nonce)) el.nonce = nonce;
+     el.setAttribute('cssr-id', id);
+     return el;
+ }
+diff --git a/lib/utils.js b/lib/utils.js
+index 073660c3082d184ff5b4d73eb5b846999a466fbd..e7b022013f6f36f6921e02a727522194d889b536 100644
+--- a/lib/utils.js
++++ b/lib/utils.js
+@@ -19,6 +19,8 @@ function queryElement(id, parent) {
+ exports.queryElement = queryElement;
+ function createElement(id) {
+     const el = document.createElement('style');
++    const nonce = document.querySelector('meta[property="csp-nonce"]')?.nonce;
++    if (nonce && /^[A-Za-z0-9_-]{43}$/.test(nonce)) el.nonce = nonce;
+     el.setAttribute('cssr-id', id);
+     return el;
+ }

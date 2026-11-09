@@ -12,6 +12,7 @@
     "Retain AdminLayout, PageTab, Pinia, Naive UI, UnoCSS, theme, icons, workspace and build pipeline",
     "Generate route types through Elegant Router; explicitly register GM target-aware runtime routes",
     "Replace demo pages with GM domains and light blue-purple theme",
-    "Preserve /dnf-gm/ base and web/dist output"
+    "Preserve /dnf-gm/ base and web/dist output",
+    "Authorize css-render 0.15.14 and theme runtime styles with a per-document server nonce; retain strict CSP and isolate legacy native controls"
   ]
 }

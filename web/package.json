@@ -1,6 +1,6 @@
 {
   "name": "dnf-gm-web",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "DNF GM player and operations workbench based on SoybeanAdmin",
   "keywords": [
     "dnf",

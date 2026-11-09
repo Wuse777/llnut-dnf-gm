@@ -1,4 +1,4 @@
-@scope (.gm-workspace, .modal-overlay, .feedback-toast) {
+@scope (.gm-workspace, .modal-overlay, .feedback-toast) to (.n-button, .n-input, .n-input-number, .n-select, .n-form, .n-form-item, .n-checkbox, .n-radio, .n-switch, .n-slider, .n-date-picker, .n-color-picker, .n-cascader, .n-tree-select, .n-transfer) {
 /* CPAMC v1.26.5 theme variables, font stack, 216/60px sidebar and control
    geometry. Layout implementation is specific to this Vue GM workbench. */
 :root{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,'Fira Sans','Droid Sans','Helvetica Neue',sans-serif;font-size:14px;line-height:1.5;color:var(--text-primary);background:var(--bg-secondary);font-synthesis:none;--sidebar-width:216px;--sidebar-collapsed:60px;--motion-fast:150ms;--motion-normal:300ms;--radius-sm:8px;--radius-lg:12px}

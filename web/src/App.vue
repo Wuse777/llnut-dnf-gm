@@ -23,7 +23,7 @@ watch(() => workspace.logged, (logged, previous) => {
 const naiveDarkTheme = computed(() => themeStore.darkMode ? darkTheme : undefined);
 </script>
 <template>
- <NConfigProvider :theme="naiveDarkTheme" :theme-overrides="themeStore.naiveTheme" :locale="naiveLocales[appStore.locale]" :date-locale="naiveDateLocales[appStore.locale]" class="h-full">
+ <NConfigProvider :theme="naiveDarkTheme" :theme-overrides="themeStore.naiveTheme" :locale="naiveLocales[appStore.locale]" :date-locale="naiveDateLocales[appStore.locale]" inline-theme-disabled class="h-full">
   <AppProvider><RouterView class="bg-layout" /><GmOverlays /></AppProvider>
  </NConfigProvider>
 </template>
