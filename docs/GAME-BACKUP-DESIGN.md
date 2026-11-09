@@ -1,6 +1,6 @@
 # 游戏存档恢复点、加密副本与隔离演练
 
-2026-11-09：本轮已在源码接通完整游戏业务库恢复点、固定异地加密传输协议、同版本隔离恢复演练和网页请求接口。**尚未安装到生产，也未在本机运行真实 MySQL 测试**：维护电脑没有 Linux/WSL 发行版或 Docker。代码完成、完整备份、异地接收和恢复通过是四种不同事实；未取得对应收据时不能标为已验证。
+2026-11-09：本轮已在源码接通完整游戏业务库恢复点、固定异地加密传输协议、同版本隔离恢复演练和网页请求接口，并在独立Linux CI中完成真实MySQL5.7.44／POSIX／age验证。**尚未安装到生产**；当前Windows维护电脑没有Linux/WSL发行版或Docker，实库证据来自隔离CI。代码完成、完整备份、异地接收和恢复通过是四种不同事实；未取得对应收据时不能标为已验证。
 
 2026-11-06的只读适配观察为 MySQL 5.7.44-log、18个业务库、620表（432张 InnoDB、188张 MyISAM），表及索引估计约102MiB。它只是当时的结构证据。执行时重新核对完整库表清单，不能把这个历史数字当作当前实例保证。
 
@@ -109,4 +109,6 @@ API前缀 `/dnf-gm/api/v1`：`GET /game-backups`、`GET /game-backups/{run_id}`�
 
 Windows PowerShell7.6.9／Python3.12：`PYTHONPATH=src .runtime/backend-tests/Scripts/python.exe -m pytest -q tests/test_game_backup.py tests/test_game_backup_requests.py tests/test_game_backup_transport.py tests/test_game_backup_worker.py`，27项通过，4项明确跳过（3项真实POSIX接收权限用例和1个真实POSIX维护屏障测试模块）。覆盖备份协议、完整范围拒绝、legacy字节、重复无主键行、异常连接释放、socket watchdog、请求证据分页、错误artifact绑定、固定传输收据、实际子进程超时/输出上限、硬链接发布后的文件身份和DDL库名重写保留默认值/注释。不使用伪造的 `fcntl`；这些纯逻辑结果不能代替Linux屏障和实库验证。
 
-`tests/app/test_game_backup_mysql.py`另备有Linux MySQL5.7实库测试：混合引擎完整恢复、真实写锁阻塞/释放、锁等待watchdog、错误实例/文件/实验室拒绝、受限DDL权限，以及实际 `age`加密→接收文件校验→解密→隔离实库恢复链。设置既有 `DNF_GM_M0_SOCKET`并安装 `age`后运行。该测试用本机不同私有目录测试传输协议，不等于真实异地主机验证。未在当前电脑执行这些实库测试，也未运行生产备份、复制或演练。
+最终送测提交`0b080143b0fbf9034f318933d226fe956d1661ac`的[Linux全仓CI](https://github.com/Wuse777/llnut-dnf-gm/actions/runs/42646356521/job/129260542827)为2324通过、0失败、0跳过、2条弃用警告。Ubuntu24.04／Python3.12.16使用校验摘要固定的MySQL5.7.44归档、Unix socket及真实age工具。`tests/app/test_game_backup_mysql.py`的7项实库测试、5项POSIX worker测试和3项POSIX接收端测试全部执行通过；[JUnit证据](https://github.com/Wuse777/llnut-dnf-gm/actions/runs/42646356521/artifacts/13688302918)已保存。
+
+实库验证覆盖混合引擎完整恢复、真实写锁阻塞/释放、锁等待watchdog、错误实例/文件/实验室拒绝、受限DDL权限，以及实际`age`加密→接收文件校验→解密→隔离实库恢复链。MyISAM fixture还验证百分号默认值、列／表注释与库名样式字符串同时保真。复验时设置既有`DNF_GM_M0_SOCKET`并安装`age`。该测试用同一CI主机不同私有目录测试传输协议，不等于真实异地主机或独立故障域验证。此轮未运行生产备份、复制或演练，生产目标仍需按上文固定配置。
