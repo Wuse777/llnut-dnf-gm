@@ -1,7 +1,12 @@
 import {ref} from 'vue'
 export class ApiError extends Error{constructor(message:string,public status:number,public detail?:unknown){super(message)}}
 export let csrf=''
-export function setCsrf(value:string){csrf=value}
+export type ApiReadInvalidation={reason:'session'|'unauthorized'|'mutation',source?:AbortSignal}
+const readInvalidationListeners=new Set<(event:ApiReadInvalidation)=>void>()
+let apiSessionGeneration=0
+export function onApiReadInvalidation(listener:(event:ApiReadInvalidation)=>void){readInvalidationListeners.add(listener);return()=>{readInvalidationListeners.delete(listener)}}
+export function invalidateApiReads(reason:ApiReadInvalidation['reason']='session',source?:AbortSignal){if(reason!=='mutation')apiSessionGeneration++;for(const listener of readInvalidationListeners)listener({reason,source})}
+export function setCsrf(value:string){if(value!==csrf){csrf=value;invalidateApiReads('session')}}
 export const requests=ref<{method:string,path:string,status:number|string,ms:number}[]>([])
 export function validationMessage(detail:unknown){
  if(typeof detail==='string')return detail
@@ -9,14 +14,24 @@ export function validationMessage(detail:unknown){
  if(Array.isArray(detail))return detail.map(d=>{const field=d.loc?.filter((s:unknown)=>s!=='body').map((s:string)=>names[s]||s).join(' / ')||'参数';return field+'：'+(d.type==='int_type'?'请填写整数':d.type==='string_too_short'?'内容不能为空':d.type==='greater_than_equal'?'数值过小':d.type==='less_than_equal'?'数值过大':'格式或范围不正确')}).join('；')
  return '请求参数不正确'
 }
-export async function api(path:string,method='GET',data?:unknown):Promise<any>{
+export async function api(path:string,method='GET',data?:unknown,options:{signal?:AbortSignal}={}):Promise<any>{
+ method=method.toUpperCase()
+ if(method!=='GET'&&options.signal!==undefined)throw new TypeError('写请求不支持取消；请按原操作编号查询结果。')
  const start=performance.now();let status:number|string='连接失败 / 结果未知'
+ const session=apiSessionGeneration
+ const controller=new AbortController()
+ const cancel=()=>controller.abort(options.signal?.reason)
+ if(options.signal?.aborted)cancel();else options.signal?.addEventListener('abort',cancel,{once:true})
+ const timeout=setTimeout(()=>controller.abort(new DOMException('请求超时','TimeoutError')),10000)
  try{
- const r=await fetch('/dnf-gm/api/v1'+path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...(method==='GET'?{}:{'X-CSRF-Token':csrf})},...(method!=='GET'&&data!==undefined?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(10000)})
+ controller.signal.throwIfAborted()
+ const r=await fetch('/dnf-gm/api/v1'+path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...(method==='GET'?{}:{'X-CSRF-Token':csrf})},...(method!=='GET'&&data!==undefined?{body:JSON.stringify(data)}:{}),signal:controller.signal})
  status=r.status
  const d=await r.json().catch(()=>({detail:'响应格式异常'}))
+ controller.signal.throwIfAborted()
+ if(r.status===401&&session===apiSessionGeneration)invalidateApiReads('unauthorized',options.signal)
  if(!r.ok)throw new ApiError(validationMessage(d.detail),r.status,d.detail)
  return d
- }finally{requests.value=[{method,path,status,ms:Math.round(performance.now()-start)},...requests.value].slice(0,40)}
+ }finally{clearTimeout(timeout);options.signal?.removeEventListener('abort',cancel);if(method!=='GET'&&session===apiSessionGeneration)invalidateApiReads('mutation');requests.value=[{method,path,status,ms:Math.round(performance.now()-start)},...requests.value].slice(0,40)}
 }
 export function uncertainMessage(e:unknown){return e instanceof Error?e.message:'请求失败，写操作请按原编号查询结果，不要重新提交'}

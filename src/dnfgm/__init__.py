@@ -1,2 +1,2 @@
 """Single-owner DNF GM application. Game-write capabilities fail closed."""
-__version__ = '0.6.4'
+__version__ = '0.6.5'

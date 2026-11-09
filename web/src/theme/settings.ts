@@ -18,8 +18,8 @@ export const themeSettings: App.Theme.ThemeSetting = {
     scrollMode: 'content'
   },
   page: {
-    animate: true,
-    animateMode: 'fade-slide'
+    animate: false,
+    animateMode: 'fade'
   },
   header: {
     height: 56,

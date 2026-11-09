@@ -9,6 +9,30 @@ const cleanups:(()=>void)[]=[]
 afterEach(()=>{cleanups.splice(0).forEach(cleanup=>cleanup());sessionStorage.clear();vi.unstubAllGlobals()})
 it('restores exact recipient from direct URL and keeps edits scoped to target draft',async()=>{const {gm,pinia,cleanup}=workspaceFixture();cleanups.push(cleanup);const router=createRouter({history:createMemoryHistory(),routes:[{path:'/rewards/compose',component:RewardComposerView}]});await router.push('/rewards/compose?uid=3&charac_no=30');await router.isReady();const wrapper=mount(RewardComposerView,{global:{plugins:[pinia,router]}});cleanups.push(()=>wrapper.unmount());await flushPromises();expect(gm.account.uid).toBe(3);expect(gm.selectedRole).toBe(30);expect((wrapper.get('#mail-role').element as HTMLSelectElement).value).toBe('30');await wrapper.get('#mail-gold').setValue(7);await router.replace('/rewards/compose?uid=4&charac_no=40');await flushPromises();expect(gm.account.uid).toBe(4);expect((wrapper.get('#mail-gold').element as HTMLInputElement).value).toBe('0');await router.replace('/rewards/compose?uid=3&charac_no=30');await flushPromises();expect((wrapper.get('#mail-gold').element as HTMLInputElement).value).toBe('7')})
 
+it('updates the URL for local recipient and role choices after the target lock releases',async()=>{
+ const {gm,pinia,cleanup}=workspaceFixture();cleanups.push(cleanup)
+ const router=createRouter({history:createMemoryHistory(),routes:[{path:'/rewards/compose',component:RewardComposerView}]})
+ await router.push('/rewards/compose?uid=3&charac_no=30');await router.isReady()
+ const wrapper=mount(RewardComposerView,{global:{plugins:[pinia,router]}});cleanups.push(()=>wrapper.unmount());await flushPromises()
+ gm.mailGold=7;await gm.pickRecipient({uid:4,charac_no:40});await flushPromises()
+ expect(router.currentRoute.value.query).toMatchObject({uid:'4',charac_no:'40'})
+ expect(wrapper.get('#mail-role').element).toBeTruthy();expect(gm.mailGold).toBe(0)
+ gm.selectedRole=0;await flushPromises()
+ expect(router.currentRoute.value.query.charac_no).toBeUndefined();expect(wrapper.find('.recipient-panel').exists()).toBe(true)
+ await gm.pickRecipient({uid:3,charac_no:30});await flushPromises()
+ expect(router.currentRoute.value.query.uid).toBe('3');expect(gm.mailGold).toBe(7)
+})
+
+it('hides the old recipient form when a pending submission prevents a URL target change',async()=>{
+ const {gm,pinia,cleanup}=workspaceFixture();cleanups.push(cleanup)
+ const router=createRouter({history:createMemoryHistory(),routes:[{path:'/rewards/compose',component:RewardComposerView}]})
+ await router.push('/rewards/compose?uid=3&charac_no=30');await router.isReady()
+ const wrapper=mount(RewardComposerView,{global:{plugins:[pinia,router]}});cleanups.push(()=>wrapper.unmount());await flushPromises()
+ gm.pendingId='a'.repeat(32);await router.replace('/rewards/compose?uid=4&charac_no=40');await flushPromises()
+ expect(gm.account.uid).toBe(3);expect(gm.pendingId).toBe('a'.repeat(32))
+ expect(wrapper.find('#mail-gold').exists()).toBe(false);expect(wrapper.get('.selection-guide').text()).toContain('尚未切换')
+})
+
 it('tracks target, preview and original submission status through all four stages',async()=>{
  const {gm,pinia,calls,cleanup}=workspaceFixture();cleanups.push(cleanup)
  const router=createRouter({history:createMemoryHistory(),routes:[{path:'/rewards/compose',component:RewardComposerView}]})
