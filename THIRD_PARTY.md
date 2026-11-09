@@ -8,6 +8,26 @@
 - MIT，Copyright (c) 2021 Soybean；原始声明见 [web/SOYBEAN-LICENSE](web/SOYBEAN-LICENSE)，构建产物保留同一声明。
 - 基础职业插画、物品图标和动作素材继续由部署者私下提供，不属于该模板或本项目的 MIT 授权范围。
 
+## 界面 SVG 图标
+
+- 数据来源固定为 `@iconify/json@2.2.541`，渲染器固定为 `@iconify/vue@5.0.3`（MIT）。下表逐项核对该数据包各集合的 `json/<prefix>.json` 中 `info.author` 和 `info.license`，不将 Iconify 数据包的汇总授权当作所有图标的授权。
+- 动态名称图标由 `web/build/plugins/offline-icons.ts` 在构建时提取源码实际使用的项，交给 Iconify 离线渲染器；模板静态图标由 `unplugin-icons` 预编译。浏览器不请求公共图标 API，不分发整套图标库。各集合原始许可全文随网页产物的 `ui-icon-licenses.txt` 提供。
+- 全屏按钮已改用 Phosphor 的 `arrows-in`／`arrows-out`；搜索按钮使用同组 `magnifying-glass`，替换原模板的 Gridicons 与 Unicons 图标。
+
+| 集合前缀 | 图标集 | 作者／维护者（数据包记录） | 数据包许可标识 | 上游许可出处 |
+| --- | --- | --- | --- | --- |
+| `ph` | Phosphor | Phosphor Icons | MIT | `phosphor-icons/core` 的 `LICENSE` |
+| `ant-design` | Ant Design Icons | HeskeyBaozi | MIT | `ant-design/ant-design-icons` 的 `LICENSE` |
+| `heroicons` | HeroIcons | Refactoring UI Inc | MIT | `tailwindlabs/heroicons` 的 `LICENSE` |
+| `majesticons` | Majesticons | Gerrit Halfmann | MIT | `halfmage/majesticons` 的 `LICENSE` |
+| `octicon` | Octicons | GitHub | MIT | `primer/octicons` 的 `LICENSE` |
+| `lucide` | Lucide | Lucide Contributors | ISC | `lucide-icons/lucide` 的 `LICENSE` |
+| `material-symbols` | Material Symbols | Google | Apache-2.0 | `google/material-design-icons` 的 `LICENSE` |
+| `mdi` | Material Design Icons | Pictogrammers | Apache-2.0 | `Templarian/MaterialDesign` 的 `LICENSE` |
+| `ic` | Google Material Icons | Material Design Authors | Apache-2.0 | `material-icons/material-icons` 的 `LICENSE` |
+
+- Pictogrammers 上游许可另说明部分图标按其各自许可分发；随附文件保留其原始说明与 Apache 许可全文。Lucide 原始许可同时保留其所基于 Feather 图标的 MIT 声明。
+
 ## css-render CSP 适配
 
 - 固定 `css-render@0.15.14`（`07akioni/css-render`，包声明 MIT），由 Naive UI 与 vueuc 使用。

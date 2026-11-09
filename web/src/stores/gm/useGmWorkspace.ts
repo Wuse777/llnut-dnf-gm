@@ -47,12 +47,14 @@ const fieldErrors=ref<FieldErrors>({}),feedbackScope=ref(''),toastDismissed=ref(
 const logged=ref(false),busy=ref(false),error=ref(''),notice=ref(''),tab=ref('overview'),page=ref(1),search=ref('')
 const rows=ref<any[]>([]),overview=ref<any>(null),account=ref<any>(null),roles=ref<any[]>([]),roleResults=ref<any[]>([]),rolePage=ref(1),roleQuery=ref(''),roleMode=ref(false),catalogMeta=ref<any>(null)
 const playerRevision=ref(0),playerPreferenceError=ref('')
+let sessionGeneration=0
 const currentPlayerTarget=computed(()=>account.value?{uid:account.value.uid,charac_no:selectedRole.value||0,
  label:roles.value.find(r=>r.charac_no===selectedRole.value)?.charac_name||account.value.accountname}:null)
 const playerViews=ref<Record<number,{tab:string,page:number}>>({})
 async function visitPlayer(value:{uid:number,charac_no:number}){
- try{await api('/players/visit','POST',value);playerRevision.value++;playerPreferenceError.value=''}
- catch(e){playerPreferenceError.value='目标已打开，但最近访问未保存：'+uncertainMessage(e);if(e instanceof ApiError&&e.status===401)clearSession()}
+ const generation=sessionGeneration
+ try{await api('/players/visit','POST',value);if(generation!==sessionGeneration)return;playerRevision.value++;playerPreferenceError.value=''}
+ catch(e){if(generation!==sessionGeneration)return;playerPreferenceError.value='目标已打开，但最近访问未保存：'+uncertainMessage(e);if(e instanceof ApiError&&e.status===401)clearSession()}
 }
 async function chooseSavedPlayer(value:{uid:number,charac_no:number}){
  if(busy.value||pendingId.value)return
@@ -101,7 +103,7 @@ function localTime(s:string){return s?new Date(s.replace(' ','T')+'Z').toLocaleS
 async function reveal(selector:string){await nextTick();document.querySelector(selector)?.scrollIntoView?.({block:'start'})}
 function openCharacter(id:number){notice.value='';error.value='';toastDismissed.value=true;void router.push({path:'/characters/'+id,query:{section:detailSection.value||'basic'}})}
 function clearTarget(){supportCase.value=null;detailCharacNo.value=0;confirmOpen.value=false;account.value=null;roles.value=[];selectedRole.value=0;preview.value=null;operationResult.value=null}
-function clearSession(){confirmation.release('ordinary');operationOpen.value=false;catalogState.clear();drafts.clear();players.clear();mailPane.value='draft';mailTextOpen.value=false;mailTitle.value='';giftTitle.value='';mailCurrencies.value={};giftCurrencies.value={};giftHistory.value=0;giftGold.value=0;giftMessage.value='GM rewards';giftCategory.value='';detailCharacNo.value=0;policyDialog.value=null;toastDismissed.value=false;fieldErrors.value={};feedbackScope.value='';tableState.clear();playerViews.value={};mailCenterOperation.value='';mailCenterUid.value=0;playerPreferenceError.value='';logged.value=false;setCsrf('');clearTarget();rows.value=[];roleResults.value=[];mailAttachments.value=[];mailGold.value=0;giftAttachments.value=[];templateId.value=null;templateVersion.value=null;giftId.value=0;giftVersion.value=0;giftName.value='';giftEnabled.value=true;lookupId.value='';lookedUp.value=null;password.value='';code.value='';reason.value='';reauthOpen.value=false;notice.value='';requests.value=[];recipientResults.value=[];recipientSearch.value='';giftEditing.value=false;pickerOpen.value=false;reauthOpen.value=false;confirmOpen.value=false;mobileMenu.value=false}
+function clearSession(){sessionGeneration++;confirmation.release('ordinary');operationOpen.value=false;catalogState.clear();drafts.clear();players.clear();mailPane.value='draft';mailTextOpen.value=false;mailTitle.value='';giftTitle.value='';mailCurrencies.value={};giftCurrencies.value={};giftHistory.value=0;giftGold.value=0;giftMessage.value='GM rewards';giftCategory.value='';detailCharacNo.value=0;policyDialog.value=null;toastDismissed.value=false;fieldErrors.value={};feedbackScope.value='';tableState.clear();playerViews.value={};mailCenterOperation.value='';mailCenterUid.value=0;playerPreferenceError.value='';logged.value=false;setCsrf('');clearTarget();rows.value=[];roleResults.value=[];mailAttachments.value=[];mailGold.value=0;giftAttachments.value=[];templateId.value=null;templateVersion.value=null;giftId.value=0;giftVersion.value=0;giftName.value='';giftEnabled.value=true;lookupId.value='';lookedUp.value=null;password.value='';code.value='';reason.value='';reauthOpen.value=false;notice.value='';requests.value=[];recipientResults.value=[];recipientSearch.value='';giftEditing.value=false;pickerOpen.value=false;reauthOpen.value=false;confirmOpen.value=false;mobileMenu.value=false}
 function requestBody(){const mail=action.value==='mail';return {...(supportCase.value&&['currency','mail'].includes(action.value)?{support_case_id:supportCase.value.case_id}:{}),action:mail&&hasMailCurrencies.value?'reward':action.value,...(mail&&hasMailCurrencies.value?{currency_rewards:mailCurrencies.value}:{}),uid:account.value?.uid,charac_no:mail||action.value==='currency'?selectedRole.value||null:null,currency:action.value==='currency'?currency.value:null,delta:action.value==='currency'?delta.value:null,reason:reason.value.trim(),items:mail&&templateId.value===null?mailAttachments.value.map(({id,quantity})=>({id,quantity})):[],gold:mail?mailGold.value:0,message:mail?message.value:'GM rewards',mail_title:mail?mailTitle.value:'',template_id:mail?templateId.value:null,template_version:mail?templateVersion.value:null,...(mail&&templateId.value!==null&&templateAdjusted.value?{template_overrides:{items:mailAttachments.value.map(({id,quantity})=>({id,quantity})),gold:mailGold.value,message:message.value,mail_title:mailTitle.value,currency_rewards:mailCurrencies.value}}:{})}}
 const draft=computed(()=>JSON.stringify(requestBody()))
 watch(draft,()=>{operationResult.value=null;if(preview.value){preview.value=null;confirmOpen.value=false;confirmation.release('ordinary');notice.value='参数已变化，旧预览已失效；请重新生成。原编号仍可查询。'}},{flush:'sync'})
@@ -133,13 +135,24 @@ async function run(fn:()=>Promise<void>,scope?:string){
   else if(e instanceof ApiError&&e.status===403&&e.message.includes('重新认证'))reauthOpen.value=true
  }finally{busy.value=false;if(failed)await focusProblem()}
 }
-async function login(){await run(async()=>{const d=await api('/auth/login','POST',{username:username.value,password:password.value,code:code.value});setCsrf(d.csrf);drafts.clear();await drafts.bindSession(d.csrf);password.value='';code.value='';logged.value=true;tab.value='overview';await load()})}
+async function login(){await run(async()=>{const d=await api('/auth/login','POST',{username:username.value,password:password.value,code:code.value});sessionGeneration++;setCsrf(d.csrf);drafts.clear();await drafts.bindSession(d.csrf);password.value='';code.value='';logged.value=true;tab.value='overview'})}
 async function logout(){await run(async()=>{await api('/auth/logout','POST');clearSession()})}
 async function reauth(){await run(async()=>{await api('/auth/reauth','POST',{username:username.value,password:password.value,code:code.value});password.value='';code.value='';reauthOpen.value=false;notice.value='重新认证成功，有效期5分钟'})}
 let listEpoch=0
+let overviewRequest:Promise<any>|undefined
+let overviewGeneration=-1
 async function load(){
  const current=++listEpoch,activeTab=tab.value
- if(activeTab==='overview'){const result=await api('/overview');if(current===listEpoch&&tab.value===activeTab)overview.value=result;return}
+ if(activeTab==='overview'){
+  // A poll and a route refresh may overlap; share only the in-flight read.
+  const generation=sessionGeneration
+  if(!overviewRequest||overviewGeneration!==generation){
+   overviewGeneration=generation
+   const request=api('/overview').finally(()=>{if(overviewRequest===request)overviewRequest=undefined})
+   overviewRequest=request
+  }
+  const result=await overviewRequest;if(generation===sessionGeneration&&current===listEpoch&&tab.value===activeTab)overview.value=result;return
+ }
  if(tab.value==='accounts'&&roleMode.value){await loadRoles();return}
  const paths:Record<string,string>={accounts:'/accounts',online:'/online',catalog:'/catalog',mail:'/catalog',gifts:'/gift-templates',audit:'/audit'}
  let path=paths[tab.value]
@@ -169,7 +182,7 @@ async function activate(t:string,loadList=true){
 }
 async function go(t:string){const target=GM_ROUTE_PATHS[t]||t;await router.push(target)}
 let targetEpoch=0
-async function setTarget(uid:number,role=0){const epoch=++targetEpoch;const workspace=await players.open(uid,role);if(epoch!==targetEpoch)return;supportCase.value=null;account.value=workspace.account;roles.value=workspace.roles;drafts.activate(uid,role,true);if(['accounts','online'].includes(tab.value)&&action.value==='mail')action.value='currency';preview.value=null;operationResult.value=null;recipientResults.value=[];await visitPlayer({uid,charac_no:role})}
+async function setTarget(uid:number,role=0){const epoch=++targetEpoch;const workspace=await players.open(uid,role);if(epoch!==targetEpoch)return;supportCase.value=null;account.value=workspace.account;roles.value=workspace.roles;drafts.activate(uid,role,true);if(['accounts','online'].includes(tab.value)&&action.value==='mail')action.value='currency';preview.value=null;operationResult.value=null;recipientResults.value=[];void visitPlayer({uid,charac_no:role})}
 
 async function copyMailDraft(data:any){
  if(busy.value||pendingId.value){error.value='当前有未完成的操作，请先查询其结果。';return}
@@ -349,7 +362,32 @@ watch(feedbackValues,(values,previous)=>{
 })
 
 let timer:ReturnType<typeof setInterval>|undefined
-async function initialize(){if(!initializing.value)return;try{totpRequired.value=(await api('/auth/methods')).totp_required;const d=await api('/auth/me');setCsrf(d.csrf);await drafts.bindSession(d.csrf);logged.value=true;await run(load)}catch(e){if(!(e instanceof ApiError&&e.status===401))error.value=uncertainMessage(e)}finally{initializing.value=false}timer=setInterval(()=>{if(logged.value&&!document.hidden&&tab.value==='overview'&&!busy.value)void run(load)},30000)}
+let initialization:Promise<void>|undefined
+let refreshingOverview=false
+async function refreshOverview(){
+ if(!logged.value||document.hidden||tab.value!=='overview'||busy.value||refreshingOverview)return
+ const generation=sessionGeneration
+ refreshingOverview=true
+ try{await load()}catch(e){if(generation!==sessionGeneration)return;if(e instanceof ApiError&&e.status===401)clearSession();else if(tab.value==='overview')error.value=uncertainMessage(e)}
+ finally{refreshingOverview=false}
+}
+function initialize(){
+ if(initialization)return initialization
+ if(!initializing.value)return Promise.resolve()
+ initialization=(async()=>{
+  try{
+   const [methods,session]=await Promise.allSettled([api('/auth/methods'),api('/auth/me')])
+   if(methods.status==='rejected')throw methods.reason
+   totpRequired.value=methods.value.totp_required
+   if(session.status==='rejected')throw session.reason
+   sessionGeneration++;setCsrf(session.value.csrf);await drafts.bindSession(session.value.csrf);logged.value=true
+   // Each route loads its own data. Authentication must not wait for the dashboard.
+  }catch(e){if(!(e instanceof ApiError&&e.status===401))error.value=uncertainMessage(e)}
+  finally{initializing.value=false}
+  timer=setInterval(()=>{void refreshOverview()},30000)
+ })()
+ return initialization
+}
 onScopeDispose(()=>{clearInterval(timer);confirmation.release('ordinary')})
 
 

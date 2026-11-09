@@ -1,10 +1,7 @@
-import { addAPIProvider } from '@iconify/vue';
+import { addIcon } from '@iconify/vue/offline';
+import icons from 'virtual:dnfgm-offline-icons';
 
-/** Setup the iconify offline */
+/** The management UI must work with connect-src 'self' and without public icon APIs. */
 export function setupIconifyOffline() {
-  const { VITE_ICONIFY_URL } = import.meta.env;
-
-  if (VITE_ICONIFY_URL) {
-    addAPIProvider('', { resources: [VITE_ICONIFY_URL] });
-  }
+  for (const [name, data] of Object.entries(icons)) addIcon(name, data);
 }

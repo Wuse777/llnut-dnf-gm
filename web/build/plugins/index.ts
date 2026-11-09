@@ -10,15 +10,17 @@ import { setupDevtoolsPlugin } from './devtools';
 import { setupHtmlPlugin } from './html';
 import { setupUnocss } from './unocss';
 import { setupUnplugin } from './unplugin';
+import { setupOfflineIcons } from './offline-icons';
 
 export function setupVitePlugins(viteEnv: Env.ImportMeta, buildTime: string, options: { test?: boolean } = {}) {
   // Unit tests compile Vue and Naive components without starting application
   // devtools/router generators, SVG injection or declaration-file watchers.
-  if (options.test) return [vue(), vueJsx(), Components({ dts: false, dirs: [], resolvers: [NaiveUiResolver()] })];
+  if (options.test) return [vue(), vueJsx(), setupOfflineIcons(), Components({ dts: false, dirs: [], resolvers: [NaiveUiResolver()] })];
 
   const plugins: PluginOption = [
     vue(),
     vueJsx(),
+    setupOfflineIcons(),
     setupDevtoolsPlugin(viteEnv),
     setupElegantRouter(),
     setupUnocss(viteEnv),

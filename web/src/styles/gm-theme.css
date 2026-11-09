@@ -61,7 +61,18 @@ html.dark .gm-workspace,html.dark .modal-overlay,html.dark .feedback-toast {
 .gm-login-footer{display:block;margin-top:24px;line-height:1.6}
 html.dark .gm-login{--login-accent:#a5a7ff;--text-primary:#e5e7f2;--text-secondary:#a5abc4;background:radial-gradient(ellipse at 25% 30%,#292944,transparent 60%),#181b29}
 html.dark .gm-login .gm-eyebrow{color:var(--login-accent)}
+/* Original generated scene, encoded as WebP; form surfaces stay opaque. */
+.gm-login{background:linear-gradient(90deg,#101d3e75 0%,#13234b24 51%,#eef0f678 100%),url('../assets/arad-sky-city-v1.webp') center/cover no-repeat}
+.gm-login-story{--text-primary:#fff;--text-secondary:#e1e8f6;--login-accent:#efdcac;align-self:end;margin-bottom:clamp(12px,7vh,72px);padding:28px;border:1px solid #ffffff26;border-radius:18px;background:linear-gradient(120deg,#101d3edb,#172956b8);box-shadow:0 12px 48px #0a163b26}
+.gm-login-story .gm-eyebrow{color:#ead9b2}
+.gm-login-story h1{font-size:clamp(30px,3.2vw,46px);margin-bottom:16px}
+.gm-login-story .gm-login-mark{width:48px;height:48px;margin-bottom:18px}
+.gm-login-grid{margin-top:24px;color:#e1e8f6}
+.gm-login-grid span:before{background:#e3c791}
+.gm-login-form{box-shadow:0 20px 80px #101d3e30;border:1px solid #ffffffa0}
+html.dark .gm-login{background:linear-gradient(90deg,#10152c96,#10152c45 50%,#10152c90),url('../assets/arad-sky-city-v1.webp') center/cover no-repeat}
 @media(max-width:960px){.gm-login{grid-template-columns:minmax(0,1fr);padding:clamp(20px,5vw,40px);gap:0}.gm-login-story{display:none}}
+@media(max-width:600px){.gm-login,html.dark .gm-login{background-image:linear-gradient(#14234038,#14234068),url('../assets/arad-sky-city-mobile-v1.webp');background-position:43% center}}
 body:has(.modal-overlay){overflow:hidden}
 @media(max-width:640px){.gm-page{padding:14px!important}.gm-workspace .panel{padding:17px}.gm-workspace .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 

@@ -1,5 +1,11 @@
 DNF GM third-party notices
 
+Interface SVG icons use selected data from @iconify/json@2.2.541 and the
+Iconify Vue 5.0.3 offline renderer. Original icon-set and renderer licenses,
+copyright notices and source locations are included in ui-icon-licenses.txt
+in this same directory. See THIRD_PARTY.md in the source distribution for
+the collection-by-collection attribution.
+
 Theme tokens and design references: CPAMC v1.26.5, Router-For.ME.
 Source: https://github.com/router-for-me/Cli-Proxy-API-Management-Center/tree/v1.26.5
 

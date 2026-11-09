@@ -16,7 +16,7 @@ SoybeanAdmin 工作台 · 多玩家独立草稿 · 组合选物与对比 · 外�
 
 </div>
 
-![SoybeanAdmin 玩家工作台](docs/images/workbench-v060.jpg)
+![SoybeanAdmin 玩家工作台](docs/images/workbench-v063.jpg)
 
 > **截图说明**：当前源码的真实前端界面，使用本地合成 API、演示角色与虚构物品；不是生产玩家数据，也不是游戏内效果证明。缺图位置如实显示占位，不附带 DNF 游戏素材。[更多界面与截图来源 →](docs/SCREENSHOTS.md)
 
@@ -27,7 +27,8 @@ SoybeanAdmin 工作台 · 多玩家独立草稿 · 组合选物与对比 · 外�
 - **真实图标选物**：匹配客户端离线解析与 PVF 绑定；已验证样本覆盖 66,450／66,456 项，缺图状态、职业插画出处和鉴权保持明确。游戏素材需部署者自行提供。
 - **组合筛选与对比**：部位、PVF 品级、等级、职业适用、武器类别和套装联合查询；常用条件可同步管理库，最多四件装备比较来源明确的基础属性；批量策略沿用同一筛选语义。
 - **角色装备与外观**：12 个穿戴槽位、图标与品级边框；透明时装关联、私有部件图集、ANI 时间线与 Canvas 预览。32 个已核实的客户端转职插画映射，独立觉醒插画仍有缺口；未还原的染色／发光层列出原因。
-- **面向 GM 的界面**：固定 SoybeanAdmin v2.3.0、浅色蓝紫主题、DNF 徽记与职业背景、多玩家工作页签、独立草稿和角色专页；手机抽屉导航与全页操作，业务页面按需加载。
+- **面向 GM 的界面**：固定 SoybeanAdmin v2.3.0、浅色蓝紫主题、原创天空城场景、DNF 徽记、多玩家工作页签、独立草稿和角色专页；图标随包离线可用，手机抽屉导航与全页操作，业务页及弹窗按需加载。
+- **减少重复等待**：认证请求并行、首页统计去重，后台刷新不锁定全局操作；带内容指纹的公开静态资源使用长期缓存，JS／CSS 支持 gzip。接口与私有素材继续禁止公共缓存。
 - **奖励流程完整**：点券／代币券／商城积分、物品与金币邮件、版本化礼包、批量任务、定时运营和投递记录。
 - **维护边界明确**：存档类修改通过显式维护窗口；不可变快照、幂等记录与审计保留历史，不把数据库成功写成游戏效果已验收。
 - **部署保持克制**：FastAPI 单进程、最多 3 个数据库连接；前端在维护电脑构建，游戏数据库不暴露公网。
@@ -60,7 +61,7 @@ SoybeanAdmin 工作台 · 多玩家独立草稿 · 组合选物与对比 · 外�
 
 ### 已知边界
 
-- **源码、素材与服务器分别管理**。`v0.6.2` 提供新的 GM 工作台与部件动画管线；公开下载不带游戏素材。升级涉及管理库迁移 017 和经过核实的 `user_items.ui_id` 只读权限，见[本版说明](docs/releases/v0.6.2.md)。
+- **源码、素材与服务器分别管理**。`v0.6.3` 修复图标空白、目标卡片排版及重复加载，加入原创生成背景；从 v0.6.2 升级没有数据库迁移。更早版本迁入工作台时涉及管理库迁移 017 和经过核实的 `user_items.ui_id` 只读权限，见[本版说明](docs/releases/v0.6.3.md)。公开下载不带客户端游戏素材。
 - **并非每项都完成游戏客户端验收**。以构建和关键场景检查为主，不声称全量 CI 或游戏客户端效果已全部通过；各项边界见[工作台指南](docs/UI-WORKSPACE.md)和[外观指南](docs/CHARACTER-APPEARANCE.md)。
 - **图片链路与素材分开**。匹配客户端样本已有 66,450 项可读图标，6 项明确保留缺口。私有部件包支持独立时间线和静态回退，旧图片包仍可使用。
 - **外观完整性如实呈现**。透明时装按实例关联解析；未核实的染色混色、特殊发光、光环与职业附加层不猜测，逐项报告未绘制原因；不将基础职业插画作为精确觉醒头像。网页试穿不直接修改角色穿戴。
@@ -77,16 +78,16 @@ SoybeanAdmin 工作台 · 多玩家独立草稿 · 组合选物与对比 · 外�
 | 已有 GM，准备升级 | [部署指南：已有实例升级](docs/DEPLOYMENT.md#已有实例升级)；不要重新运行 provision |
 | 想了解操作流程 | [界面导览](docs/SCREENSHOTS.md) → [文档中心](docs/README.md) |
 | 准备修改代码 | [开发指南](docs/DEVELOPMENT.md) → [贡献说明](CONTRIBUTING.md) |
-| 下载发布文件 | [GitHub Releases](https://github.com/Wuse777/llnut-dnf-gm/releases) → [v0.6.2 说明](docs/releases/v0.6.2.md) |
+| 下载发布文件 | [GitHub Releases](https://github.com/Wuse777/llnut-dnf-gm/releases) → [v0.6.3 说明](docs/releases/v0.6.3.md) |
 
 ### 从固定版本构建
 
 维护电脑需要 Python 3.12（含 pip／venv）、Node.js 24.15+ 的 24.x、pnpm 12.10.1 和 Git。以下**只构建，不连接生产数据库、不安装服务**：
 
 ```bash
-git clone --branch v0.6.2 --depth 1 https://github.com/Wuse777/llnut-dnf-gm.git
+git clone --branch v0.6.3 --depth 1 https://github.com/Wuse777/llnut-dnf-gm.git
 cd llnut-dnf-gm
-PYTHON_BIN=python3.12 bash tools/build_release.sh "$HOME/dnf-gm-build-v0.6.2"
+PYTHON_BIN=python3.12 bash tools/build_release.sh "$HOME/dnf-gm-build-v0.6.3"
 ```
 
 输出路径必须尚不存在；wheels 必须与服务器 OS／CPU 架构匹配。完成后继续[安装步骤](docs/DEPLOYMENT.md)，不要直接把源码压缩包交给安装器。

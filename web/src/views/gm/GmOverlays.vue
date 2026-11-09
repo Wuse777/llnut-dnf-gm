@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import {watch} from 'vue'
 import {useRoute} from 'vue-router'
-import OperationResults from './OperationResults.vue'
 import {useGmWorkspaceBindings} from '../../stores/gm/useGmWorkspace'
 import {asyncPanel} from '../../asyncPanel'
 import ItemCard from '../../components/ItemCard.vue'
-import GmItemPicker from '../../components/GmItemPicker.vue'
 import Modal from '../../components/Modal.vue'
-import FavoriteButton from '../../components/FavoriteButton.vue'
-import ItemCollection from '../../components/ItemCollection.vue'
 import FeedbackToast from '../../components/FeedbackToast.vue'
+const OperationResults=asyncPanel(()=>import('./OperationResults.vue'))
+const GmItemPicker=asyncPanel(()=>import('../../components/GmItemPicker.vue'))
 const GiftVersions=asyncPanel(()=>import('../../components/GiftVersions.vue'))
 const CatalogPolicy=asyncPanel(()=>import('../../components/CatalogPolicy.vue'))
 const {operationOpen,logged,lookedUp,operationResult,inspectOperation,giftHistory,policyDialog,policyReauth,policyChanged,policyLabel,detailCharacNo,totpRequired,fieldErrors,toastDismissed,busy,error,notice,username,password,code,reauthOpen,action,currency,reason,message,giftAttachments,preview,uncertain,actionNames,currencyNames,sendable,money,clearSession,focusProblem,run,reauth,select,preferenceRevision,preferenceWarning,preferenceChanged,addItem,confirmOperation,queryResult,copyGiftVersion,confirmOpen,mobileMenu,pickerOpen,pickerQuery,pickerRows,pickerPage,pickerCategory,pickerAllowedOnly,feedbackMessage,role,loadPicker,searchPicker,closePreview}=useGmWorkspaceBindings()

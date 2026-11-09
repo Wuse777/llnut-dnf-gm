@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent } from 'vue';
+import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { AdminLayout, LAYOUT_SCROLL_EL_ID } from '@sa/materials';
 import type { LayoutMode } from '@sa/materials';
 import { useAppStore } from '@/store/modules/app';
@@ -10,7 +10,6 @@ import GlobalFooter from '../modules/global-footer/index.vue';
 import GlobalHeader from '../modules/global-header/index.vue';
 import GlobalSider from '../modules/global-sider/index.vue';
 import GlobalTab from '../modules/global-tab/index.vue';
-import ThemeDrawer from '../modules/theme-drawer/index.vue';
 
 defineOptions({
   name: 'BaseLayout'
@@ -21,6 +20,11 @@ const themeStore = useThemeStore();
 const { secondLevelMenus, childLevelMenus, isActiveFirstLevelMenuHasChildren } = provideMixMenuContext();
 
 const GlobalMenu = defineAsyncComponent(() => import('../modules/global-menu/index.vue'));
+const ThemeDrawer = defineAsyncComponent(() => import('../modules/theme-drawer/index.vue'));
+const themeDrawerRequested = ref(false);
+watch(() => appStore.themeDrawerVisible, visible => {
+  if (visible) themeDrawerRequested.value = true;
+}, { immediate: true });
 
 const layoutMode = computed(() => {
   const vertical: LayoutMode = 'vertical';
@@ -148,7 +152,7 @@ function getSiderAndCollapsedWidth(isCollapsed: boolean) {
     </template>
     <GlobalMenu />
     <GlobalContent />
-    <ThemeDrawer />
+    <ThemeDrawer v-if="themeDrawerRequested" />
     <template #footer>
       <GlobalFooter />
     </template>

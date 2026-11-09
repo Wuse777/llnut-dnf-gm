@@ -14,8 +14,7 @@ defineProps<Props>();
 
 <template>
   <ButtonIcon :key="String(full)" :tooltip-content="full ? $t('icon.fullscreenExit') : $t('icon.fullscreen')">
-    <icon-gridicons-fullscreen-exit v-if="full" />
-    <icon-gridicons-fullscreen v-else />
+    <SvgIcon :icon="full ? 'ph:arrows-in' : 'ph:arrows-out'" />
   </ButtonIcon>
 </template>
 

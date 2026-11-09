@@ -5,10 +5,62 @@ import secrets
 
 from fastapi import HTTPException
 from fastapi.responses import FileResponse, JSONResponse, Response
+from starlette.datastructures import Headers, MutableHeaders
+from starlette.middleware.gzip import GZipMiddleware
 
 
 STYLE_NONCE_MARKER = b'__DNFGM_STYLE_NONCE__'
 _NONCE = re.compile(r'[A-Za-z0-9_-]{43}\Z')
+_HASHED_ASSET = re.compile(
+    r'assets/(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{8,}'
+    r'\.(?:js|css|woff2?|ttf|otf|webp|png|jpe?g|avif|svg)\Z'
+)
+_ASSET_CACHE = 'public, max-age=31536000, immutable'
+
+
+def _accepts_gzip(value):
+    for item in value.lower().split(','):
+        encoding, *parameters = item.strip().split(';')
+        if encoding != 'gzip':
+            continue
+        quality = 1.0
+        for parameter in parameters:
+            name, _, raw = parameter.strip().partition('=')
+            if name == 'q':
+                try:
+                    quality = float(raw)
+                except ValueError:
+                    quality = 0
+        return 0 < quality <= 1
+    return False
+
+
+class PublicAssetResponse(FileResponse):
+    """Compress only an existing public build file, never a document or API."""
+
+    def __init__(self, path):
+        super().__init__(path, headers={'Cache-Control': _ASSET_CACHE})
+        self.compressible = path.suffix in ('.js', '.css')
+        if self.compressible:
+            self.headers['Vary'] = 'Accept-Encoding'
+
+    async def __call__(self, scope, receive, send):
+        headers = Headers(scope=scope)
+        if (self.compressible and scope['method'] == 'GET' and 'range' not in headers
+                and _accepts_gzip(headers.get('accept-encoding', ''))):
+            async def encoded_send(message):
+                if message['type'] == 'http.response.start':
+                    outgoing = MutableHeaders(raw=message['headers'])
+                    if outgoing.get('content-encoding') == 'gzip' and 'etag' in outgoing:
+                        # Identity and gzip are equivalent, not byte-identical representations.
+                        outgoing['etag'] = 'W/' + outgoing['etag'].removeprefix('W/')
+                    outgoing['vary'] = 'Accept-Encoding'
+                await send(message)
+            # FileResponse retains streaming and range semantics; only public code is compressed.
+            return await GZipMiddleware(super().__call__, minimum_size=1024, compresslevel=5)(
+                scope, receive, encoded_send,
+            )
+        return await super().__call__(scope, receive, send)
 
 
 def new_style_nonce():
@@ -39,6 +91,8 @@ def static_response(static_dir, path, nonce, *, head=False):
         raise HTTPException(404, '文件不存在')
     entry = (root / 'index.html').resolve()
     if target.is_file() and target != entry:
+        if _HASHED_ASSET.fullmatch(path):
+            return PublicAssetResponse(target)
         return FileResponse(target)
     if target != entry and path and ('.' in path or path.startswith('assets/')):
         raise HTTPException(404, '文件不存在')
@@ -94,8 +148,16 @@ class Guard:
             return await receive()
         async def secure_send(message):
             if message['type'] == 'http.response.start':
-                message.setdefault('headers',[]).extend([
-                    (b'cache-control',b'no-store'),(b'x-content-type-options',b'nosniff'),
+                response_headers = MutableHeaders(raw=message.setdefault('headers', []))
+                public_asset = (
+                    scope['method'] in ('GET', 'HEAD')
+                    and message['status'] in (200, 206, 304)
+                    and _HASHED_ASSET.fullmatch(scope['path'].removeprefix('/dnf-gm/'))
+                    and response_headers.get('cache-control') == _ASSET_CACHE
+                )
+                response_headers['Cache-Control'] = _ASSET_CACHE if public_asset else 'no-store'
+                message['headers'].extend([
+                    (b'x-content-type-options',b'nosniff'),
                     (b'x-frame-options',b'DENY'),(b'referrer-policy',b'no-referrer'),
                     (b'content-security-policy',content_security_policy(style_nonce).encode('ascii')),
                 ])
