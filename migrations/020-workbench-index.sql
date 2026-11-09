@@ -1,4 +1,4 @@
--- Bounded newest-first workbench reads; preserves the maintenance outcome index.
+-- Bounded newest-first workbench reads preserve the maintenance outcome index.
 SET @workbench_index_sql = (SELECT IF(COUNT(*)>0,'SELECT 1','ALTER TABLE dnf_gm.operations ADD KEY workbench_created(status,created_at,operation_id)') FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='dnf_gm' AND TABLE_NAME='operations' AND INDEX_NAME='workbench_created');
 PREPARE workbench_index_stmt FROM @workbench_index_sql;
 EXECUTE workbench_index_stmt;

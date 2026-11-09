@@ -61,7 +61,7 @@ jobs:
       - run: |
           mkdir -p outputs
           DNF_GM_M0_SOCKET="$RUNNER_TEMP/dnfgm-lab/mysql.sock" PYTHONPATH=src PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-            "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" -m pytest -q --junitxml=outputs/backend-junit.xml
+            "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" -m pytest -q -o faulthandler_timeout=120 --maxfail=20 --durations=20 --junitxml=outputs/backend-junit.xml
       - name: Preserve integration test evidence
         if: always()
         uses: actions/upload-artifact@v4

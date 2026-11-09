@@ -57,7 +57,9 @@ def schemas_checked(schemas):
     return sorted(schemas)
 
 
-def sql(c, statement, args=()):
+def sql(c, statement, args=None):
+    # None preserves raw SQL text. Even an empty tuple makes PyMySQL apply
+    # percent interpolation, corrupting literal '%' in DDL and LIKE patterns.
     with c.cursor(pymysql.cursors.Cursor) as q:
         q.execute(statement, args)
         return q.fetchall()

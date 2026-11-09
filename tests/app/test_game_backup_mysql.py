@@ -23,8 +23,11 @@ def prepare(lab):
     socket, datadir = sql(source, 'SELECT @@socket,@@datadir')[0]
     assert_lab(source, socket, datadir)
     with source.cursor() as q:
-        q.execute('CREATE TABLE taiwan_cain.fixture_game_backup (UID int,body varbinary(20),bits bit(9),moment datetime) ENGINE=MyISAM')
-        q.execute("INSERT INTO taiwan_cain.fixture_game_backup VALUES(1,UNHEX('00FFB7E7'),257,'0000-00-00 00:00:00'),(1,UNHEX('00FFB7E7'),257,'0000-00-00 00:00:00')")
+        q.execute("CREATE TABLE taiwan_cain.fixture_game_backup (UID int,body varbinary(20),bits bit(9),moment datetime,"
+                  "note varchar(80) NOT NULL DEFAULT '100% `taiwan_cain`.' COMMENT 'Chance 50% `taiwan_cain`.') "
+                  "ENGINE=MyISAM COMMENT='Backup is 100% exact `taiwan_cain`.'")
+        q.execute("INSERT INTO taiwan_cain.fixture_game_backup(UID,body,bits,moment) VALUES"
+                  "(1,UNHEX('00FFB7E7'),257,'0000-00-00 00:00:00'),(1,UNHEX('00FFB7E7'),257,'0000-00-00 00:00:00')")
     source.commit()
     schemas = sorted({r[0] for r in sql(source, 'SHOW DATABASES')} - SYSTEM_SCHEMAS)
     ident = database_identity(source)
@@ -72,6 +75,11 @@ def test_mixed_innodb_myisam_no_primary_key_roundtrip_and_locks(lab, tmp_path):
     assert writer_done.is_set() and not errors
     text = artifact.read_text()
     assert 'AP+35w==' in text
+    fixture_ddl = next(r['ddl'] for r in map(json.loads, text.splitlines())
+                       if r.get('type') == 'table' and r.get('name') == 'fixture_game_backup')
+    assert "DEFAULT '100% `taiwan_cain`.'" in fixture_ddl
+    assert "COMMENT 'Chance 50% `taiwan_cain`.'" in fixture_ddl
+    assert "COMMENT='Backup is 100% exact `taiwan_cain`.'" in fixture_ddl
     restored = restore_game_drill(artifact, result['artifact_sha256'], socket=socket, datadir=datadir)
     assert restored['state'] == 'verified'
     assert (restored['tables'], restored['rows']) == (result['tables'], result['rows'])

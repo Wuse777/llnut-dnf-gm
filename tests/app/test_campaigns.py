@@ -187,7 +187,7 @@ def test_target_status_and_error_filters_keep_keyset_and_global_counts(env):
     result=app.state.reward_jobs.targets(job['id'],0,'failed','FixtureError')
     assert len(result['items'])==1 and result['counts']=={'failed':1}
     assert result['errors']==[{'error_type':'FixtureError','n':1}]
-    assert app.state.reward_jobs.targets(job['id'],0,'pending')['items']==[]
+    assert not app.state.reward_jobs.targets(job['id'],0,'pending')['items']
 
 
 @pytest.mark.parametrize('after_start',[False,True])
