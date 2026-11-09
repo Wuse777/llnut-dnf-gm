@@ -288,8 +288,12 @@ def test_fresh_bootstrap_and_actual_least_privilege_worker(env):
         result=limited.get(P+'/operations/'+targets[0]['operation_id']).json()
         assert result['result']['currency_rewards']['cera']['after']==1100
         assert len(rows(rootdb))==1
-        for sql in ('DELETE FROM dnf_gm.reward_targets','DROP TABLE dnf_gm.reward_jobs',"SELECT password FROM d_taiwan.accounts",'UPDATE taiwan_cain.charac_info SET lev=1'):
-            with pytest.raises(pymysql.err.OperationalError):read(limited_db,sql)
+        # lev belongs to the installed level-maintenance feature; base profession
+        # and creation dates must still be read-only to the combined app account.
+        for sql in ('DELETE FROM dnf_gm.reward_targets','DROP TABLE dnf_gm.reward_jobs',"SELECT password FROM d_taiwan.accounts",'UPDATE taiwan_cain.charac_info SET job=1',"UPDATE taiwan_cain.charac_info SET create_time='2026-11-09 00:00:00'"):
+            with pytest.raises(pymysql.err.OperationalError):
+                read(limited_db,sql)
+                pytest.fail('Forbidden SQL unexpectedly succeeded: '+sql)
     finally:
         limited.close()
         write(rootdb,"DROP USER 'job_minimal'@'localhost'")

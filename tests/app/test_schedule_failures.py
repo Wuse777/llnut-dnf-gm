@@ -140,9 +140,13 @@ def test_actual_minimum_grants_for_schedules(scheduled):
         now[0] += 5; schedules.step()
         assert schedules.detail(plan['id'])['status'] == 'completed'
         assert c.get('/dnf-gm/api/v1/health').status_code == 200
-        for statement in ('DELETE FROM dnf_gm.schedules', 'DELETE FROM dnf_gm.schedule_runs', 'DELETE FROM dnf_gm.audit', 'DROP TABLE dnf_gm.schedule_runs', 'UPDATE taiwan_cain.charac_info SET lev=1'):
+        # The combined app also supports explicit level maintenance. Scheduling
+        # does not grant base-profession or historical creation-time writes.
+        for statement in ('DELETE FROM dnf_gm.schedules', 'DELETE FROM dnf_gm.schedule_runs', 'DELETE FROM dnf_gm.audit', 'DROP TABLE dnf_gm.schedule_runs', 'UPDATE taiwan_cain.charac_info SET job=1', "UPDATE taiwan_cain.charac_info SET create_time='2026-11-09 00:00:00'"):
             with limited.connect() as conn, conn.cursor() as q:
-                with pytest.raises(pymysql.OperationalError): q.execute(statement)
+                with pytest.raises(pymysql.OperationalError):
+                    q.execute(statement)
+                    pytest.fail('Forbidden SQL unexpectedly succeeded: '+statement)
     finally:
         c.close()
 

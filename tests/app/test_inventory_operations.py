@@ -283,9 +283,13 @@ def test_real_minimal_permissions_allow_archives_but_not_other_game_fields(inv):
             body=dict(action='item-edit',uid=900001,charac_no=900001,container=container,slot=0,reference=item['reference'],changes={'enhancement':12},reason='最小权限测试')
             p=service.preview('f'*64,body)
             assert service.confirm('f'*64,p['operation_id'],uuid.uuid4().hex)['status']=='committed'
-        for statement in ('DELETE FROM dnf_gm.inventory_snapshots','UPDATE dnf_gm.inventory_snapshots SET uid=1','UPDATE taiwan_cain_2nd.inventory SET money=0','UPDATE taiwan_cain.account_cargo SET money=0','UPDATE taiwan_cain.charac_info SET lev=1','SELECT password FROM d_taiwan.accounts','DROP TABLE dnf_gm.inventory_snapshots'):
+        # Level maintenance already grants lev through its explicit column list.
+        # Base profession and historical creation time remain outside all writers.
+        for statement in ('DELETE FROM dnf_gm.inventory_snapshots','UPDATE dnf_gm.inventory_snapshots SET uid=1','UPDATE taiwan_cain_2nd.inventory SET money=0','UPDATE taiwan_cain.account_cargo SET money=0','UPDATE taiwan_cain.charac_info SET job=1',"UPDATE taiwan_cain.charac_info SET create_time='2026-11-09 00:00:00'",'SELECT password FROM d_taiwan.accounts','DROP TABLE dnf_gm.inventory_snapshots'):
             with limited.connect() as c,c.cursor() as q:
-                with pytest.raises(pymysql.OperationalError):q.execute(statement)
+                with pytest.raises(pymysql.OperationalError):
+                    q.execute(statement)
+                    pytest.fail('Forbidden SQL unexpectedly succeeded: '+statement)
         assert settle_window(limited,'d'*32)['game_writes'] is False
     finally:
         service.db=original

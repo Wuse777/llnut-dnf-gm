@@ -200,9 +200,13 @@ def test_minimal_permissions_management_and_transactional_compensation(env):
         p=service.preview('f'*64,{'action':'currency','uid':900001,'charac_no':900001,'currency':'cera','delta':1,'reason':'test','support_case_id':cid})
         result=service.confirm('f'*64,p['operation_id'],key());assert result['support_case_id']==cid
         assert support.detail(cid)['case']['compensation_count']==1
-        for statement in ('DELETE FROM dnf_gm.support_events','UPDATE dnf_gm.support_events SET note=\'x\'','DELETE FROM dnf_gm.support_cases','DROP TABLE dnf_gm.support_cases','SELECT password FROM d_taiwan.accounts','UPDATE taiwan_cain.charac_info SET lev=1'):
+        # Level maintenance has a separate approved lev column write. Immutable
+        # support evidence, base profession and creation dates remain protected.
+        for statement in ('DELETE FROM dnf_gm.support_events','UPDATE dnf_gm.support_events SET note=\'x\'','DELETE FROM dnf_gm.support_cases','DROP TABLE dnf_gm.support_cases','SELECT password FROM d_taiwan.accounts','UPDATE taiwan_cain.charac_info SET job=1',"UPDATE taiwan_cain.charac_info SET create_time='2026-11-09 00:00:00'"):
             with db.connect() as c,c.cursor() as q:
-                with pytest.raises(pymysql.OperationalError):q.execute(statement)
+                with pytest.raises(pymysql.OperationalError):
+                    q.execute(statement)
+                    pytest.fail('Forbidden SQL unexpectedly succeeded: '+statement)
     finally:
         with root.connect() as c,c.cursor() as q:q.execute("DROP USER IF EXISTS 'support_minimal'@'localhost'");c.commit()
 
