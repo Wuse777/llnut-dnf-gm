@@ -1,0 +1,19 @@
+<script setup lang="ts">
+import {watch} from 'vue'
+import {useRoute} from 'vue-router'
+import {useGmWorkspace} from '../../stores/gm/useGmWorkspace'
+import {useGmWorkspaceBindings} from '../../stores/gm/useGmWorkspace'
+import {asyncPanel} from '../../asyncPanel'
+import PlayerCenter from '../../components/PlayerCenter.vue'
+import LiveSession from '../../components/LiveSession.vue'
+import FieldError from '../../components/FieldError.vue'
+const {fieldErrors,feedbackScope,busy,error,notice,tab,page,search,rows,account,roleResults,rolePage,roleMode,playerViews,action,currency,delta,reason,message,pendingId,tabs,onlineLabel,money,openCharacter,draft,run,load,go,copyMailDraft,correctOperation,playerAction,refreshAccount,select,loadRoles,queryCharacters,selectRole,makePreview,inspectOperation,accountMode,role,quickAmount,changeDirection,chooseOperation,searchAccounts,toMail}=useGmWorkspaceBindings()
+
+const workspace=useGmWorkspace()
+const route=useRoute()
+watch(()=>route.fullPath,async()=>{await workspace.activate(route.path.endsWith('/online')?'online':'accounts',false);if(typeof route.query.q==='string'){workspace.search=route.query.q;workspace.accountMode=route.query.mode==='role'?'role':'account'}await workspace.searchAccounts()},{immediate:true})
+</script>
+<template><div class="gm-workspace"><section class="panel" id="player-search"><div class="section-title"><h2>{{tab==='online'?'在线账号列表':'查找玩家'}}</h2><span class="muted">{{tab==='online'?'在线以登录状态表为准':'支持账号名、UID、角色名或角色编号'}}</span></div><form v-if="tab==='accounts'" class="toolbar" @submit.prevent="searchAccounts"><select v-model="accountMode" aria-label="搜索类型" :disabled="busy"><option value="account">账号 / UID</option><option value="role">角色名 / 编号</option></select><input v-model="search" aria-label="搜索条件" :placeholder="accountMode==='role'?'输入角色名或角色编号':'输入账号名或 UID'" :disabled="busy"><button class="primary" :disabled="busy">查询</button><button type="button" :disabled="busy" @click="accountMode='role';queryCharacters()">按角色搜索</button></form>
+    <div v-if="roleMode" class="role-grid"><article v-for="r in roleResults" :key="r.charac_no" class="role-card"><b>{{r.charac_name}}</b><small>#{{r.charac_no}} · UID {{r.uid}} · Lv.{{r.lev}}</small><span v-if="r.delete_flag" class="status-badge failure">已删除（不可操作）</span><div class="role-actions"><button :disabled="busy" @click="openCharacter(r.charac_no)">查看详情</button><button :disabled="busy||!!r.delete_flag" @click="selectRole(r)">管理所属账号 →</button></div></article><p v-if="!roleResults.length&&!busy" class="empty">未找到角色，请换一个关键词。</p></div>
+    <div class="table-wrap" v-else><table><thead><tr><th>UID / 账号</th><th>点券</th><th>代币券</th><th>积分</th><th>状态 / 频道</th><th class="align-right">操作</th></tr></thead><tbody><tr v-for="r in rows" :key="r.uid" :class="{'selected-row':account?.uid===r.uid}"><td><b>{{r.accountname}}</b><small class="cell-note">UID {{r.uid}}</small></td><td class="numeric">{{money(r.cera)}}</td><td class="numeric">{{money(r.cera_point)}}</td><td class="numeric">{{money(r.mileage)}}</td><td><span class="status-badge" :class="r.login_status===1?'success':'neutral'">{{r.login_status===1?'在线':r.login_status===0?'离线':'未知'}}</span><small class="cell-note">频道 {{r.channel??'—'}}</small></td><td class="align-right"><button :disabled="busy" @click="select(r)">管理 →</button></td></tr></tbody></table><p v-if="!rows.length&&!busy" class="empty">{{tab==='online'?'当前没有在线账号':'未找到账号，试试角色搜索或其他关键词。'}}</p></div>
+    <div class="pagination"><button :disabled="busy||(roleMode?rolePage:page)===1" @click="roleMode?(rolePage--,run(loadRoles)):(page--,run(load))">上一页</button><span>第 {{roleMode?rolePage:page}} 页 · 本页 {{roleMode?roleResults.length:rows.length}} 条</span><button :disabled="busy||(roleMode?roleResults:rows).length<50" @click="roleMode?(rolePage++,run(loadRoles)):(page++,run(load))">下一页</button></div></section></div></template>

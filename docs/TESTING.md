@@ -21,12 +21,16 @@ DNF_GM_M0_SOCKET="$PWD/.runtime/mysql.sock" PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
 
 ```bash
 cd web
-npm ci
-npm test
-npm run build
+pnpm install --frozen-lockfile
+pnpm lint:check
+pnpm typecheck
+pnpm test
+pnpm build
 ```
 
 覆盖目标包括业务规则、SQL 注入 / XSS / CSRF / Host / Origin、最小列权限、幂等、提交未知、原子性、物品动态策略、角色名称、表单就地错误提示、确认对话框和金币附件。
+
+前端 CI 使用固定 pnpm 12.10.1 与 Vite+，冻结锁文件安装，并单独执行类型检查。管理库迁移017新增的 `tests/app/test_ui_preferences.py` 覆盖偏好版本冲突、删除后重建、防止旧版本覆盖、PVF隔离、数量上限、并发及最小管理库权限；同时验证试衣预览和图集接口的认证边界与无游戏写入。`test_catalog_filters_api.py` 核对职业、武器类别、套装筛选与批量策略目标一致。没有设置隔离socket时这些用例会skip，不能计作已通过。
 
 ## 必须另做的真实环境验收
 

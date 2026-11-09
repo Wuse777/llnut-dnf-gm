@@ -4,7 +4,7 @@ Native evidence and unsupported appearance modifiers are documented in
 docs/CHARACTER-APPEARANCE.md. This module never modifies game records.
 """
 import pymysql
-from .outfit_recipe import AVATAR_SLOTS, OutfitRecipeError, canonical_outfit_recipe
+from .outfit_recipe import AVATAR_SLOTS, OutfitRecipeError, canonical_outfit_recipe, canonical_appearance_recipe
 
 
 def unavailable(note='未获时装存档列读取权限或目标数据库版本不支持；其余角色资料仍可查看'):
@@ -63,3 +63,69 @@ def resolve_saved_outfit(saved, job, labels):
         return {'state':'unsupported','items':[],'note':'基础职业或装扮配方无法确认'}
     return {'state':'ok','items':recipe['items'],'recipe_sha256':sha,
             'note':'已按穿戴存档及PVF部位核实配方；不含武器、染色、透明替代及在线变化'}
+
+
+def read_saved_appearance(q,charac_no,uid,*,deleted=False):
+    """Read the exact native loaded region, including clear-avatar references.
+
+    Fixed binary evidence: Inter_LoadInven 0x084c4222..0x084c42da looks
+    clear_avatar_id up in the 105 bag entries by add_info/ui_id. Expired,
+    inactive, foreign and equipped records cannot satisfy that relation.
+    """
+    if deleted:return {'state':'unavailable','items':[],'reason_codes':['character_deleted']}
+    try:
+        q.execute('SELECT a.ui_id,a.slot,a.it_id,a.clear_avatar_id,a.color1,a.color2 '
+                  'FROM taiwan_cain_2nd.user_items a '
+                  'JOIN taiwan_cain.charac_info c ON c.charac_no=a.charac_no '
+                  'WHERE a.charac_no=%s AND c.m_id=%s AND c.delete_flag=0 '
+                  'AND a.slot BETWEEN 0 AND 114 AND a.stat=0 AND a.expire_date>NOW() '
+                  'ORDER BY a.slot,a.ui_id LIMIT 116',(charac_no,uid))
+        return validate_appearance_rows(q.fetchall())
+    except pymysql.MySQLError:
+        return {'state':'unavailable','items':[],'reason_codes':['appearance_read_unavailable']}
+
+
+def validate_appearance_rows(rows):
+    def refused(code):return {'state':'unsupported','items':[],'reason_codes':[code]}
+    if not isinstance(rows,(list,tuple)) or len(rows)>115:return refused('avatar_region_overflow')
+    slots=set();identities={}
+    for row in rows:
+        if (not isinstance(row,dict) or any(type(row.get(k)) is not int for k in ('ui_id','slot','it_id','clear_avatar_id','color1','color2'))
+            or not 0<=row['slot']<=114 or not 1<=row['ui_id']<=0xffffffff
+            or not 1<=row['it_id']<=0x7fffffff or not 0<=row['clear_avatar_id']<=0xffffffff
+            or any(not -32768<=row[k]<=32767 for k in ('color1','color2'))):return refused('avatar_record_invalid')
+        if row['slot'] in slots or row['ui_id'] in identities:return refused('avatar_identity_ambiguous')
+        slots.add(row['slot']);identities[row['ui_id']]=row
+    items=[]
+    for row in rows:
+        if row['slot']>=10:continue
+        effective=row
+        if row['clear_avatar_id']:
+            effective=identities.get(row['clear_avatar_id'])
+            if effective is None or effective['slot']<10:return refused('clear_reference_missing')
+            # Nested references and source dye precedence need distinct evidence.
+            if effective['clear_avatar_id']:return refused('clear_reference_nested')
+            if effective['color1'] or effective['color2']:return refused('clear_source_dye_unverified')
+        items.append({'stored_slot':row['slot'],'id':row['it_id'],'effective_id':effective['it_id'],
+                      'clear_applied':effective is not row,'color1':row['color1'],'color2':row['color2']})
+    return {'state':'pending','items':items,'reason_codes':[]}
+
+
+def resolve_saved_appearance(saved,job,grow_type,labels,weapon_id=0):
+    if saved['state']!='pending':return saved
+    if labels['state']!='ok':return {'state':'unavailable','items':[],'reason_codes':['catalog_mismatch']}
+    items=[];parts=set();clear=False;aura_id=0
+    for record in saved['items']:
+        original=labels['items'].get(record['id'],{}).get('part_code')
+        effective=labels['items'].get(record['effective_id'],{}).get('part_code')
+        if original==effective=='[aurora avatar]' and not aura_id:
+            aura_id=record['effective_id'];continue
+        if original not in AVATAR_SLOTS or effective!=original or original in parts:
+            return {'state':'unsupported','items':[],'reason_codes':['avatar_part_unverified']}
+        parts.add(original);clear=clear or record['clear_applied']
+        items.append({'slot':original,'id':record['effective_id'],'color1':record['color1'],'color2':record['color2']})
+    try:recipe,sha=canonical_appearance_recipe(job,grow_type,items,weapon_id,aura_id)
+    except OutfitRecipeError:return {'state':'unsupported','items':[],'reason_codes':['appearance_identity_invalid']}
+    reasons=['dye_pixel_rule_unverified'] if any(i['color1'] or i['color2'] for i in items) else []
+    return {'state':'unsupported' if reasons else 'ok','items':recipe['items'],'recipe':recipe,
+            'recipe_sha256':sha,'clear_applied':clear,'reason_codes':reasons}

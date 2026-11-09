@@ -2,6 +2,7 @@
 import struct
 import zlib
 import hashlib
+import json
 import sqlite3
 
 import pytest
@@ -9,6 +10,42 @@ import pytest
 from dnfgm.character_assets import AnimationFrame, build_character_assets, canonical_outfit_recipe, composite, decode_avatar_img, equipment_recipe, member_name, parse_ani, resolve_outfit_recipes, validate_static
 from dnfgm.npk_assets import AssetFormatError, Raster
 from dnfgm.outfit_recipe import OutfitRecipeError
+
+
+def test_v2_source_atlases_are_preserved_or_cleanly_replaced_in_a_new_pack(tmp_path,monkeypatch):
+    from dnfgm import character_assets
+    from dnfgm.appearance_assets import png,SCHEMA
+    pvf=tmp_path/'source.pvf';pvf.write_bytes(b'synthetic pvf')
+    source=tmp_path/'source';source.mkdir();(source/'images').mkdir();(source/'atlases').mkdir()
+    data=png(1024,1,b'\0'*4096);digest=hashlib.sha256(data).hexdigest()
+    atlas=source/'atlases'/(digest+'.png');atlas.write_bytes(data)
+    with sqlite3.connect(source/'manifest.sqlite') as c:
+        c.executescript('CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT);CREATE TABLE files(sha256 TEXT PRIMARY KEY,width INTEGER,height INTEGER);'+SCHEMA)
+        c.executemany('INSERT INTO metadata VALUES(?,?)',[('state','ready'),('pvf_sha256',hashlib.sha256(pvf.read_bytes()).hexdigest()),('appearance_version','2')])
+        c.execute('INSERT INTO appearance_atlases VALUES(?,?,?,?)',(digest,1024,1,len(data)))
+        payload={'loop':True,'duration_ms':100,'frames':[{'duration_ms':100,'draws':[{'atlas':digest,'sx':0,'sy':0,'width':1,'height':1,'x':0,'y':0,'z':1000}]}]}
+        c.execute('INSERT INTO appearance_parts VALUES(?,?,?,?,?,?,?)',(0,'[coat avatar]',0,'idle','ready',json.dumps(payload),''))
+    class Reader:
+        tree=()
+        def __init__(self,*args):pass
+        def mapping(self,path):return iter(())
+        def close(self):pass
+    monkeypatch.setattr(character_assets,'Reader',Reader)
+    npks=tmp_path/'npks';npks.mkdir()
+    preserved=tmp_path/'preserved';build_character_assets(pvf,npks,source,preserved)
+    assert (preserved/'atlases'/atlas.name).read_bytes()==data
+    with sqlite3.connect(preserved/'manifest.sqlite') as c:
+        assert c.execute('SELECT payload_json FROM appearance_parts').fetchone()[0]==json.dumps(payload)
+    replaced=tmp_path/'replaced';build_character_assets(pvf,npks,source,replaced,preserve_appearance=False)
+    assert not (replaced/'atlases').exists()
+    with sqlite3.connect(replaced/'manifest.sqlite') as c:
+        assert c.execute("SELECT 1 FROM sqlite_master WHERE name='appearance_parts'").fetchone() is None
+        assert c.execute("SELECT 1 FROM metadata WHERE key='appearance_version'").fetchone() is None
+    assert atlas.read_bytes()==data
+    atlas.write_bytes(b'x'*len(data));invalid=tmp_path/'invalid'
+    with pytest.raises(AssetFormatError,match='checksum'):
+        build_character_assets(pvf,npks,source,invalid)
+    assert not invalid.exists()
 
 
 def ani(*,extra=b'',frame_params=b'',tail=b'',index=3,path_index=0):

@@ -23,8 +23,9 @@ if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
   echo 'Release already exists. Inspect it; never overwrite an existing publication automatically.' >&2
   exit 1
 fi
-npm --prefix web ci
-npm --prefix web run build
+pnpm --dir web install --frozen-lockfile
+pnpm --dir web typecheck
+pnpm --dir web build
 [[ -z "$(git status --porcelain)" ]] || { echo 'Build modified tracked files' >&2; exit 1; }
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT

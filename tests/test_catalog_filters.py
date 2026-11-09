@@ -61,3 +61,35 @@ def test_bad_ranges_sort_and_policy_inputs_are_rejected(tmp_path):
     with pytest.raises(HTTPException):c.search(sort='id; DROP TABLE items')
     with pytest.raises(ValidationError):CatalogFilters(min_level=90,max_level=1)
     with pytest.raises(ValidationError):CatalogFilters(rarity=True)
+
+
+def extended(catalog_):
+    with sqlite3.connect(catalog_.settings.catalog_file) as c:
+        c.executescript('CREATE TABLE equipment_filter_details(item_id INTEGER PRIMARY KEY,weapon_type TEXT,set_id INTEGER,set_name TEXT);CREATE TABLE equipment_jobs(item_id INTEGER,job_code TEXT);')
+        c.execute('INSERT INTO metadata VALUES(?,?)',('equipment_filters_version','1'))
+        c.executemany('INSERT INTO equipment_filter_details VALUES(?,?,?,?)',[(1,'staff',10,'明确套装'),(2,'',10,'明确套装'),(3,'staff',11,''),(4,'',10,'明确套装'),(5,'rod',10,'明确套装')])
+        c.executemany('INSERT INTO equipment_jobs VALUES(?,?)',[(1,'[mage]'),(2,'[all]'),(3,'[priest]'),(4,'[all]'),(5,'[mage]')])
+
+
+def test_job_weapon_set_filters_share_policy_selection_and_universal_jobs(tmp_path):
+    c=catalog(tmp_path);extended(c)
+    filters={'job':'[mage]','weapon_type':'staff','set_id':10}
+    result=c.search(**filters)
+    assert [r['id'] for r in result['items']]==[1]
+    with c.connect() as index:
+        assert [r['id'] for r in c.rows(index,filters,{})]==[1]
+    assert {r['id'] for r in c.search(job='[mage]')['items']}=={1,2,4,5}
+    assert c.search(job="[mage]' OR 1=1 --")['total']==0
+    assert c.search(weapon_type="staff' OR 1=1 --")['total']==0
+    assert result['items'][0]['usable_jobs']==[{'code':'[mage]','name':'魔法师（女）'}]
+    assert result['items'][0]['weapon_type_name']=='法杖' and result['items'][0]['set_name']=='明确套装'
+    assert result['facets']['extended_equipment_metadata'] is True
+    assert result['facets']['sets'][0]=={'id':10,'name':'明确套装','count':4}
+
+
+@pytest.mark.parametrize('filters',[{'job':'[mage]'},{'weapon_type':'staff'},{'set_id':10}])
+def test_old_indexes_never_silently_ignore_new_filters(tmp_path,filters):
+    c=catalog(tmp_path)
+    with pytest.raises(HTTPException) as error:c.search(**filters)
+    assert error.value.status_code==409
+    assert c.search()['facets']['extended_equipment_metadata'] is False

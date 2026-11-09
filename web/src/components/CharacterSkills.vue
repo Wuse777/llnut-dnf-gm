@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import {ref,computed,onMounted,onBeforeUnmount,watch,nextTick} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
+import {useGmConfirmation} from '../stores/gm/confirmation'
+const confirmationLease=useGmConfirmation()
 import CharacterSkillReset from './CharacterSkillReset.vue'
 import {inventoryStates as states} from '../nativeStatus'
 const props=defineProps<{characNo:number}>()
@@ -17,7 +19,7 @@ let alive=true,timer:ReturnType<typeof setInterval>|undefined
 watch([busy,resetBusy],v=>emit('busy',v.some(Boolean)));watch([unfinished,resetPending],v=>emit('pending',v.some(Boolean)))
 function failure(e:unknown){error.value=uncertainMessage(e);if(e instanceof ApiError&&e.status===401)emit('expired');if(e instanceof ApiError&&e.status===403&&e.message.includes('重新认证'))emit('reauth')}
 function remember(id:string){try{sessionStorage.setItem(storage,id)}catch{/* history lookup remains available */}}
-async function run(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';try{await fn()}catch(e){if(alive)failure(e)}finally{if(alive)busy.value=false}}
+async function run(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';try{await fn()}catch(e){if(alive)failure(e)}finally{if(alive)busy.value=false;if(operation.value?.status!=='preview')confirmationLease.release('character-characterskills')}}
 async function refresh(){await run(async()=>{const r=await api(`${base}/characters/${props.characNo}`);if(alive){current.value=r;values.value=Object.fromEntries(Object.keys(labels).map(k=>[k,String(r.archive[k])]))}})}
 async function history(){await run(async()=>{const r=await api(`${base}/operations?charac_no=${props.characNo}&page=${page.value}`);if(alive){records.value=r.items;more.value=r.has_more}})}
 function received(r:any){if(!alive)return;operation.value=r;remember(r.operation_id);if(r.status==='committed'){emit('changed');resetVersion.value++}}
@@ -28,13 +30,15 @@ async function preview(){
  if(Object.keys(labels).some(k=>!/^\d+$/.test(values.value[k]||'')||Number(values.value[k])>current.value.limits[k]))valueError.value='请填写范围内的非负整数：SP最多1073741823，TP最多2147483647。'
  if(!valueError.value&&Object.keys(labels).every(k=>Number(values.value[k])===current.value.archive[k]))valueError.value='点数没有变化，请先调整需要修改的项目。'
  if(reasonError.value||valueError.value){await nextTick();root.value?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();return}
+ if(!confirmationLease.acquire('character-characterskills')){error.value='请先完成或关闭当前确认面板。';return}
  await run(async()=>{const r=await api(base+'/preview','POST',{action:'char-sp-tp',uid:current.value.target.uid,charac_no:props.characNo,reference:current.value.reference,changes:Object.fromEntries(Object.keys(labels).filter(k=>Number(values.value[k])!==current.value.archive[k]).map(k=>[k,Number(values.value[k])])),reason:reason.value.trim()});key.value=crypto.randomUUID().replaceAll('-','');attempted.value=false;received(r);await nextTick();root.value?.querySelector<HTMLElement>('.skill-points-preview')?.scrollIntoView?.({block:'nearest'})})
 }
-async function confirm(){if(resetBusy.value||resetPending.value||!operation.value||attempted.value||!key.value)return;attempted.value=true;await run(async()=>received(await api(`${base}/operations/${operation.value.operation_id}/confirm`,'POST',{idempotency_key:key.value})))}
+async function confirm(){if(resetBusy.value||resetPending.value||!operation.value||attempted.value||!key.value)return;if(!confirmationLease.acquire('character-characterskills')){error.value='请先完成或关闭当前确认面板。';return};attempted.value=true;await run(async()=>received(await api(`${base}/operations/${operation.value.operation_id}/confirm`,'POST',{idempotency_key:key.value})))}
 async function cancel(){await run(async()=>received(await api(`${base}/operations/${operation.value.operation_id}/cancel-preview`,'POST',{})))}
 async function finish(){operation.value=null;attempted.value=false;key.value='';try{sessionStorage.removeItem(storage)}catch{}await refresh();await history()}
 onMounted(async()=>{await refresh();if(!alive)return;await history();if(!alive)return;let id='';try{id=sessionStorage.getItem(storage)||''}catch{}if(id)await inspect(id);timer=setInterval(()=>{if(alive&&pending.value&&!document.hidden&&!busy.value)void inspect()},10000)})
-onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer);emit('busy',false);emit('pending',false)})
+watch(()=>operation.value?.status,status=>{if(status==='preview')confirmationLease.acquire('character-characterskills');else confirmationLease.release('character-characterskills')})
+onBeforeUnmount(()=>{confirmationLease.release('character-characterskills');alive=false;if(timer)clearInterval(timer);emit('busy',false);emit('pending',false)})
 </script>
 <template><section ref="root" class="skill-points-maintenance">
  <CharacterSkillReset :key="characNo+'-'+resetVersion" :charac-no="characNo" :disabled="busy||!!unfinished" @busy="resetBusy=$event" @pending="resetPending=$event" @reauth="emit('reauth')" @expired="emit('expired')" @changed="emit('changed');refresh()"/>

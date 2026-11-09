@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import {computed,ref,onMounted,onUnmounted} from 'vue'
+import {computed,ref,onMounted,onUnmounted,watch,onBeforeUnmount} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
+import {useGmConfirmation} from '../stores/gm/confirmation'
+const confirmationLease=useGmConfirmation()
 import Modal from './Modal.vue'
 import FieldError from './FieldError.vue'
 import PluginDiagnostics from './PluginDiagnostics.vue'
@@ -46,10 +48,12 @@ function preview(){
  reasonError.value='';error.value='';success.value=''
  if(reason.value.trim().length<2){reasonError.value='请填写至少2个字的权限调整原因。';return}
  if(!changed.value&&data.value.policy.state==='managed'){error.value='权限没有变化。';return}
+ if(!confirmationLease.acquire('domain-capabilities')){error.value='请先完成或关闭当前确认面板。';return}
  confirm.value=true
 }
 async function save(){
  if(frozen.value||!confirm.value)return
+ if(!confirmationLease.acquire('domain-capabilities')){error.value='请先完成或关闭当前确认面板。';return}
  const id=crypto.randomUUID().replaceAll('-','');remember(id);busy.value=true;error.value=''
  try{const r=await api('/capabilities/policy','POST',{request_id:id,expected_revision:data.value.policy.revision,enabled:enabled.value,reason:reason.value.trim()});remember('');confirm.value=false;success.value='权限版本 '+r.revision+' 已保存，管理员可操作所有账号。开关即时生效，不需要重启服务。';reason.value=''}
  catch(e){if(e instanceof ApiError&&[400,401,403,404,409,422,429].includes(e.status))remember('');failure(e)}
@@ -64,6 +68,8 @@ async function reconcile(){
 }
 onMounted(()=>{try{const id=sessionStorage.getItem(storage)||'';if(/^[a-f0-9]{32}$/.test(id))pending.value=id}catch{};void load();timer=setInterval(()=>{if(!document.hidden&&pending.value)void reconcile()},5000)})
 onUnmounted(()=>{alive=false;if(timer)clearInterval(timer)})
+watch(()=>confirm.value,active=>{if(active)confirmationLease.acquire('domain-capabilities');else confirmationLease.release('domain-capabilities')})
+onBeforeUnmount(()=>confirmationLease.release('domain-capabilities'))
 </script>
 <template>
  <div class="capability-center">

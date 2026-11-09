@@ -17,10 +17,10 @@ from provision import mysql
 import grants
 
 MIGRATIONS=tuple(sorted((Path(__file__).resolve().parents[1]/'migrations').glob('*.sql')))
-GRANTS=('character_read_sql','catalog_policy_sql','mail_gold_sql','equipment_unlock_sql',
+GRANTS=('character_read_sql','character_outfit_read_sql','catalog_policy_sql','mail_gold_sql','equipment_unlock_sql',
         'rewards_sql','mail_center_sql','warehouse_read_sql','item_preferences_sql',
         'reward_jobs_sql','native_controls_sql','schedules_sql','inventory_management_sql',
-        'inventory_storage_sql','character_maintenance_sql','character_rename_sql','character_rescue_sql','character_skills_sql','character_levels_sql','character_quests_sql','quest_repair_sql','player_preferences_sql','backup_schedule_sql','support_sql','economy_sql','capability_policy_sql','gameplay_fence_sql')
+        'inventory_storage_sql','character_maintenance_sql','character_rename_sql','character_rescue_sql','character_skills_sql','character_levels_sql','character_quests_sql','quest_repair_sql','player_preferences_sql','backup_schedule_sql','ui_preferences_sql','support_sql','economy_sql','capability_policy_sql','gameplay_fence_sql')
 
 
 def main():
@@ -46,7 +46,7 @@ def main():
             if result.stdout.strip() not in ('inactive','failed'):raise SystemExit('Stop GM workers before schema upgrade')
         assert_idle();assert_config_gate()
         versions={int(x) for x in mysql(a.container,a.mysql_port,'SELECT version FROM dnf_gm.schema_versions;').split()}
-        if not {1,2,3}<=versions or not versions<=set(range(1,17)):raise SystemExit('Unsupported source schema')
+        if not {1,2,3}<=versions or not versions<=set(range(1,18)):raise SystemExit('Unsupported source schema')
         for path in MIGRATIONS:
             version=int(path.name.split('-')[0].split('.')[0])
             if version not in versions:

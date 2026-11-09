@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import {ref,computed,onMounted,onBeforeUnmount} from 'vue'
+import {ref,computed,onMounted,onBeforeUnmount,watch} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
+import {useGmConfirmation} from '../stores/gm/confirmation'
+const confirmationLease=useGmConfirmation()
 import RewardJobs from './RewardJobs.vue'
 import {shanghaiInput,shanghaiTimestamp,scheduleTime,scheduleStates} from '../scheduleTime'
 const props=defineProps<{initialSchedule?:string}>()
@@ -37,15 +39,17 @@ async function preview(rewardJob?:any){
   else if(/\p{C}/u.test(message.value)||new TextEncoder().encode(message.value).length>254)fields.value.message='公告须为单行文字，最多254个UTF-8字节'
  }
  if(Object.keys(fields.value).length){error.value='请修正上方对应输入项旁的提示；没有创建计划。';return}
+ if(!confirmationLease.acquire('domain-schedules')){error.value='请先完成或关闭当前确认面板。';return}
  busy.value=true
  try{
   const r=await api('/schedules/preview','POST',{title:title.value.trim(),kind:kind.value,first_due:due,recurrence:recurrence.value,end_at:until,reward_job:kind.value==='reward'?rewardJob:null,notice:kind.value==='notice'?{action:'native-notice',message:message.value,reason:reason.value.trim()}:null})
   if(!alive)return
   selected.value=r;showDraft.value=false;runs.value=[];runPage.value=1;query.value=r.id;remember(r.id);activationKey.value=crypto.randomUUID();canActivate.value=true;confirmation.value='';recurringAck.value=false;repeatAck.value=false;await list()
- }catch(e){fail(e)}finally{busy.value=false}
+ }catch(e){fail(e)}finally{busy.value=false;if(selected.value?.status!=='preview')confirmationLease.release('domain-schedules')}
 }
 async function activate(){
  if(busy.value||!canActivate.value||uncertain.value)return
+ if(!confirmationLease.acquire('domain-schedules')){error.value='请先完成或关闭当前确认面板。';return}
  error.value=''
  if(recurring.value&&!recurringAck.value){error.value='请确认周期性执行。';return}
  if(fullScope.value&&confirmation.value!==fullScope.value){error.value='请输入“'+fullScope.value+'”确认范围。';return}
@@ -73,6 +77,8 @@ onMounted(async()=>{
  timer=setInterval(()=>{if(document.hidden||busy.value||!selected.value)return;void inspect(selected.value.id)},30000)
 })
 onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
+watch(()=>selected.value?.status==='preview',active=>{if(active)confirmationLease.acquire('domain-schedules');else confirmationLease.release('domain-schedules')})
+onBeforeUnmount(()=>confirmationLease.release('domain-schedules'))
 </script>
 <template>
  <section class="schedules">

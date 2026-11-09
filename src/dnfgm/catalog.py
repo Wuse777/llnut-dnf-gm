@@ -108,8 +108,8 @@ class Catalog:
                 continue
             yield item
 
-    def search(self, q='', category='', page=1, allowed_only=False, state='', *, part='',rarity=None,min_level=None,max_level=None,sort='id'):
-        filters={'part':part,'rarity':rarity,'min_level':min_level,'max_level':max_level}
+    def search(self, q='', category='', page=1, allowed_only=False, state='', *, part='',rarity=None,min_level=None,max_level=None,job='',weapon_type='',set_id=None,sort='id'):
+        filters={'part':part,'rarity':rarity,'min_level':min_level,'max_level':max_level,'job':job,'weapon_type':weapon_type,'set_id':set_id}
         if sort not in ORDERS:raise HTTPException(422,'未知的物品排序方式')
         if self.db:
             with self.db.connect() as con, con.cursor() as cursor:

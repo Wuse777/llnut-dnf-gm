@@ -12,7 +12,7 @@ export function validationMessage(detail:unknown){
 export async function api(path:string,method='GET',data?:unknown):Promise<any>{
  const start=performance.now();let status:number|string='连接失败 / 结果未知'
  try{
- const r=await fetch('/dnf-gm/api/v1'+path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...(method==='GET'?{}:{'X-CSRF-Token':csrf})},body:data===undefined?undefined:JSON.stringify(data),signal:AbortSignal.timeout(10000)})
+ const r=await fetch('/dnf-gm/api/v1'+path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...(method==='GET'?{}:{'X-CSRF-Token':csrf})},...(method!=='GET'&&data!==undefined?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(10000)})
  status=r.status
  const d=await r.json().catch(()=>({detail:'响应格式异常'}))
  if(!r.ok)throw new ApiError(validationMessage(d.detail),r.status,d.detail)

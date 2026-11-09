@@ -1,11 +1,19 @@
 # 第三方来源与许可
 
+## SoybeanAdmin 框架
+
+- 官方项目：`soybeanjs/soybean-admin`，固定 `v2.3.0`，提交 `ab40c08992807e303dd8aabb6ec43d7e2334b24f`。
+- 完整迁入其工作区包、Vite+ 构建、Naive UI、UnoCSS、AdminLayout／PageTab、Pinia、主题和图标组件。GM 使用独立应用版本号；上游记录见 `web/UPSTREAM.json`。
+- 路由类型继续由 Elegant Router 生成，运行时显式注册带玩家身份的业务路由。演示页面、Bearer 登录、刷新令牌自动重放和 mock 请求均未接入 GM。
+- MIT，Copyright (c) 2021 Soybean；原始声明见 [web/SOYBEAN-LICENSE](web/SOYBEAN-LICENSE)，构建产物保留同一声明。
+- 基础职业插画、物品图标和动作素材继续由部署者私下提供，不属于该模板或本项目的 MIT 授权范围。
+
 ## CPAMC 视觉设计与主题变量
 
 - 项目：Router-For.ME / Cli-Proxy-API-Management-Center。
 - 参考版本：`v1.26.5`，Git tree `fe2963330f32a933f562282165f62ae52cf57145`，固定来源版本。
 - 来源：`src/styles/themes.scss`、`variables.scss`、`layout.scss`、`components.scss`。
-- `web/src/cpamc-tokens.css` 使用该版本的主题变量；字体栈、216/60px侧栏、控件尺寸、8/12px圆角与过渡时序参照该版本。Vue布局和GM交互独立实现。
+- `web/src/cpamc-tokens.css` 保留历史出处记录，当前布局与主题已改用 SoybeanAdmin。部分历史业务表单的控件结构仍保留于限定作用域的 `style.css`，并使用新的 GM 主题变量。
 - 许可证：MIT；原始声明见 [licenses/CPAMC-MIT.txt](licenses/CPAMC-MIT.txt)。浏览器产物亦包含 `third-party-notices.txt`。
 
 ## DNF GM 操作流程参考（仅研究，不复制实现）

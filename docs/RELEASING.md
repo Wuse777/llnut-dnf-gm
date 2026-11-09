@@ -6,7 +6,7 @@
 
 ## 发布前
 
-1. 统一 `pyproject.toml`、`src/dnfgm/__init__.py`、`web/package.json` 与锁文件版本；就绪接口从同一Python版本常量返回。
+1. 统一 `pyproject.toml`、`src/dnfgm/__init__.py`、`web/package.json` 版本；就绪接口从同一Python版本常量返回。前端固定 pnpm 12.10.1 与 `pnpm-lock.yaml`；pnpm锁文件不包含应用根版本，依赖一致性由冻结安装核验。
 2. 准备 `docs/releases/vX.Y.Z.md`、CHANGELOG及受影响手册，标明新功能、迁移、已知缺口和本轮真实验证范围。
 3. 执行 `python3 tools/check_documentation.py`、全量 Linux 后端（隔离 MySQL）、前端测试、类型检查和构建；修复 CI 后的新功能发布以这些检查全部通过为门槛。
 4. 核对Git变更及截图不含凭据、生产地址、玩家数据、PVF／NPK／索引。只标记已经审查的固定提交，不覆盖旧标签。
@@ -18,14 +18,14 @@
 发布工作流：
 
 1. 检出标签，核对干净状态、版本和文档引用；不读取生产Secrets。
-2. 使用Node24、Python3.12执行前端类型检查和构建；不自动运行全量测试。
+2. 使用Node24、Python3.12、pnpm12.10.1冻结安装，显式执行前端类型检查，再执行Vite+生产构建；不自动运行全量测试。
 3. `git archive`生成源码包；另打包同版`web/dist/`和`SOURCE_REVISION`，生成`SHA256SUMS`。
 4. 创建草稿Release，上传两个附件和校验清单，全部成功才公开并标为latest。没有写权限时停止，不索要生产凭据。
 
 也可在干净的标签检出环境设置GitHub CLI的`GH_TOKEN`及`GITHUB_REPOSITORY`，执行：
 
 ```bash
-bash tools/publish_github_release.sh v0.5.0
+bash tools/publish_github_release.sh v0.6.0
 ```
 
 Token仅需要目标仓库Release写权限；不写入源码或配置。脚本拒绝修改已有Release，避免覆盖下载物。若上传中断留下草稿，先在GitHub检查已上传附件与哈希，由维护者完成或删除该草稿后再明确重试；不能盲目自动覆盖。

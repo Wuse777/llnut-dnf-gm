@@ -75,7 +75,7 @@ class GameAssets:
                 from .portrait_credits import KINDS,source_page
                 if credit['kind'] not in KINDS or not isinstance(credit['label'],str) or len(credit['label'])>120 or any(type(credit[k]) is not int or not 0<=credit[k]<=100 for k in ('focus_x','focus_y')):raise ValueError()
                 image.update(source_kind=credit['kind'],source_label=credit['label'],source_page=source_page(credit['page']),focus_x=credit['focus_x'],focus_y=credit['focus_y'])
-                image['note']={'official_promotional':'DNF官方宣传插画，非当前客户端NPK；基础职业示意，不代表角色装备／外观或精确觉醒阶段','client':'维护者提供的客户端职业图，尚未验收客户端一致性','custom':'维护者提供的职业示意图，非游戏客户端像素验证'}[credit['kind']]
+                image['note']={'official_promotional':'DNF官方宣传插画，非当前客户端NPK；职业示意，不代表角色装备／外观或精确觉醒阶段','client':'维护者提供的客户端职业插画，请查看来源标注；不代表角色装备或独立觉醒阶段插画，未验收客户端一致性','custom':'维护者提供的职业示意图，非游戏客户端像素验证'}[credit['kind']]
         return image
 
     def portrait(self,pvf_sha,job,grow_type,sex):
@@ -83,8 +83,16 @@ class GameAssets:
             if c:
                 try:
                     grow=grow_type&127 if type(grow_type) is int and -128<=grow_type<=255 else grow_type
-                    row=c.execute("SELECT p.*,f.width,f.height,'ready' state FROM portraits p JOIN files f ON f.sha256=p.sha256 WHERE p.job=? AND p.grow_type IN (?,-1) AND p.sex IN (?,-1) ORDER BY (p.grow_type=?) DESC,(p.sex=?) DESC LIMIT 1",(job,grow,sex,grow,sex)).fetchone()
-                    return self.portrait_row(c,pvf_sha,row,dict(c.execute('SELECT key,value FROM metadata'))) if row else self.image(None,pvf_sha,'missing')
+                    profession=grow&15 if type(grow) is int and 0<=grow<=127 else grow
+                    row=c.execute("SELECT p.*,f.width,f.height,'ready' state FROM portraits p JOIN files f ON f.sha256=p.sha256 WHERE p.job=? AND p.grow_type IN (?,?,-1) AND p.sex IN (?,-1) ORDER BY (p.grow_type=?) DESC,(p.grow_type=?) DESC,(p.sex=?) DESC LIMIT 1",(job,grow,profession,sex,grow,profession,sex)).fetchone()
+                    if row is None:return self.image(None,pvf_sha,'missing')
+                    image=self.portrait_row(c,pvf_sha,row,dict(c.execute('SELECT key,value FROM metadata')))
+                    if image['state']=='ready':
+                        image.update(requested_growth=grow,mapped_growth=row['grow_type'],awakening_specific=row['grow_type']>=16)
+                        if row['grow_type']==profession and profession!=grow:
+                            image['match_level']='profession'
+                            image['note']+='；当前觉醒阶段使用同转职示意，未匹配独立觉醒插画'
+                    return image
                 except (sqlite3.Error,ValueError,TypeError):state='unavailable'
             return self.image(None,pvf_sha,state)
 
@@ -125,6 +133,59 @@ class GameAssets:
                 except (sqlite3.Error,ValueError,TypeError):state='unavailable'
             return self.image(None,pvf_sha,state)
 
+    def appearance(self,pvf_sha,saved):
+        """Resolve only registered v2 component records for this saved outfit."""
+        from .appearance_manifest import assemble,failure
+        if saved.get('state')!='ok':return {**failure(saved),'pvf_sha256':pvf_sha}
+        with self.connection(pvf_sha) as (c,state):
+            if c is None:return {**failure({'state':state},'appearance_pack_missing'),'pvf_sha256':pvf_sha}
+            try:return {**assemble(c,pvf_sha,saved),'pvf_sha256':pvf_sha}
+            except (sqlite3.Error,ValueError,TypeError,KeyError,StopIteration):
+                return {**failure({'state':'unavailable'},'appearance_manifest_invalid'),'pvf_sha256':pvf_sha}
+
+    def preview_appearance(self,pvf_sha,preset):
+        """Read-only local fitting; accepts item identities, never drawing code."""
+        from .outfit_recipe import canonical_appearance_recipe,OutfitRecipeError
+        try:
+            if not isinstance(preset,dict) or set(preset)-{'job','grow_type','sex','slots','direction','animation'}:raise ValueError()
+            if preset.get('direction','right') not in ('right','mirror_left') or preset.get('animation','idle') not in ('idle','walk','attack'):raise ValueError()
+            slots=preset.get('slots',[])
+            if not isinstance(slots,list) or len(slots)>9:raise ValueError()
+            if any(not isinstance(i,dict) or set(i)!={'slot','item_id'} for i in slots):raise ValueError()
+            recipe,sha=canonical_appearance_recipe(preset['job'],preset.get('grow_type',0),
+                [{'slot':i['slot'],'id':i['item_id'],'color1':0,'color2':0} for i in slots])
+        except (KeyError,ValueError,TypeError,OutfitRecipeError):raise HTTPException(422,'试衣方案格式或职业／部位无效') from None
+        result=self.appearance(pvf_sha,{'state':'ok','recipe':recipe,'recipe_sha256':sha,'items':recipe['items'],'reason_codes':[]})
+        result.update(source_kind='local_fitting',scope='local_fitting',note='本地试衣方案，不是角色当前穿戴；不会写入游戏。未覆盖项目见下方清单')
+        return result
+
+    def atlas(self,pvf_sha,digest):
+        """Independent authenticated atlas resource; never relax icon bounds."""
+        if not SHA.fullmatch(pvf_sha) or not SHA.fullmatch(digest):raise HTTPException(404,'图集不存在')
+        with self.connection(pvf_sha) as (c,state):
+            if c is None:raise HTTPException(404,'图集不可用或版本不匹配')
+            try:
+                meta=dict(c.execute('SELECT key,value FROM metadata'))
+                row=c.execute('SELECT width,height,bytes FROM appearance_atlases WHERE sha256=?',(digest,)).fetchone()
+                if meta.get('appearance_version')!='2' or row is None:raise ValueError()
+                expected=dict(row)
+            except (sqlite3.Error,ValueError):raise HTTPException(404,'图集清单不可用') from None
+        try:
+            directory_path=Path(self.settings.assets_dir).resolve()/'atlases'
+            if directory_path.is_symlink():raise ValueError()
+            directory=os.open(directory_path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+            try:fd=os.open(digest+'.png',os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=directory)
+            finally:os.close(directory)
+            with os.fdopen(fd,'rb') as f:
+                info=os.fstat(f.fileno())
+                if not stat.S_ISREG(info.st_mode) or not 33<=info.st_size<=16*1024*1024 or info.st_size!=expected['bytes']:raise ValueError()
+                data=f.read(16*1024*1024+1)
+            if not data.startswith(PNG_MAGIC) or data[12:16]!=b'IHDR' or hashlib.sha256(data).hexdigest()!=digest:raise ValueError()
+            width,height=struct.unpack_from('>II',data,16)
+            if not 1<=width<=2048 or not 1<=height<=2048 or width!=expected['width'] or height!=expected['height']:raise ValueError()
+            return data
+        except (OSError,ValueError,struct.error):raise HTTPException(404,'图集缺失或校验失败') from None
+
     def coverage(self,pvf_sha,state='all',page=1):
         from contextlib import closing
         from .catalog import Catalog
@@ -146,9 +207,11 @@ class GameAssets:
                     jobs=json.loads(binding.get('jobs','{}'))
                 for r in items:r['name']=names.get(r['id'],'索引中不存在的物品')
                 portraits=[]
-                for row in c.execute("SELECT p.*,f.width,f.height,'ready' state FROM portraits p JOIN files f ON f.sha256=p.sha256 ORDER BY p.job,p.grow_type,p.sex LIMIT 32"):
+                for row in c.execute("SELECT p.*,f.width,f.height,'ready' state FROM portraits p JOIN files f ON f.sha256=p.sha256 ORDER BY p.job,p.grow_type,p.sex LIMIT 128"):
                     base=jobs.get(str(row['job']),{}).get('grow_names',[])
-                    portraits.append({'job':row['job'],'grow_type':row['grow_type'],'sex':row['sex'],'name':base[0] if base else '职业 #'+str(row['job']),'image':self.portrait_row(c,pvf_sha,row,meta)})
+                    growth=row['grow_type']&15 if row['grow_type']>=0 else 0
+                    name=base[growth] if growth<len(base) else '职业 #'+str(row['job'])
+                    portraits.append({'job':row['job'],'grow_type':row['grow_type'],'sex':row['sex'],'name':name,'image':self.portrait_row(c,pvf_sha,row,meta)})
                 return {'pvf_sha256':pvf_sha,'state':'ready','items':items,'page':page,'has_more':len(rows)>20,'portraits':portraits,'portrait_total':int(meta.get('portraits','0')),'item_states':json.loads(meta.get('counts','{}')),'client_verified':False}
             except (sqlite3.Error,ValueError,TypeError,KeyError):raise HTTPException(409,'图片覆盖信息不可读取，请核对私有图片包') from None
 

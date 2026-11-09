@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import {ref,computed,onMounted,onBeforeUnmount,watch,nextTick} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
+import {useGmConfirmation} from '../stores/gm/confirmation'
+const confirmationLease=useGmConfirmation()
 import {inventoryStates as states} from '../nativeStatus'
 const props=defineProps<{characNo:number}>()
 const emit=defineEmits(['busy','pending','reauth','expired','changed'])
@@ -16,7 +18,7 @@ watch(busy,v=>emit('busy',v));watch(unfinished,v=>emit('pending',v))
 function failure(e:unknown){error.value=uncertainMessage(e);if(e instanceof ApiError&&e.status===401)emit('expired');if(e instanceof ApiError&&e.status===403&&e.message.includes('重新认证'))emit('reauth')}
 function display(key:string,value:any){if(key!=='element_resist'||typeof value!=='string'||!/^[a-f0-9]{16}$/i.test(value))return value;const b=Uint8Array.from(value.match(/../g)!.map(x=>parseInt(x,16)));const view=new DataView(b.buffer);return ['火','水','暗','光'].map((name,i)=>name+' '+view.getInt16(i*2,true)).join(' / ')}
 function remember(id:string){try{sessionStorage.setItem(storage,id)}catch{/* history lookup remains available */}}
-async function run(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';try{await fn()}catch(e){if(alive)failure(e)}finally{if(alive)busy.value=false}}
+async function run(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';try{await fn()}catch(e){if(alive)failure(e)}finally{if(alive)busy.value=false;if(operation.value?.status!=='preview')confirmationLease.release('character-characterlevels')}}
 async function refresh(){await run(async()=>{const r=await api(`${base}/characters/${props.characNo}`);if(alive){current.value=r;level.value=String(r.archive.info.lev);experience.value=''}})}
 async function history(){await run(async()=>{const r=await api(`${base}/operations?charac_no=${props.characNo}&page=${page.value}`);if(alive){records.value=r.items;more.value=r.has_more}})}
 function received(r:any){if(!alive)return;operation.value=r;remember(r.operation_id);if(r.status==='committed')emit('changed')}
@@ -27,13 +29,15 @@ async function preview(){
  if(!current.value.levels.some((r:any)=>r.level===Number(level.value)))valueError.value='请选择有匹配成长和经验规则的目标等级。'
  if(experience.value.trim()&&(!/^\d+$/.test(experience.value)||Number(experience.value)>4294967295))valueError.value='经验须为0至4294967295的整数；留空使用目标等级起点。'
  if(reasonError.value||valueError.value){await nextTick();root.value?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();return}
+ if(!confirmationLease.acquire('character-characterlevels')){error.value='请先完成或关闭当前确认面板。';return}
  await run(async()=>{const r=await api(base+'/preview','POST',{action:'char-level',uid:current.value.target.uid,charac_no:props.characNo,reference:current.value.reference,level:Number(level.value),experience:experience.value.trim()?Number(experience.value):null,reason:reason.value.trim()});key.value=crypto.randomUUID().replaceAll('-','');attempted.value=false;received(r);await nextTick();root.value?.querySelector<HTMLElement>('.level-preview')?.scrollIntoView?.({block:'nearest'})})
 }
-async function confirm(){if(!operation.value||attempted.value||!key.value)return;attempted.value=true;await run(async()=>received(await api(`${base}/operations/${operation.value.operation_id}/confirm`,'POST',{idempotency_key:key.value})))}
+async function confirm(){if(!operation.value||attempted.value||!key.value)return;if(!confirmationLease.acquire('character-characterlevels')){error.value='请先完成或关闭当前确认面板。';return};attempted.value=true;await run(async()=>received(await api(`${base}/operations/${operation.value.operation_id}/confirm`,'POST',{idempotency_key:key.value})))}
 async function cancel(){await run(async()=>received(await api(`${base}/operations/${operation.value.operation_id}/cancel-preview`,'POST',{})))}
 async function finish(){operation.value=null;attempted.value=false;key.value='';try{sessionStorage.removeItem(storage)}catch{}await refresh();await history()}
 onMounted(async()=>{await refresh();if(!alive)return;await history();if(!alive)return;let id='';try{id=sessionStorage.getItem(storage)||''}catch{}if(id)await inspect(id);timer=setInterval(()=>{if(alive&&pending.value&&!document.hidden&&!busy.value)void inspect()},10000)})
-onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer);emit('busy',false);emit('pending',false)})
+watch(()=>operation.value?.status,status=>{if(status==='preview')confirmationLease.acquire('character-characterlevels');else confirmationLease.release('character-characterlevels')})
+onBeforeUnmount(()=>{confirmationLease.release('character-characterlevels');alive=false;if(timer)clearInterval(timer);emit('busy',false);emit('pending',false)})
 </script>
 <template><section ref="root" class="level-maintenance">
  <header><div><span class="pill">存档维护</span><h3>调整等级与经验</h3></div><button :disabled="busy||unfinished" @click="refresh">刷新关联存档</button></header>

@@ -1,37 +1,12 @@
 // @vitest-environment happy-dom
 import {afterEach,it,expect,vi} from 'vitest'
 import {mount,flushPromises} from '@vue/test-utils'
-import App from './App.vue'
-afterEach(()=>{sessionStorage.clear();vi.unstubAllGlobals();document.body.innerHTML=''})
-function setup(){
- const calls:any[]=[]
- vi.stubGlobal('fetch',vi.fn(async(url,opts:any={})=>{
- const path=url.toString();calls.push({path,body:opts.body&&JSON.parse(opts.body)})
- let data:any={}
- if(path.endsWith('/auth/methods'))data={totp_required:false}
- else if(path.endsWith('/auth/me'))data={csrf:'fixture'}
- else if(path.endsWith('/overview'))data={counts:{accounts:3,characters:2},server:{fresh:false},enabled_writes:[]}
- else if(path.includes('/catalog?'))data={total:125,items:[{id:12,name:'未审核材料',category:'material',stack_limit:100,reviewed:0,allowed:1,sendable:true,supported:true,policy_state:'trial',policy_reason:'管理员允许试发'},{id:13,name:'特殊宠物',category:'special',sendable:false,supported:false,policy_state:'blocked',policy_reason:'特殊类型不能开放'}]}
- else if(path.endsWith('/catalog/policy/preview'))data={operation_id:'a'.repeat(32),preview:{matched:125,affected:123,skipped:2,unchanged:0,policy_revision:1}}
- else if(path.endsWith('/confirm'))data={affected:123,policy_revision:2}
- return new Response(JSON.stringify(data))
- }))
- return {calls,w:mount(App,{attachTo:document.body})}
-}
-async function click(w:any,text:string){const b=w.findAll('button').find((b:any)=>b.text()===text||b.find('.nav-text').exists()&&b.find('.nav-text').text()===text)!;expect(b,'button '+text).toBeTruthy();await b.trigger('click');await flushPromises()}
-it('shows trial status and blocked reason, trial items with reviewed=0 join mailing queue',async()=>{
- const {w}=setup();await flushPromises();await click(w,'物品索引');expect(w.text()).toContain('允许试发、未验证');expect(w.text()).toContain('特殊类型不能开放');expect(w.findAll('button').filter(b=>b.text()==='调整策略').at(1)!.attributes('disabled')).toBeDefined();await click(w,'加入清单');expect(w.text()).toContain('1 条附件已加入邮件草稿');w.unmount()
-})
-it('batch uses last applied filters, not unsubmitted edits or current page, and refreshes catalogue after commit',async()=>{
- const {w,calls}=setup();await flushPromises();await click(w,'物品索引');await w.find('[aria-label="搜索条件"]').setValue('尚未提交的搜索');await click(w,'批量调整当前筛选（全部 125 项）');await vi.waitFor(()=>expect(w.find('#policy-reason').exists()).toBe(true));await w.find('#policy-reason').setValue('测试完整筛选');await click(w,'预览影响范围');const req=calls.find(c=>c.path.endsWith('/policy/preview'));expect(req.body.filters).toEqual({q:'',category:'',allowed_only:false});expect(req.body.filters.page).toBeUndefined();expect(w.text()).toContain('125');await click(w,'确认变更一次');expect(calls.filter(c=>c.path.includes('/catalog?')).length).toBe(2);expect(w.text()).toContain('尚未进行任何物品发放');w.unmount()
-})
-it('allows an indexed special item into the mail draft',async()=>{
- const {w}=setup();await flushPromises()
- const original=vi.mocked(fetch).getMockImplementation()!
- vi.mocked(fetch).mockImplementation(async(url,opts)=>url.toString().includes('/catalog?')?new Response(JSON.stringify({total:1,items:[{id:13,name:'测试时装',category:'special',mail_kind:'avatar',single_item:true,stack_limit:1,sendable:true,supported:true,policy_state:'trial'}]})):original(url,opts))
- await click(w,'物品索引');await click(w,'加入清单')
- expect(w.text()).toContain('1 条附件已加入邮件草稿');await click(w,'前往邮件工作区 · 1 条附件 →')
- expect(w.find('.queue-panel').text()).toContain('测试时装')
- expect(w.find('[aria-label="物品数量 13"]').attributes('disabled')).toBeUndefined()
- w.unmount()
-})
+import GmItemPicker from './components/GmItemPicker.vue'
+import {workspaceFixture} from './stores/gm/workspace.test-helper'
+const cleanups:(()=>void)[]=[]
+function setup(){const fixture=workspaceFixture();cleanups.push(fixture.cleanup);return fixture}
+afterEach(()=>{cleanups.splice(0).forEach(cleanup=>cleanup());sessionStorage.clear();vi.unstubAllGlobals();document.body.innerHTML=''})
+it('selects trial items while disabled entries remain unavailable',async()=>{const {pinia,fetcher}=setup();const original=fetcher.getMockImplementation()!;fetcher.mockImplementation(async(url,options)=>String(url).includes('/catalog?')?new Response(JSON.stringify({metadata:{pvf_sha256:'a'.repeat(64)},total:2,items:[{id:12,name:'试发材料',sendable:true,reviewed:0,policy_state:'trial'},{id:13,name:'不可发宠物',sendable:false,supported:false,policy_reason:'不支持的类型'}]})):original(url,options));const w=mount(GmItemPicker,{props:{managePolicy:true},global:{plugins:[pinia]}});await flushPromises();expect(w.text()).toContain('允许试发');expect(w.text()).toContain('不支持的类型');expect(w.findAll('.picker-item')[1].findAll('button').at(-1)?.attributes('disabled')).toBeDefined();await w.findAll('button').find(b=>b.text()==='加入清单')!.trigger('click');expect(w.emitted('select')?.[0]?.[0]).toMatchObject({id:12});w.unmount()})
+it('policy batch freezes applied filters without page or blank optional fields',async()=>{const {pinia}=setup();const w=mount(GmItemPicker,{props:{managePolicy:true,allowedOnly:false},global:{plugins:[pinia]}});await flushPromises();const baseline=w.emitted('loaded')!.at(-1)![0] as any;await w.get('[aria-label="物品搜索"]').setValue('未应用');await w.findAll('button').find(b=>b.text().startsWith('调整当前筛选策略'))!.trigger('click');expect(baseline.filters).toEqual({q:'',category:'',allowed_only:false,sort:'id'});expect(baseline.filters).not.toHaveProperty('page');expect(w.emitted('loaded')).toHaveLength(1);w.unmount()})
+it('restores independent catalog and target item queries',async()=>{const {pinia}=setup();const first=mount(GmItemPicker,{props:{contextKey:'catalog'},global:{plugins:[pinia]}});await flushPromises();await first.get('[aria-label="物品搜索"]').setValue('武器');first.unmount();const second=mount(GmItemPicker,{props:{contextKey:'reward-3:30'},global:{plugins:[pinia]}});await flushPromises();expect((second.get('[aria-label="物品搜索"]').element as HTMLInputElement).value).toBe('');second.unmount();const restored=mount(GmItemPicker,{props:{contextKey:'catalog'},global:{plugins:[pinia]}});await flushPromises();expect((restored.get('[aria-label="物品搜索"]').element as HTMLInputElement).value).toBe('武器');restored.unmount()})
+it('item details only read data and never add to draft implicitly',async()=>{const {pinia,calls}=setup();const w=mount(GmItemPicker,{global:{plugins:[pinia]},attachTo:document.body});await flushPromises();const before=calls.filter(call=>call.method!=='GET').length;await w.get('[aria-label="查看物品详情 1000 测试材料"]').trigger('click');await flushPromises();expect(document.querySelector('[role="dialog"]')).toBeTruthy();expect(w.emitted('select')).toBeUndefined();expect(calls.filter(call=>call.method!=='GET')).toHaveLength(before);w.unmount()})

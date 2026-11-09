@@ -60,6 +60,8 @@ def bootstrap_sql(config,ph):
     sql += player_preferences_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/016-backup-schedule.sql').read_text()
     sql += backup_schedule_sql(user)
+    sql += (Path(__file__).resolve().parents[1]/'migrations/017-ui-preferences.sql').read_text()
+    sql += ui_preferences_sql(user)
     sql += gameplay_fence_sql(user)
     sql += reward_jobs_sql(user)
     sql += catalog_policy_sql(user)
@@ -90,7 +92,12 @@ def character_read_sql(user="'dnf_gm_app'@'127.0.0.1'"):
 
 
 def character_outfit_read_sql(user="'dnf_gm_app'@'127.0.0.1'"):
-    return f'GRANT SELECT(charac_no,slot,it_id,stat,expire_date,clear_avatar_id,color1,color2) ON taiwan_cain_2nd.user_items TO {user};\n'
+    return f'GRANT SELECT(charac_no,slot,it_id,stat,expire_date,clear_avatar_id,color1,color2,ui_id) ON taiwan_cain_2nd.user_items TO {user};\n'
+
+
+def ui_preferences_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return (f'GRANT SELECT,UPDATE(revision) ON dnf_gm.ui_preference_state TO {user};\n'
+            f'GRANT SELECT,INSERT,UPDATE(version,payload_json,deleted,updated_at) ON dnf_gm.ui_preferences TO {user};\n')
 
 
 def catalog_policy_sql(user="'dnf_gm_app'@'127.0.0.1'"):

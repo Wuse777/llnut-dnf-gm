@@ -7,7 +7,7 @@ OUT=${1:?Usage: build_release.sh /absolute/new/release-directory}
 PYTHON=${PYTHON_BIN:-python3.12}
 "$PYTHON" -c 'import sys; assert sys.version_info[:2] == (3,12), "Build target is CPython 3.12"'
 # Release builds always type-check/build; full regression is an explicit opt-in.
-(cd "$ROOT/web"; npm ci; if [[ "${GM_FULL_TESTS:-0}" == 1 ]]; then npm test; fi; npm run build)
+(cd "$ROOT/web"; pnpm install --frozen-lockfile; pnpm typecheck; if [[ "${GM_FULL_TESTS:-0}" == 1 ]]; then pnpm test; fi; pnpm build)
 mkdir -p "$OUT/web"
 cp -R "$ROOT/src" "$ROOT/deploy" "$ROOT/migrations" "$ROOT/tools" "$ROOT/licenses" "$ROOT/docs" "$OUT/"
 cp "$ROOT/CHANGELOG.md" "$ROOT/SECURITY.md" "$ROOT/CONTRIBUTING.md" "$OUT/"

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import {ref,computed,onMounted,onBeforeUnmount,watch,nextTick} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
+import {useGmConfirmation} from '../stores/gm/confirmation'
+const confirmationLease=useGmConfirmation()
 import {inventoryStates as states} from '../nativeStatus'
 const props=defineProps<{characNo:number}>()
 const emit=defineEmits(['busy','pending','reauth','expired','changed'])
@@ -15,7 +17,7 @@ watch(busy,v=>emit('busy',v));watch(unfinished,v=>emit('pending',v))
 function failure(e:unknown){error.value=uncertainMessage(e);if(e instanceof ApiError&&e.status===401)emit('expired');if(e instanceof ApiError&&e.status===403&&e.message.includes('重新认证'))emit('reauth')}
 function display(key:string,value:any){if(key!=='element_resist'||typeof value!=='string'||!/^[a-f0-9]{16}$/i.test(value))return value;const b=Uint8Array.from(value.match(/../g)!.map(x=>parseInt(x,16)));const view=new DataView(b.buffer);return ['火','水','暗','光'].map((name,i)=>name+' '+view.getInt16(i*2,true)).join(' / ')}
 function remember(id:string){try{sessionStorage.setItem(storage,id)}catch{/* history lookup remains available */}}
-async function run(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';try{await fn()}catch(e){if(alive)failure(e)}finally{if(alive)busy.value=false}}
+async function run(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';try{await fn()}catch(e){if(alive)failure(e)}finally{if(alive)busy.value=false;if(operation.value?.status!=='preview')confirmationLease.release('character-characterprofession')}}
 async function refresh(){await run(async()=>{const r=await api(`${base}/characters/${props.characNo}`);if(alive){current.value=r;choice.value=String(r.current.code)}})}
 async function history(){await run(async()=>{const r=await api(`${base}/operations?charac_no=${props.characNo}&page=${page.value}`);if(alive){records.value=r.items;more.value=r.has_more}})}
 function received(r:any){if(!alive)return;operation.value=r;remember(r.operation_id);if(r.status==='committed')emit('changed')}
@@ -27,13 +29,15 @@ async function preview(){
  if(!target)valueError.value='请选择列表中的目标转职／觉醒。'
  else if(target.code===current.value.current.code)valueError.value='目标职业阶段与当前相同，请选择其他阶段。'
  if(reasonError.value||valueError.value){await nextTick();root.value?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();return}
+ if(!confirmationLease.acquire('character-characterprofession')){error.value='请先完成或关闭当前确认面板。';return}
  await run(async()=>{const r=await api(base+'/preview','POST',{action:'char-profession',uid:current.value.target.uid,charac_no:props.characNo,reference:current.value.reference,first:target.first,second:target.second,reason:reason.value.trim()});key.value=crypto.randomUUID().replaceAll('-','');attempted.value=false;received(r);await nextTick();root.value?.querySelector<HTMLElement>('.profession-preview')?.scrollIntoView?.({block:'nearest'})})
 }
-async function confirm(){if(!operation.value||attempted.value||!key.value)return;attempted.value=true;await run(async()=>received(await api(`${base}/operations/${operation.value.operation_id}/confirm`,'POST',{idempotency_key:key.value})))}
+async function confirm(){if(!operation.value||attempted.value||!key.value)return;if(!confirmationLease.acquire('character-characterprofession')){error.value='请先完成或关闭当前确认面板。';return};attempted.value=true;await run(async()=>received(await api(`${base}/operations/${operation.value.operation_id}/confirm`,'POST',{idempotency_key:key.value})))}
 async function cancel(){await run(async()=>received(await api(`${base}/operations/${operation.value.operation_id}/cancel-preview`,'POST',{})))}
 async function finish(){operation.value=null;attempted.value=false;key.value='';try{sessionStorage.removeItem(storage)}catch{}await refresh();await history()}
 onMounted(async()=>{await refresh();if(!alive)return;await history();if(!alive)return;let id='';try{id=sessionStorage.getItem(storage)||''}catch{}if(id)await inspect(id);timer=setInterval(()=>{if(alive&&pending.value&&!document.hidden&&!busy.value)void inspect()},10000)})
-onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer);emit('busy',false);emit('pending',false)})
+watch(()=>operation.value?.status,status=>{if(status==='preview')confirmationLease.acquire('character-characterprofession');else confirmationLease.release('character-characterprofession')})
+onBeforeUnmount(()=>{confirmationLease.release('character-characterprofession');alive=false;if(timer)clearInterval(timer);emit('busy',false);emit('pending',false)})
 </script>
 
 <template><section ref="root" class="profession-maintenance">

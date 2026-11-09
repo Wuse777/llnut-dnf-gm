@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import {computed,onMounted,onBeforeUnmount,ref} from 'vue'
+import {computed,onMounted,onBeforeUnmount,ref,watch} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
+import {useGmConfirmation} from '../stores/gm/confirmation'
+const confirmationLease=useGmConfirmation()
 import {nativeNames,nativeStates,nativeReasons} from '../nativeStatus'
 import TargetedMessageFields from './TargetedMessageFields.vue'
 const props=defineProps<{account?:any}>()
@@ -44,6 +46,7 @@ async function prepare(){
   if(!messageReady.value)fields.value.readiness='定向消息能力未就绪，请核验能力状态'
  }
  if(Object.keys(fields.value).length)return
+ if(!confirmationLease.acquire('native')){error.value='请先完成或关闭当前确认面板。';return}
  busy.value=true
  try{
   const r=await api('/native-controls/preview','POST',{action:action.value,uid:action.value==='native-notice'?null:props.account.uid,...(action.value==='native-message'?{charac_no:messageCharacter.value}:{}),message:['native-notice','native-message'].includes(action.value)?message.value:'',reason:reason.value.trim()})
@@ -53,6 +56,7 @@ async function prepare(){
 }
 async function confirm(){
  if(busy.value||attempted.value||!detail.value||detail.value.status!=='preview'||!key.value)return
+ if(!confirmationLease.acquire('native')){error.value='请先完成或关闭当前确认面板。';return}
  if(detail.value.preview.action==='native-notice'&&!ack.value){error.value='请确认这是全服广播，不是单人私信';return}
  busy.value=true;error.value=''
  try{
@@ -78,7 +82,9 @@ onMounted(async()=>{
  await historyLoad();if(!alive)return
  timer=setInterval(()=>{if(!document.hidden&&pending.value&&!busy.value)void inspect()},5000)
 })
-onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
+watch(()=>detail.value?.status,status=>{if(status==='preview')confirmationLease.acquire('native');else confirmationLease.release('native')})
+watch(busy,value=>{if(!value&&detail.value?.status!=='preview')confirmationLease.release('native')})
+onBeforeUnmount(()=>{confirmationLease.release('native');alive=false;if(timer)clearInterval(timer)})
 </script>
 <template><section class="panel native-controls"><div class="section-title"><div><h2>游戏内控制</h2><p class="muted">公告、定向系统消息、账号踢下线与封禁联动 · 每次操作先预览</p></div></div>
  <p class="warning">发送记录不是游戏回执。全服公告会广播到当前monitor管理的游戏服务器；定向系统消息需先核验桥接能力。封禁和踢人分别记录结果。</p>

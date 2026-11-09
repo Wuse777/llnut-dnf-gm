@@ -1,76 +1,13 @@
 // @vitest-environment happy-dom
 import {afterEach,it,expect,vi} from 'vitest'
-import {mount,flushPromises} from '@vue/test-utils'
-import App from './App.vue'
-afterEach(()=>{sessionStorage.clear();vi.unstubAllGlobals();document.body.innerHTML=''})
-function setup(){
- const calls:any[]=[];let mail:any
- vi.stubGlobal('fetch',vi.fn(async(url,opts:any={})=>{
- const path=url.toString().replace('/dnf-gm/api/v1',''),body=opts.body&&JSON.parse(opts.body);calls.push({path,body})
- let d:any={}
- if(path==='/auth/methods')d={totp_required:false}
- else if(path==='/auth/me')d={csrf:'fixture'}
- else if(path==='/overview')d={counts:{},server:{fresh:false},enabled_writes:['mail']}
- else if(path.startsWith('/accounts?'))d={items:[{uid:3,accountname:'gm'}]}
- else if(path==='/accounts/3')d={uid:3,accountname:'gm'}
- else if(path.startsWith('/characters?'))d={items:[{charac_no:4,charac_name:'测试测试',delete_flag:0}]}
- else if(path.startsWith('/catalog?'))d={items:[{id:1000,name:'材料',category:'material',stack_limit:99,allowed:1,reviewed:1}]}
- else if(path==='/operations/preview'){mail=body;d={operation_id:'a'.repeat(32),write_enabled:true,preview:{...body,target:{uid:3,accountname:'gm',character:{charac_name:'测试测试',charac_no:4}},rewards:{items:body.items}}}}
- else if(path.endsWith('/confirm'))d={operation_id:'a'.repeat(32),action:'mail',gold:mail.gold,postal_ids:[5],state:'database_delivered_not_claimed'}
- else if(path.startsWith('/gift-templates?'))d={items:[{id:9,name:'模板',enabled:true,current_version:1,rewards:{items:[{id:1000,name:'材料',category:'material',quantity:1,stack_limit:99}]}}]}
- return new Response(JSON.stringify(d))
- }))
- return {calls,w:mount(App,{attachTo:document.body})}
-}
-async function click(w:any,text:string){const b=w.findAll('button').find((b:any)=>b.text()===text||b.find('.nav-text').exists()&&b.find('.nav-text').text()===text);expect(b,'button '+text).toBeTruthy();await b!.trigger('click');await flushPromises()}
-async function target(w:any){await flushPromises();await click(w,'账号与角色');await click(w,'管理 →');await click(w,'邮件发放');await w.find('#mail-role').setValue('4');await w.find('#operation-reason').setValue('金币附件测试')}
-it('gold-only preview submits amount, shows confirmation, and confirmed result displays it',async()=>{
- const {w,calls}=setup();await target(w);await w.find('#mail-gold').setValue(1000);await click(w,'生成预览 →');expect(calls.find(c=>c.path==='/operations/preview').body).toMatchObject({gold:1000,items:[],charac_no:4});expect(w.find('[data-testid=preview-gold]').text()).toContain('1,000');await click(w,'确认执行一次');expect(w.text()).toContain('金币附件合计：1,000');w.unmount()
-})
-it('changing gold invalidates prior preview',async()=>{
- const {w}=setup();await target(w);await w.find('#mail-gold').setValue(10);await click(w,'生成预览 →');await w.find('#mail-gold').setValue(11);expect(w.find('[role=dialog]').exists()).toBe(false);expect(w.text()).toContain('旧预览已失效');w.unmount()
-})
-it.each([-1,1000000001,1.5])('invalid gold %s has inline error and makes no preview request',async(gold)=>{
- const {w,calls}=setup();await target(w);await w.find('#mail-gold').setValue(gold);await click(w,'生成预览 →');expect(w.find('#mail-gold-error').text()).toContain('整数');expect(w.find('#mail-gold').attributes('aria-invalid')).toBe('true');expect(calls.some(c=>c.path==='/operations/preview')).toBe(false);await w.find('#mail-gold').setValue(5);expect(w.find('#mail-gold-error').exists()).toBe(false);w.unmount()
-})
-it('adding gold clears missing-items feedback without requiring a fake coin item',async()=>{
- const {w}=setup();await target(w);await click(w,'生成预览 →');expect(w.find('#mail-items-error').exists()).toBe(true);await w.find('#mail-gold').setValue(5);expect(w.find('#mail-items-error').exists()).toBe(false);await click(w,'生成预览 →');expect(w.find('[data-testid=preview-gold]').text()).toContain('5');w.unmount()
-})
-it('item plus gold keeps real items separate, and using template resets supplemental gold',async()=>{
- const {w,calls}=setup();await target(w);await w.find('#mail-gold').setValue(20);await click(w,'加入清单');await click(w,'生成预览 →');expect(calls.find(c=>c.path==='/operations/preview').body).toMatchObject({gold:20,items:[{id:1000,quantity:1}]});await click(w,'返回修改');await click(w,'礼包模板');await click(w,'用于发放');expect((w.find('#mail-gold').element as HTMLInputElement).value).toBe('0');w.unmount()
-})
-it('unknown commit prevents retry and disables gold editing',async()=>{
- const {w,calls}=setup();await target(w);await w.find('#mail-gold').setValue(10);await click(w,'生成预览 →');const mock=vi.mocked(fetch),original=mock.getMockImplementation()!;mock.mockImplementation(async(url,opts)=>{if(url.toString().endsWith('/confirm'))throw new Error('lost reply');return original(url,opts)});await click(w,'确认执行一次');expect(w.find('#mail-gold').attributes('disabled')).toBeDefined();await click(w,'返回修改');await click(w,'生成预览 →');expect(calls.filter(c=>c.path==='/operations/preview')).toHaveLength(1);w.unmount()
-})
-it('combined reward submits currencies with mail, and clearing currencies returns to ordinary mail',async()=>{
- const {w,calls}=setup();await target(w);await w.find('#mail-gold').setValue(5);await w.find('#mail-reward-cera').setValue(100);await click(w,'生成预览 →');expect(calls.find(c=>c.path==='/operations/preview').body).toMatchObject({action:'reward',gold:5,currency_rewards:{cera:100}});await click(w,'返回修改');await w.find('#mail-reward-cera').setValue(0);await click(w,'生成预览 →');expect(calls.filter(c=>c.path==='/operations/preview')[1].body.action).toBe('mail');w.unmount()
-})
-it('pure currency reward needs no fake attachment and errors clear beside currency field',async()=>{
- const {w,calls}=setup();await target(w);await click(w,'生成预览 →');expect(w.find('#mail-items-error').exists()).toBe(true);await w.find('#mail-reward-cera').setValue(100);expect(w.find('#mail-items-error').exists()).toBe(false);await w.find('#mail-reward-cera').setValue(-1);await click(w,'生成预览 →');expect(w.find('#mail-reward-cera-error').text()).toContain('整数');await w.find('#mail-reward-cera').setValue(100);expect(w.find('#mail-reward-cera-error').exists()).toBe(false);await click(w,'生成预览 →');expect(calls.find(c=>c.path==='/operations/preview').body).toMatchObject({action:'reward',items:[],gold:0,currency_rewards:{cera:100}});w.unmount()
-})
-it('currency-only draft copies to template editor and preserves amount when saving',async()=>{
- const {w,calls}=setup();await target(w);await w.find('#mail-reward-cera_point').setValue(456);await click(w,'另存为礼包模板');expect((w.find('#gift-reward-cera_point').element as HTMLInputElement).value).toBe('456');await w.find('#gift-name').setValue('Currency');await click(w,'创建礼包模板');expect(calls.find(c=>c.path==='/gift-templates'&&c.body)?.body).toMatchObject({items:[],currency_rewards:{cera_point:456}});w.unmount()
-})
-it('starts a blank follow-up mail while retaining the exact recipient',async()=>{
- const {w,calls}=setup();await target(w);await w.find('#mail-gold').setValue(5);await click(w,'生成预览 →');await click(w,'确认执行一次')
- expect(w.text()).toContain('查看本次完整邮件');await click(w,'继续给此角色发放（新草稿）')
- expect((w.find('[aria-label="收件角色"]').element as HTMLSelectElement).value).toBe('4')
- expect((w.find('#mail-gold').element as HTMLInputElement).value).toBe('0')
- expect(calls.filter(c=>c.path.endsWith('/confirm'))).toHaveLength(1);w.unmount()
-})
-it('reveals draft-side validation after selecting items and makes no invalid preview call',async()=>{
- const {w,calls}=setup();await target(w);await w.get('#mail-gold').setValue(10);await w.get('#operation-reason').setValue('')
- await click(w,'选择物品');expect(w.get('.mail-workbench-frame').attributes('data-pane')).toBe('items')
- await click(w,'生成预览 →');expect(w.get('.mail-workbench-frame').attributes('data-pane')).toBe('draft')
- expect(w.get('#operation-reason-error').text()).toContain('原因')
- expect(document.activeElement).toBe(w.get('#operation-reason').element)
- expect(calls.some(c=>c.path==='/operations/preview')).toBe(false);w.unmount()
-})
-it('opens optional mail text when its hidden field fails validation',async()=>{
- const {w,calls}=setup();await target(w);await w.get('#mail-gold').setValue(10)
- expect((w.get('.mail-message-options').element as HTMLDetailsElement).open).toBe(false)
- await w.get('#mail-title').setValue('a'.repeat(41));await click(w,'生成预览 →')
- expect((w.get('.mail-message-options').element as HTMLDetailsElement).open).toBe(true)
- expect(document.activeElement).toBe(w.get('#mail-title').element)
- expect(calls.some(c=>c.path==='/operations/preview')).toBe(false);w.unmount()
-})
+import {workspaceFixture} from './stores/gm/workspace.test-helper'
+const cleanups:(()=>void)[]=[]
+async function mail(){const fixture=workspaceFixture();cleanups.push(fixture.cleanup);await fixture.target(3,30);fixture.gm.tab='mail';fixture.gm.action='mail';return fixture}
+afterEach(()=>{cleanups.splice(0).forEach(cleanup=>cleanup());sessionStorage.clear();vi.unstubAllGlobals()})
+it('gold-only mail uses exact target and empty actual item list',async()=>{const {gm,calls}=await mail();gm.mailGold=1000;await gm.makePreview();expect(calls.find(call=>call.path==='/operations/preview')?.body).toMatchObject({uid:3,charac_no:30,action:'mail',gold:1000,items:[]});expect(gm.preview.preview.gold).toBe(1000)})
+it.each([-1,1000000001,1.5])('invalid gold %s blocks preview and marks its own input',async gold=>{const {gm,calls}=await mail();gm.mailGold=gold;await gm.makePreview();expect(gm.fieldErrors['mail-gold']).toContain('整数');expect(calls.some(call=>call.path==='/operations/preview')).toBe(false)})
+it('combined account currency and mail produces reward, clearing currency returns to mail',async()=>{const {gm,calls}=await mail();gm.mailGold=5;gm.mailCurrencies={cera:100};await gm.makePreview();expect(calls.find(call=>call.path==='/operations/preview')?.body).toMatchObject({action:'reward',gold:5,currency_rewards:{cera:100}});gm.closePreview();gm.mailCurrencies={};await gm.makePreview();expect(calls.filter(call=>call.path==='/operations/preview').at(-1)?.body.action).toBe('mail')})
+it('currency-only reward needs no fake attachment and retains field validation',async()=>{const {gm,calls}=await mail();gm.mailCurrencies={cera:100};await gm.makePreview();expect(calls.find(call=>call.path==='/operations/preview')?.body).toMatchObject({action:'reward',items:[],gold:0,currency_rewards:{cera:100}});gm.closePreview();gm.mailCurrencies={cera:-1};await gm.makePreview();expect(gm.fieldErrors['mail-reward-cera']).toBeTruthy()})
+it('keeps template identity and passes explicit overrides after adjustment',async()=>{const {gm,calls}=await mail();await gm.useGift({id:9,current_version:2,enabled:true,rewards:{items:[{id:1000,name:'材料',quantity:1}],gold:2}});gm.mailAttachments[0].quantity=8;await gm.makePreview();expect(calls.find(call=>call.path==='/operations/preview')?.body).toMatchObject({template_id:9,template_version:2,items:[],template_overrides:{items:[{id:1000,quantity:8}]}})})
+it('adopts an unbound prepared template only into the first explicit owned target',async()=>{const fixture=workspaceFixture();cleanups.push(fixture.cleanup);const {gm}=fixture;gm.mailAttachments=[{id:1000,quantity:2}];gm.mailGold=8;await gm.setTarget(3,0);gm.selectedRole=30;expect(gm.mailGold).toBe(8);expect(gm.mailAttachments).toHaveLength(1);await gm.setTarget(4,40);expect(gm.mailAttachments).toEqual([]);expect(gm.mailGold).toBe(0);await gm.setTarget(3,30);expect(gm.mailGold).toBe(8)})
+it('new followup draft retains exact target and does not affect other players',async()=>{const {gm}=await mail();gm.mailGold=5;await gm.setTarget(4,40);gm.mailGold=9;await gm.setTarget(3,30);await gm.nextMailDraft();expect(gm.account.uid).toBe(3);expect(gm.selectedRole).toBe(30);expect(gm.mailGold).toBe(0);await gm.setTarget(4,40);expect(gm.mailGold).toBe(9)})

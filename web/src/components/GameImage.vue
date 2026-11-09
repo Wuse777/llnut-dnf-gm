@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {computed,ref,watch} from 'vue'
-export type AssetImage={state:string,url?:string|null,note?:string,width?:number,height?:number,source_kind?:string,source_label?:string,pose?:string,focus_x?:number,focus_y?:number}
+export type AssetImage={state:string,url?:string|null,note?:string,width?:number,height?:number,source_kind?:string,source_label?:string,source_page?:string,match_level?:string,awakening_specific?:boolean,requested_growth?:number,mapped_growth?:number,pose?:string,focus_x?:number,focus_y?:number}
 const props=withDefaults(defineProps<{image?:AssetImage|null,label:string,portrait?:boolean,rarityName?:string,rarity?:number|null,iconSize?:number}>(),{portrait:false,iconSize:32})
 const failed=ref(false)
 const focus=computed(()=>[props.image?.focus_x,props.image?.focus_y].every(v=>typeof v==='number'&&v>=0&&v<=100)?`${props.image!.focus_x}% ${props.image!.focus_y}%`:'50% 50%')

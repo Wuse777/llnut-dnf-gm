@@ -5,7 +5,7 @@ unknown parameters/transforms are refused rather than skipped. No runtime PVF
 or NPK decoding. Default sprites never claim awakening or equipped appearance.
 """
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 import hashlib
 from pathlib import Path
@@ -46,6 +46,10 @@ class AnimationFrame:
     x: int
     y: int
     visual: tuple
+    # Retained separately so first-frame callers preserve their old contract.
+    duration_ms: int = field(default=0, compare=False)
+    loop: bool = field(default=False, compare=False)
+    parameters: tuple = field(default=(), compare=False)
 
 
 def parse_ani(data):
@@ -73,7 +77,7 @@ def parse_ani(data):
     def params():
         count = read('H')
         if count > 64:raise AssetFormatError('Excessive ANI parameters')
-        visual = []
+        values = []
         for _ in range(count):
             tag = read('H')
             if tag == 16:value = string()
@@ -82,12 +86,12 @@ def parse_ani(data):
                 if value == 5:value = (value, read('hhh'))
             elif tag in fixed:value = read(fixed[tag]) if fixed[tag] else None
             else:raise AssetFormatError('Unsupported ANI parameter')
-            if tag in visual_tags:visual.append((tag,value))
-        return tuple(visual)
+            values.append((tag,value))
+        return tuple(values)
     count, path_count = read('HH')
     if not 1 <= count <= 4096 or not 1 <= path_count <= 256:raise AssetFormatError('Invalid ANI frame/path count')
     paths = [normalized(string()) for _ in range(path_count)]
-    global_visual = params()
+    global_params = params()
     frames = []
     for _ in range(count):
         extra = params();index = read('h')
@@ -98,7 +102,11 @@ def parse_ani(data):
             if frame < 0:raise AssetFormatError('ANI frame index out of range')
         x,y = read('ii')
         if abs(x) > 8192 or abs(y) > 8192:raise AssetFormatError('ANI image position exceeds budget')
-        frames.append(AnimationFrame(image,frame,x,y,global_visual+extra+params()))
+        parameters=global_params+extra+params()
+        effective=dict(parameters)
+        frames.append(AnimationFrame(image,frame,x,y,
+            tuple((tag,value) for tag,value in parameters if tag in visual_tags),
+            effective.get(12,0),effective.get(0,0)==1,parameters))
     if pos != len(data):raise AssetFormatError('Unexpected ANI trailing data')
     return tuple(frames)
 
@@ -112,7 +120,7 @@ def validate_static(frame):
         raise AssetFormatError('Waiting frame needs unsupported visual transform')
 
 
-def equipment_recipe(tokens, job):
+def equipment_recipe(tokens, job, *, layer_pattern=r'[a-z]+_[a-z][0-9]?'):
     """Keep repeated animation-job blocks separate; Reader.fields merges them."""
     blocks=[];block=None;key=None
     for kind,value in tokens:
@@ -131,7 +139,7 @@ def equipment_recipe(tokens, job):
     result=[]
     for i in range(0,len(layers),2):
         order,label=layers[i:i+2]
-        if type(order) is not int or not -10000<=order<=10000 or not isinstance(label,str) or not re.fullmatch(r'[a-z]+_[a-z][0-9]?',label):
+        if type(order) is not int or not -10000<=order<=10000 or not isinstance(label,str) or not re.fullmatch(layer_pattern,label):
             raise AssetFormatError('Invalid avatar layer identity')
         result.append((order,label))
     scripts=b.get('[equipment ani script]',[])
@@ -269,7 +277,7 @@ def render_pose(reader,raster,ani,first,recipes):
     return composite(rendered)
 
 
-def build_character_assets(pvf, npk_dir, source, output, encoding='gbk',outfits=()):
+def build_character_assets(pvf, npk_dir, source, output, encoding='gbk',outfits=(),*,preserve_appearance=True):
     """Merge clothed default poses and optional explicit avatar item recipes.
 
     Recipes are offline requests, not evidence of a character's current outfit.
@@ -353,6 +361,17 @@ def build_character_assets(pvf, npk_dir, source, output, encoding='gbk',outfits=
             with closing(sqlite3.connect(output/'manifest.sqlite')) as new:
                 old.backup(new);new.executescript(SCHEMA);new.execute('DELETE FROM job_previews')
                 new.execute('DELETE FROM outfit_previews')
+                if meta.get('appearance_version') is not None:
+                    if meta['appearance_version']!='2':raise AssetFormatError('Unsupported source appearance version')
+                    if preserve_appearance:
+                        from .appearance_pack import copy_appearance_atlases
+                        copy_appearance_atlases(old,source,output)
+                    else:
+                        # The output is a newly created offline pack. A requested
+                        # animation rebuild replaces its old library as a whole.
+                        for table in ('appearance_parts','appearance_atlases','appearance_dye_colors'):
+                            new.execute('DROP TABLE IF EXISTS '+table)
+                        new.execute("DELETE FROM metadata WHERE substr(key,1,11)='appearance_'")
                 for digest,width,height in old.execute('SELECT sha256,width,height FROM files'):
                     if not re.fullmatch(r'[0-9a-f]{64}',digest):raise AssetFormatError('Invalid source image digest')
                     path=source/'images'/(digest+'.png')

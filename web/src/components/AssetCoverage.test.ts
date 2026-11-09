@@ -24,3 +24,15 @@ describe('asset coverage',()=>{
   expect(w.get('img').attributes('src')).toBe(image.url);w.unmount()
  })
 })
+
+it('distinguishes profession fallback from exact growth portrait mappings',async()=>{
+ const image={state:'ready',source_kind:'client',source_page:'https://www.dfoneople.com/gameinfo/character/all'}
+ vi.mocked(api).mockResolvedValue({pvf_sha256:'a'.repeat(64),item_states:{},portrait_total:3,portraits:[
+ {job:0,grow_type:17,sex:-1,name:'同转职插画',image:{...image,match_level:'profession',awakening_specific:false}},
+ {job:0,grow_type:1,sex:-1,name:'精确转职插画',image:{...image,match_level:'growth'}},
+ {job:0,grow_type:-1,sex:-1,name:'范围未核验插画',image}
+ ],items:[],page:1,has_more:false})
+ const w=mount(AssetCoverage);await flushPromises()
+ expect(w.text()).toContain('同转职示意（觉醒未匹配）');expect(w.text()).toContain('精确转职映射');expect(w.text()).toContain('映射范围待核验')
+ expect(w.findAll('a')).toHaveLength(3);expect(w.text()).toContain('客户端职业图');w.unmount()
+})

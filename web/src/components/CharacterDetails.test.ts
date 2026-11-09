@@ -118,3 +118,10 @@ it('keeps two primary actions and puts account penalties and unlock under an exp
   expect((more.element as HTMLDetailsElement).open).toBe(false)
  }finally{w.unmount()}
 })
+
+it('labels client profession portrait fallback without claiming awakened or actual appearance',async()=>{
+ const d:any=fixture();d.portrait={state:'ready',source_kind:'client',match_level:'profession',awakening_specific:false,source_page:'https://www.dfoneople.com/gameinfo/character/all'}
+ const {w}=setup(d);await flushPromises()
+ expect(w.get('.portrait-attribution').text()).toContain('客户端职业图 · 同转职示意（觉醒未匹配） · 非角色实际外观')
+ expect(w.get('.portrait-attribution a').attributes('rel')).toContain('noopener');w.unmount()
+})

@@ -4,7 +4,7 @@
 
 **为 llnut/dnf 清风 1031 适配的轻量中文 GM 控制台**
 
-玩家查询 · 组合选物与对比 · 装备槽位 · 邮件奖励 · 角色维护 · 运营与审计
+SoybeanAdmin 工作台 · 多玩家独立草稿 · 组合选物与对比 · 外观与动作 · 运营与审计
 
 [![Release](https://img.shields.io/github/v/release/Wuse777/llnut-dnf-gm?color=8b8780&style=flat-square)](https://github.com/Wuse777/llnut-dnf-gm/releases)
 [![License](https://img.shields.io/badge/license-MIT-8b8780?style=flat-square)](LICENSE)
@@ -16,7 +16,7 @@
 
 </div>
 
-![邮件奖励工作区：桌面选物与待发清单双栏](docs/images/mail-desktop.jpg)
+![SoybeanAdmin 玩家工作台](docs/images/workbench-v060.jpg)
 
 > **截图说明**：当前源码的真实前端界面，使用本地合成 API、演示角色与虚构物品；不是生产玩家数据，也不是游戏内效果证明。缺图位置如实显示占位，不附带 DNF 游戏素材。[更多界面与截图来源 →](docs/SCREENSHOTS.md)
 
@@ -25,9 +25,9 @@
 把账号查询、奖励发放和受控维护放进一个可追踪的中文工作台：先选定玩家，预览变更，再确认执行；遇到响应中断，按原操作编号查询，而不是重复发放。
 
 - **真实图标选物**：匹配客户端离线解析与 PVF 绑定；已验证样本覆盖 66,450／66,456 项，缺图状态、职业插画出处和鉴权保持明确。游戏素材需部署者自行提供。
-- **组合筛选与对比**：部位、PVF 品级、等级、名称及发放状态联合查询，保存本浏览器常用条件；最多四件装备比较 PVF 顶层定义原值，排除显式成对段，不计算条件或附魔；批量策略沿用同一筛选范围。
-- **角色装备展示**：12 个穿戴槽位、图标和品级边框，11 个匹配客户端的基础职业默认站姿；时装存档只读查询与离线配方精确匹配，默认预览和角色实际穿戴明确区分。
-- **面向日常使用**：CPAMC 风格主题、桌面双栏与手机卡片、可折叠职业横滑画廊、统一详情提示；角色和运营面板按需加载。
+- **组合筛选与对比**：部位、PVF 品级、等级、职业适用、武器类别和套装联合查询；常用条件可同步管理库，最多四件装备比较来源明确的基础属性；批量策略沿用同一筛选语义。
+- **角色装备与外观**：12 个穿戴槽位、图标与品级边框；透明时装关联、私有部件图集、ANI 时间线与 Canvas 预览。32 个已核实的客户端转职插画映射，独立觉醒插画仍有缺口；未还原的染色／发光层列出原因。
+- **面向 GM 的界面**：固定 SoybeanAdmin v2.3.0、浅色蓝紫主题、DNF 徽记与职业背景、多玩家工作页签、独立草稿和角色专页；手机抽屉导航与全页操作，业务页面按需加载。
 - **奖励流程完整**：点券／代币券／商城积分、物品与金币邮件、版本化礼包、批量任务、定时运营和投递记录。
 - **维护边界明确**：存档类修改通过显式维护窗口；不可变快照、幂等记录与审计保留历史，不把数据库成功写成游戏效果已验收。
 - **部署保持克制**：FastAPI 单进程、最多 3 个数据库连接；前端在维护电脑构建，游戏数据库不暴露公网。
@@ -42,7 +42,7 @@
 | <img src="docs/images/picker-mobile.jpg" alt="手机选物卡片，使用合成物品数据" width="300"> | <img src="docs/images/character-mobile.jpg" alt="手机角色详情，使用虚构角色数据" width="300"> |
 | 名称、编号、状态与加入按钮同时可见 | 余额、奖励直接操作；解锁／封禁收进“更多” |
 
-邮件工作区切换不会清空草稿；必填原因与字段错误保持可见，隐藏字段出错时自动展开并定位。详见[界面导览](docs/SCREENSHOTS.md)与[紧凑工作流报告](docs/reports/COMPACT-WORKFLOWS-20261106.md)。
+多玩家奖励草稿绑定 UID／角色；刷新恢复、目标切换与未决操作分别管理。操作前先核对预览，结果未知时按原编号查询。详见[工作台指南](docs/UI-WORKSPACE.md)与[界面导览](docs/SCREENSHOTS.md)。
 
 ## 功能一览
 
@@ -60,10 +60,10 @@
 
 ### 已知边界
 
-- **源码、素材与服务器分别管理**。`v0.5.0` 提供组合筛选、装备对比、槽位与默认职业预览、备份演练工具和受控定向消息桥；公开下载不带游戏素材。实例部署与验证范围见[本批记录](docs/reports/DEVELOPMENT-20261109.md)，不要将维护实例参数当作新安装条件。
-- **并非每项都完成游戏客户端验收**。各功能的实现、验证和部署证据见[实施台账](docs/ROADMAP-IMPLEMENTATION.md)；自动化检查不能证明在线消费、领取和重登都正确。
-- **图片链路与素材分开**。支持离线素材索引和受保护图片接口；匹配客户端样本已生成 66,450 项可读图标，剩余 6 项明确保留缺口。公开包不带游戏图标／头像，见[图片指南](docs/ASSETS.md)。
-- **完整角色外观仍有边界**。时装读取仅新增 `user_items` 的 `charac_no,slot,it_id,stat,expire_date,clear_avatar_id,color1,color2` 八列 `SELECT`，没有新增游戏表写权限。当前真实抽查可确认完整配方为 0，生产素材包的角色预览仅含 11 个默认职业站姿；透明替代、染色、未知部位、武器和精确觉醒头像尚未完整适配，见[角色外观指南](docs/CHARACTER-APPEARANCE.md)。
+- **源码、素材与服务器分别管理**。`v0.6.0` 提供新的 GM 工作台与部件动画管线；公开下载不带游戏素材。升级涉及管理库迁移 017 和经过核实的 `user_items.ui_id` 只读权限，见[本版说明](docs/releases/v0.6.0.md)。
+- **并非每项都完成游戏客户端验收**。以构建和关键场景检查为主，不声称全量 CI 或游戏客户端效果已全部通过；各项边界见[工作台指南](docs/UI-WORKSPACE.md)和[外观指南](docs/CHARACTER-APPEARANCE.md)。
+- **图片链路与素材分开**。匹配客户端样本已有 66,450 项可读图标，6 项明确保留缺口。私有部件包支持独立时间线和静态回退，旧图片包仍可使用。
+- **外观完整性如实呈现**。透明时装按实例关联解析；未核实的染色混色、特殊发光、光环与职业附加层不猜测，逐项报告未绘制原因；不将基础职业插画作为精确觉醒头像。网页试穿不直接修改角色穿戴。
 - 指定角色系统消息已有独立桥接实现，当前按用户安排暂不启用；未来需安装与指纹绑定、在维护窗口加载游戏桥后验收，见[定向消息指南](docs/PRIVATE-MESSAGE.md)。插件证据页不提供“0CD／无敌”等效果开关；没有任意 SQL／Shell 入口，也没有玩家兑换码网站。
 - 默认密码登录，不要求 TOTP。运行权限、网页能力开关、索引／程序指纹及维护窗口分别生效，不因显示按钮而绕过校验。
 
@@ -77,16 +77,16 @@
 | 已有 GM，准备升级 | [部署指南：已有实例升级](docs/DEPLOYMENT.md#已有实例升级)；不要重新运行 provision |
 | 想了解操作流程 | [界面导览](docs/SCREENSHOTS.md) → [文档中心](docs/README.md) |
 | 准备修改代码 | [开发指南](docs/DEVELOPMENT.md) → [贡献说明](CONTRIBUTING.md) |
-| 下载发布文件 | [GitHub Releases](https://github.com/Wuse777/llnut-dnf-gm/releases) → [v0.5.0 说明](docs/releases/v0.5.0.md) |
+| 下载发布文件 | [GitHub Releases](https://github.com/Wuse777/llnut-dnf-gm/releases) → [v0.6.0 说明](docs/releases/v0.6.0.md) |
 
 ### 从固定版本构建
 
-维护电脑需要 Python 3.12（含 pip／venv）、Node.js 24.15+ 的 24.x、npm 和 Git。以下**只构建，不连接生产数据库、不安装服务**：
+维护电脑需要 Python 3.12（含 pip／venv）、Node.js 24.15+ 的 24.x、pnpm 12.10.1 和 Git。以下**只构建，不连接生产数据库、不安装服务**：
 
 ```bash
-git clone --branch v0.5.0 --depth 1 https://github.com/Wuse777/llnut-dnf-gm.git
+git clone --branch v0.6.0 --depth 1 https://github.com/Wuse777/llnut-dnf-gm.git
 cd llnut-dnf-gm
-PYTHON_BIN=python3.12 bash tools/build_release.sh "$HOME/dnf-gm-build-v0.5.0"
+PYTHON_BIN=python3.12 bash tools/build_release.sh "$HOME/dnf-gm-build-v0.6.0"
 ```
 
 输出路径必须尚不存在；wheels 必须与服务器 OS／CPU 架构匹配。完成后继续[安装步骤](docs/DEPLOYMENT.md)，不要直接把源码压缩包交给安装器。
@@ -124,7 +124,7 @@ PYTHON_BIN=python3.12 bash tools/build_release.sh "$HOME/dnf-gm-build-v0.5.0"
 src/dnfgm/       API、认证、业务、审计与索引
 src/dnfgm_m0/    隔离实验室及兼容性工具
 web/            Vue 页面、组件与测试
-migrations/     管理库迁移 001–016
+migrations/     管理库迁移 001–017
 fixtures/       合成数据库结构（无真实玩家）
 deploy/         安装、授权、监控、维护、回滚
 tools/          索引工具、构建与实验室
@@ -135,6 +135,6 @@ docs/           指南、截图、功能手册与历史报告
 
 ## 许可证与致谢
 
-自有代码采用 [MIT](LICENSE)。CPAMC 主题来源声明见 [THIRD_PARTY.md](THIRD_PARTY.md) 与 [licenses/CPAMC-MIT.txt](licenses/CPAMC-MIT.txt)。DNF、游戏程序及第三方素材的权利不随本项目许可证转移。
+自有代码采用 [MIT](LICENSE)。SoybeanAdmin v2.3.0 上游与 MIT 许可见 [web/UPSTREAM.json](web/UPSTREAM.json)、[web/SOYBEAN-LICENSE](web/SOYBEAN-LICENSE) 及 [THIRD_PARTY.md](THIRD_PARTY.md)；历史 CPAMC 来源声明继续保留。DNF、游戏程序及第三方素材的权利不随本项目许可证转移。
 
 文档布局参考 [Uptime Kuma](https://github.com/louislam/uptime-kuma) 的截图与安装导航、[Full Stack FastAPI Template](https://github.com/fastapi/full-stack-fastapi-template) 的开发／部署分层；未复制其代码、截图或文案。更多见[文档维护约定](docs/DOCUMENTATION.md)。

@@ -2,6 +2,8 @@
 import {ref,computed,watch,onUnmounted,nextTick} from 'vue'
 import {api,uncertainMessage} from '../api'
 import Modal from './Modal.vue'
+import {onBeforeRouteLeave,onBeforeRouteUpdate} from 'vue-router'
+const AppearanceWorkspace=asyncPanel(()=>import('./AppearanceWorkspace.vue'))
 import {asyncPanel} from '../asyncPanel'
 import GameImage from './GameImage.vue'
 import InventoryGrid from './InventoryGrid.vue'
@@ -25,8 +27,8 @@ const fatigueBusy=ref(false),fatiguePending=ref(false),fatigueVisited=ref(false)
 const skillsBusy=ref(false),skillsPending=ref(false),skillsVisited=ref(false)
 const visual=ref(true),equipmentLayout=ref(true),moreOpen=ref(false)
 const UnlockRequests=asyncPanel(()=>import('./UnlockRequests.vue'))
-const props=withDefaults(defineProps<{characNo:number,initialSection?:string}>(),{initialSection:'basic'})
-const emit=defineEmits<{close:[],reauth:[],expired:[],visited:[value:{uid:number,charac_no:number}],action:[value:{action:string,uid:number,charac_no:number}],draft:[value:any],inspect:[id:string]}>()
+const props=withDefaults(defineProps<{characNo:number,initialSection?:string,embedded?:boolean}>(),{initialSection:'basic'})
+const emit=defineEmits<{close:[],reauth:[],expired:[],visited:[value:{uid:number,charac_no:number}],action:[value:{action:string,uid:number,charac_no:number}],draft:[value:any],inspect:[id:string],loaded:[value:any]}>()
 const inventoryPending=ref(false),inventoryStale=ref(false)
 const inventoryBusy=ref(false),inventoryVisited=ref(false),inventorySelection=ref<{container:string,slot:number}|null>(null)
 const actionBusy=computed(()=>unlockBusy.value||inventoryBusy.value||levelsBusy.value||professionBusy.value||skillsBusy.value||fatigueBusy.value||renameBusy.value||rescueBusy.value||questBusy.value)
@@ -45,9 +47,15 @@ watch(identity,node=>{
 },{flush:'post'})
 onUnmounted(()=>releaseIdentity())
 const data=ref<any>(null),loading=ref(false),error=ref(''),section=ref('basic'),search=ref(''),kind=ref(''),page=ref(1)
+const portraitAttribution=computed(()=>{
+ const image=data.value?.portrait;if(image?.state!=='ready')return ''
+ const source=image.source_label||({client:'客户端职业图',official_promotional:'官方职业插画',custom:'维护者示意图'} as Record<string,string>)[image.source_kind]||'职业插画'
+ const match=({base:'基础职业示意',profession:'同转职示意（觉醒未匹配）',growth:'精确转职映射'} as Record<string,string>)[image.match_level]||'映射范围待核验'
+ return source+' · '+match+' · 非角色实际外观'
+})
 let generation=0
 const tabGroups=[
- {label:'角色资料',tabs:[['basic','基本信息'],['attributes','属性存档']]},
+ {label:'角色资料',tabs:[['basic','基本信息'],['attributes','属性存档'],['appearance','角色外观']]},
  {label:'装备与仓储',tabs:[['equipment','穿戴装备'],['backpack','背包道具'],['warehouse','角色仓库'],['account_warehouse','账号仓库'],['unlock','装备解锁']]},
  {label:'维护与排查',tabs:[['manage','装备维护'],['fatigue','疲劳调整'],['skills','技能与SP／TP'],['profession','转职与觉醒'],['rename','角色改名'],['rescue','位置救援'],['quests','任务检索与修复'],['progression','等级与经验']]},
  {label:'邮件与记录',tabs:[['mail','角色邮件'],['activity','管理记录']]}
@@ -65,7 +73,7 @@ function number(n:unknown){return n===null||n===undefined?'未知':Number(n).toL
 function date(s:unknown){if(typeof s!=='string'||s.startsWith('0000-'))return '未记录';const d=new Date(s.replace(' ','T')+'Z');return Number.isNaN(d.getTime())?'未记录':d.toLocaleString('zh-CN',{hour12:false})}
 async function load(){
  const current=++generation;loading.value=true;error.value='';data.value=null
- try{const result=await api('/characters/'+props.characNo);if(current===generation){data.value=result;if(result.account&&!result.character.delete_flag)emit('visited',{uid:result.character.uid,charac_no:props.characNo});page.value=1;inventoryStale.value=false}}
+ try{const result=await api('/characters/'+props.characNo);if(current===generation){data.value=result;emit('loaded',result);if(result.account&&!result.character.delete_flag)emit('visited',{uid:result.character.uid,charac_no:props.characNo});page.value=1;inventoryStale.value=false}}
  catch(e){if(current===generation)error.value=uncertainMessage(e)}
  finally{if(current===generation)loading.value=false}
 }
@@ -88,16 +96,18 @@ watch([section,search,kind],()=>{page.value=1})
 watch(section,async()=>{recentGroupSections.value[activeGroup.value]=section.value;if(section.value==='unlock')unlockVisited.value=true;if(section.value==='manage')inventoryVisited.value=true;if(section.value==='fatigue')fatigueVisited.value=true;if(section.value==='skills')skillsVisited.value=true;if(section.value==='progression')levelsVisited.value=true;if(section.value==='profession')professionVisited.value=true;if(section.value==='rename')renameVisited.value=true;if(section.value==='quests')questVisited.value=true;if(section.value==='rescue')rescueVisited.value=true;await nextTick();root.value?.closest('.modal-body')?.scrollTo?.({top:0})},{immediate:true})
 function tabKey(e:KeyboardEvent){if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const n=tabs.findIndex(t=>t[0]===section.value),index=e.key==='Home'?0:e.key==='End'?tabs.length-1:(n+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tab(tabs[index][0]);void nextTick(()=>root.value?.querySelector<HTMLButtonElement>('#character-tab-'+section.value)?.focus())}
 function tab(id:string){if(actionBusy.value)return;section.value=id;search.value='';kind.value=''}
+onBeforeRouteLeave(()=>!props.embedded||!navigationLocked.value)
+onBeforeRouteUpdate(()=>!props.embedded||!navigationLocked.value)
 </script>
 <template>
- <Modal title="角色详情" :busy="actionBusy" @close="emit('close')">
+ <component :is="embedded?'section':Modal" :class="{'embedded-character':embedded}" title="角色详情" :busy="actionBusy" @close="emit('close')">
   <div ref="root" class="character-detail" data-testid="character-detail">
    <div class="section-title character-toolbar"><span class="pill">角色详情 · #{{characNo}}</span><button :disabled="loading||navigationLocked||['unlock','manage','fatigue','skills','rename','rescue','quests','profession','progression'].includes(section)" @click="load">{{loading?'正在读取…':'刷新角色存档'}}</button></div>
    <p v-if="inventoryStale" class="notice" role="status">存档操作已提交；下方角色资料仍是旧快照。结束操作后切换到物品页，点击“刷新角色存档”。</p>
    <p v-if="loading" role="status" class="empty"><span class="spinner"/> 正在读取角色资料、装备、背包与仓库…</p>
    <div v-else-if="error" class="submit-error" role="alert"><b>无法读取角色详情</b><p>{{error}}</p><button @click="load">重试查询</button></div>
    <template v-else-if="data">
-    <div ref="identity" class="character-identity sticky-character-identity"><GameImage :image="data.portrait" :label="data.profession.name" portrait/><div class="character-identity-main"><h3>{{data.character.charac_name}}</h3><p>{{data.profession.name}} · Lv.{{data.character.lev}} · {{data.account?.accountname??'归属账号缺失'}} / UID {{data.character.uid}}</p><small v-if="data.portrait?.source_kind==='official_promotional'" class="portrait-attribution">官方职业插画 · 非角色实际外观</small></div><div class="character-status" role="group" aria-label="角色状态"><span class="status-badge">登录表：{{data.account_online?.login_status===1?'在线':data.account_online?.login_status===0?'离线':'未知'}}</span><span class="status-badge" :class="data.character.delete_flag?'neutral':'success'">{{data.character.delete_flag?'已删除（仅查看存档）':'未删除'}}</span></div></div>
+    <div ref="identity" class="character-identity sticky-character-identity"><GameImage :image="data.portrait" :label="data.profession.name" portrait/><div class="character-identity-main"><h3>{{data.character.charac_name}}</h3><p>{{data.profession.name}} · Lv.{{data.character.lev}} · {{data.account?.accountname??'归属账号缺失'}} / UID {{data.character.uid}}</p><small v-if="portraitAttribution" class="portrait-attribution">{{portraitAttribution}} <a v-if="data.portrait.source_page" :href="data.portrait.source_page" target="_blank" rel="noopener noreferrer">素材出处 ↗</a></small></div><div class="character-status" role="group" aria-label="角色状态"><span class="status-badge">登录表：{{data.account_online?.login_status===1?'在线':data.account_online?.login_status===0?'离线':'未知'}}</span><span class="status-badge" :class="data.character.delete_flag?'neutral':'success'">{{data.character.delete_flag?'已删除（仅查看存档）':'未删除'}}</span></div></div>
     <div class="character-shortcuts" role="group" aria-label="当前角色快捷操作"><div class="character-primary-actions"><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('currency')">调整所属账号余额</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('mail')">给此角色发奖励</button></div>
      <details class="character-more" :open="moreOpen" @toggle="moreOpen=($event.target as HTMLDetailsElement).open"><summary>更多操作 <span>解锁／账号封禁</span></summary><div class="button-row"><button :disabled="navigationLocked" @click="tab('unlock');moreOpen=false">查看解锁申请</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('ban')">封禁所属账号</button><button :disabled="navigationLocked||!data.account||!!data.character.delete_flag" @click="shortcut('unban')">解除账号封禁</button></div></details>
     </div>
@@ -116,6 +126,7 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
      <UnlockRequests v-if="unlockVisited" v-show="section==='unlock'" :charac-no="characNo" @busy="unlockBusy=$event" @pending="unlockPending=$event" @reauth="emit('reauth')" @expired="emit('expired')"/>
      <MailCenter v-if="section==='mail'" :uid="data.character.uid" :charac-no="characNo" locked-target @draft="mailDraft"/>
      <CharacterActivity v-if="section==='activity'" :charac-no="characNo" :busy="navigationLocked" @inspect="inspect" @expired="emit('expired')"/>
+     <AppearanceWorkspace v-if="section==='appearance'" :detail="data"/>
      <template v-if="section==='basic'">
       <div class="character-metrics"><article><span>角色携带金币</span><strong>{{number(data.wealth.gold)}}</strong><small>{{data.wealth.state==='ok'?'不含仓库金币、点券或代币券':'金币存档缺失，不能视为0'}}</small></article><article><span>等级</span><strong>{{data.character.lev}}</strong><small>角色存档等级</small></article><article><span>复活币 coin 原始值</span><strong>{{number(data.wealth.revival_coin_raw)}}</strong><small>非多种复活币合计</small></article></div>
       <dl class="character-facts"><div><dt>角色名 / 编号</dt><dd>{{data.character.charac_name}} / #{{data.character.charac_no}}</dd></div><div><dt>所属账号</dt><dd>{{data.account?.accountname??'缺失'}} / UID {{data.character.uid}}</dd></div><div><dt>职业 / 转职</dt><dd>{{data.profession.base_name}} / {{data.profession.name}}<small>job={{data.character.job}}，grow_type={{data.character.grow_type}}；{{data.profession.note}}</small></dd></div><div><dt>账号登录状态 / 频道</dt><dd>{{data.account_online?.login_status===1?'在线':data.account_online?.login_status===0?'离线':'未知'}} / {{data.account_online?.channel??'未知'}}</dd></div><div><dt>经验存档</dt><dd>{{number(data.play_state?.exp??data.character.exp)}}<small>{{data.play_state?'来源：charac_stat':'来源：charac_info（无独立状态记录）'}}</small></dd></div><div><dt>疲劳存档 / 上限</dt><dd>{{number(data.play_state?.fatigue??data.character.fatigue)}} / {{number(data.character.max_fatigue)}}<small>不据此推算客户端剩余疲劳</small></dd></div><div><dt>已用疲劳存档</dt><dd>{{number(data.play_state?.used_fatigue)}}</dd></div><div><dt>公会编号</dt><dd>{{data.character.guild_id||'无公会'}}</dd></div><div><dt>创建时间</dt><dd>{{date(data.character.create_time)}}</dd></div><div><dt>最近游戏存档时间</dt><dd>{{date(data.play_state?.last_play_time??data.character.last_play_time)}}</dd></div></dl>
@@ -124,7 +135,7 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
       <p class="field-hint">下列是数据库字段原始存档值，不是游戏内最终面板。速度未擅自换算为百分比；力量、智力、体力、精神及元素抗性等未确认字段映射，暂不猜测显示。</p>
       <dl class="character-facts attribute-grid"><div v-for="a in data.attributes" :key="a.key"><dt>{{a.label}}<small>{{a.key}}</small></dt><dd>{{number(a.value)}}</dd></div></dl>
      </template>
-     <template v-else-if="['unlock',...separatePanels,'mail','activity'].includes(section)"></template>
+     <template v-else-if="['unlock',...separatePanels,'mail','activity','appearance'].includes(section)"></template>
      <template v-else>
       <div v-if="section==='warehouse'||section==='account_warehouse'" class="warehouse-summary">
        <p class="field-hint">{{storageNotes[section]}}所属 UID：{{container.owner_uid??data.character.uid}}<span v-if="section==='warehouse'"> · 角色 #{{data.character.charac_no}}</span></p>
@@ -163,8 +174,8 @@ function tab(id:string){if(actionBusy.value)return;section.value=id;search.value
    <section v-if="fatigueVisited" v-show="section==='fatigue'" id="character-section-fatigue" role="tabpanel" aria-labelledby="character-tab-fatigue" tabindex="0"><CharacterMaintenance :key="characNo" :charac-no="characNo" @busy="fatigueBusy=$event" @pending="fatiguePending=$event" @changed="inventoryStale=true" @reauth="emit('reauth')" @expired="emit('expired')"/></section>
    <section v-if="inventoryVisited" v-show="section==='manage'" id="character-section-manage" role="tabpanel" aria-labelledby="character-tab-manage" tabindex="0"><InventoryEditor :key="characNo" :charac-no="characNo" :selection="inventorySelection" @busy="inventoryBusy=$event" @pending="inventoryPending=$event" @changed="inventoryStale=true" @reauth="emit('reauth')" @expired="emit('expired')"/></section>
   </div>
-  <template #footer><span class="muted">展示为存档快照 · 装备修改需要显式维护窗口与预览确认</span><button class="primary" :disabled="actionBusy" @click="emit('close')">关闭详情</button></template>
- </Modal>
+  <template v-if="!embedded" #footer><span class="muted">展示为存档快照 · 装备修改需要显式维护窗口与预览确认</span><button class="primary" :disabled="actionBusy" @click="emit('close')">关闭详情</button></template>
+ </component>
 </template>
 
 <style scoped>

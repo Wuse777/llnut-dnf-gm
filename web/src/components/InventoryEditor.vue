@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import {computed,onMounted,onBeforeUnmount,nextTick,ref,watch} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
+import {useGmConfirmation} from '../stores/gm/confirmation'
+const confirmationLease=useGmConfirmation()
 import {inventoryNames as names,inventoryStates as states} from '../nativeStatus'
 import ItemCard from './ItemCard.vue'
 import EnchantmentPicker from './EnchantmentPicker.vue'
@@ -55,11 +57,13 @@ async function prepare(){
  if(action.value==='item-edit'&&!Object.keys(changes).length)fields.value.changes='请至少修改一个属性'
  if(values.value.amplify_type==='0'&&Number(values.value.amplify_value)>0&&action.value==='item-edit')fields.value.amplify_value='类型为0时，增幅数值必须同时为0'
  if(Object.keys(fields.value).length){await nextTick();const invalid=root.value?.querySelector<HTMLElement>('[aria-invalid="true"]');const fold=invalid?.closest('details');if(fold)fold.open=true;invalid?.focus();invalid?.scrollIntoView?.({block:'center'});return}
+ if(!confirmationLease.acquire('inventory')){error.value='请先完成或关闭当前确认面板。';return}
  busy.value=true
  try{const r=await api('/inventory/preview','POST',{action:action.value,uid:item.value.uid,charac_no:item.value.charac_no,container:item.value.container,slot:item.value.slot,reference:item.value.reference,changes,source_operation_id:source.value||null,reason:reason.value.trim()});if(!alive)return;detail.value=r;key.value=crypto.randomUUID();attempted.value=false;remember(r.operation_id);void focusResult()}catch(e){if(alive)fail(e)}finally{if(alive)busy.value=false}
 }
 async function confirm(){
  if(busy.value||attempted.value||!key.value||detail.value?.status!=='preview')return
+ if(!confirmationLease.acquire('inventory')){error.value='请先完成或关闭当前确认面板。';return}
  attempted.value=true;remember(detail.value.operation_id);busy.value=true;error.value=''
  try{const r=await api('/inventory/operations/'+detail.value.operation_id+'/confirm','POST',{idempotency_key:key.value});if(!alive)return;detail.value=r;if(r.status==='committed')emit('changed');void historyLoad()}
  catch(e){if(alive){fail(e);error.value+='；请只查询原操作编号，不要重新确认。'}}finally{if(alive)busy.value=false}
@@ -69,7 +73,9 @@ function reset(){if(busy.value||pending.value||detail.value?.status==='preview')
 async function restore(row:any){if(detail.value||busy.value){error.value='请先结束当前操作查看';return}const r=row.request;await loadSlot(r.container,r.slot,row.operation_id)}
 watch(()=>props.selection,(s)=>{if(s)void loadSlot(s.container,s.slot)})
 onMounted(async()=>{void historyLoad();let id='';try{id=sessionStorage.getItem(storage)||''}catch{};if(/^[a-f0-9]{32}$/.test(id))await inspect(id);else if(props.selection)await loadSlot(props.selection.container,props.selection.slot);timer=setInterval(()=>{if(!document.hidden&&pending.value&&!busy.value)void inspect()},10000)})
-onBeforeUnmount(()=>{alive=false;epoch++;if(timer)clearInterval(timer);emit('busy',false);emit('pending',false)})
+watch(()=>detail.value?.status,status=>{if(status==='preview')confirmationLease.acquire('inventory');else confirmationLease.release('inventory')})
+watch(busy,value=>{if(!value&&detail.value?.status!=='preview')confirmationLease.release('inventory')})
+onBeforeUnmount(()=>{confirmationLease.release('inventory');alive=false;epoch++;if(timer)clearInterval(timer);emit('busy',false);emit('pending',false)})
 </script>
 <template><section ref="root" class="inventory-editor" aria-label="装备存档维护">
  <h3>装备与道具维护</h3><p class="field-hint">请先在“维护中心”申请并核对保留 MySQL 的维护窗口。此页面不会自动停服；账号离线不等于可以安全修改存档。</p>

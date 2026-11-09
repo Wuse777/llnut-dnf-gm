@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import {ref,computed,onMounted,onBeforeUnmount,watch} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
+import {useGmConfirmation} from '../stores/gm/confirmation'
+const confirmationLease=useGmConfirmation()
 import ItemQueue from './ItemQueue.vue'
+import GmItemPicker from './GmItemPicker.vue'
 import CharacterPicker from './CharacterPicker.vue'
 import {mailTextErrors} from '../validation'
 const props=defineProps<{scheduleDraft?:boolean,initialDraft?:any,initialJob?:string}>()
@@ -13,7 +16,7 @@ const rewardMode=ref('once_per_account'),reason=ref(''),gold=ref(0),message=ref(
 const mailTitle=ref('')
 const currencyNames:Record<string,string>={cera:'点券',cera_point:'代币券',mileage:'商城积分'}
 const items=ref<any[]>([]),query=ref(''),found=ref<any[]>([]),templateQuery=ref(''),templates=ref<any[]>([]),template=ref<any>(null)
-const adjusted=ref(false)
+const adjusted=ref(false),itemPickerOpen=ref(false)
 function selectTemplate(g:any){template.value=g;adjustTemplate();adjusted.value=false}
 function adjustTemplate(){const r=template.value.rewards;if(!r)return;items.value=r.items.map((i:any)=>({...i}));gold.value=r.gold||0;message.value=r.message??'GM rewards';mailTitle.value=r.mail_title??'';amounts.value={cera:0,cera_point:0,mileage:0,...r.currency_rewards};adjusted.value=true}
 const selected=ref<any>(null),targets=ref<any[]>([]),next=ref<number|null>(null),cursor=ref(0),previous=ref<number[]>([])
@@ -35,6 +38,7 @@ function parseAccounts():number[]|string[]{
   if(parts.some(v=>!/^\d+$/.test(v)||!integer(Number(v),1,2147483647)))throw new Error('账号 UID 须为1至2,147,483,647的整数；每行一个。')
   return parts.map(Number)
  }
+ // oxlint-disable-next-line no-control-regex -- Imported account names must explicitly reject control characters.
  if(parts.some(v=>Array.from(v).length>255||/[\x00-\x1f\x7f]/.test(v)))throw new Error('账号名不能超过255个字符或包含控制字符。')
  return parts
 }
@@ -78,14 +82,16 @@ async function choose(id:string){if(busy.value||uncertain.value)return;busy.valu
 async function preview(){
  if(busy.value||uncertain.value)return;error.value='';notice.value='';let data;try{data=payload()}catch(e){fail(e);return}
  if(props.scheduleDraft){emit('schedule',data);return}
+ if(!confirmationLease.acquire('domain-rewardjobs')){error.value='请先完成或关闭当前确认面板。';return}
  busy.value=true
- try{const r=await api('/reward-jobs/preview','POST',data);selected.value=r;pendingId.value=r.id;queryId.value=r.id;key.value=crypto.randomUUID();uncertain.value=false;persist();confirmation.value='';repeat.value=false;previous.value=[];await loadTargets();await list();notice.value='名单和奖励已固定。请核对下方预览后启动；修改上方草稿不会改变这份预览。'}catch(e){fail(e)}finally{busy.value=false}
+ try{const r=await api('/reward-jobs/preview','POST',data);selected.value=r;pendingId.value=r.id;queryId.value=r.id;key.value=crypto.randomUUID();uncertain.value=false;persist();confirmation.value='';repeat.value=false;previous.value=[];await loadTargets();await list();notice.value='名单和奖励已固定。请核对下方预览后启动；修改上方草稿不会改变这份预览。'}catch(e){fail(e)}finally{busy.value=false;if(selected.value?.status!=='preview')confirmationLease.release('domain-rewardjobs')}
 }
 const repeatNeeded=computed(()=>selected.value?.request.account_reward_mode==='per_character'&&Object.keys(selected.value?.request.reward.currency_rewards||{}).length>0)
 async function start(){
  if(busy.value||uncertain.value||!selected.value)return;error.value='';notice.value=''
  if(selected.value.request.targets.mode==='all'&&confirmation.value!=='全服发放'){error.value='请在启动按钮上方输入“全服发放”。';return}
  if(repeatNeeded.value&&!repeat.value){error.value='请确认同一账号将按选中角色数重复获得账号货币。';return}
+ if(!confirmationLease.acquire('domain-rewardjobs')){error.value='请先完成或关闭当前确认面板。';return}
  const j=selected.value
  if(pendingId.value!==j.id){pendingId.value=j.id;key.value=crypto.randomUUID()}
  uncertain.value=true;persist();busy.value=true
@@ -108,6 +114,8 @@ watch(()=>props.initialDraft,d=>{
 },{immediate:true})
 onMounted(async()=>{if(props.scheduleDraft)return;try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(saved&&/^[a-f0-9]{32}$/.test(saved.id)){pendingId.value=saved.id;key.value=saved.key||'';uncertain.value=!!saved.uncertain;queryId.value=saved.id;await inspect(saved.id)}}catch(e){lookupError.value=uncertainMessage(e)}try{if(props.initialJob){if(uncertain.value&&pendingId.value!==props.initialJob){lookupError.value='已优先恢复结果待确认的任务；请先核对，再查看异常中心选择的任务 '+props.initialJob}else{await inspect(props.initialJob);draftVisible.value=false}emit('opened')}}catch(e){lookupError.value=uncertainMessage(e)}await list();if(!alive)return;timer=setInterval(()=>{if(!busy.value&&!document.hidden&&selected.value){busy.value=true;void inspect(selected.value.id,false).catch(e=>{lookupError.value=uncertainMessage(e)}).finally(()=>{busy.value=false})}},30000)})
 onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
+watch(()=>!props.scheduleDraft&&selected.value?.status==='preview',active=>{if(active)confirmationLease.acquire('domain-rewardjobs');else confirmationLease.release('domain-rewardjobs')})
+onBeforeUnmount(()=>confirmationLease.release('domain-rewardjobs'))
 </script>
 <template>
  <section class="reward-jobs">
@@ -131,8 +139,7 @@ onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
      <div v-if="template" class="notice">来源 {{template.name}} v{{template.current_version}} · {{adjusted?'临时调整，不修改原模板':'按模板原内容发放'}}。<button v-if="!adjusted&&template.rewards" type="button" @click="adjustTemplate">临时调整本次奖励</button><button type="button" @click="template=null">解除模板绑定</button></div>
      <template v-if="!template||adjusted">
       <div class="reward-grid"><label v-for="(label,k) in currencyNames" :key="k">{{label}}<input v-model.number="amounts[k]" type="number" min="0" max="1000000000" :aria-label="'批量'+label"></label><label>每角色邮件金币<input v-model.number="gold" type="number" min="0" max="1000000000" aria-label="批量金币附件"></label></div>
-      <div class="toolbar"><label>搜索物品<input v-model="query" aria-label="批量物品搜索" placeholder="物品名称或编号" @keydown.enter.prevent="findItems"></label><button type="button" @click="findItems">搜索物品</button></div>
-      <div class="reward-results"><button v-for="item in found" :key="item.id" type="button" :disabled="item.sendable===false" @click="add(item)">＋ {{item.name}} #{{item.id}}</button></div>
+      <button type="button" :disabled="busy||uncertain" @click="itemPickerOpen=!itemPickerOpen">{{itemPickerOpen?'收起物品选择器':'选择奖励物品'}}</button><GmItemPicker v-if="itemPickerOpen" :disabled="busy||uncertain" :selected-count="items.length" @select="add"/>
       <ItemQueue :items="items" :busy="busy" prefix="batch" :errors="fieldErrors" @remove="items.splice($event,1)" @quantity="(n,q)=>items[n].quantity=q"/>
       <label>邮件标题（作为正文首行）<input v-model="mailTitle" maxlength="40" aria-label="批量邮件标题" :aria-invalid="!!fieldErrors['batch-title']"></label><p v-if="fieldErrors['batch-title']" class="submit-error" role="alert">{{fieldErrors['batch-title']}}</p>
       <label>邮件文字<input v-model="message" maxlength="60" aria-label="批量邮件文字"></label>

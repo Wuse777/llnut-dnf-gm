@@ -72,3 +72,10 @@ def test_health_requires_economy_projection(env):
     with db.connect() as c,c.cursor() as q:
         q.execute('DELETE FROM dnf_gm.schema_versions WHERE version=11');c.commit()
     assert client.get(P+'/health').status_code==503
+
+
+def test_health_requires_versioned_ui_preferences_migration(env):
+    client,settings,db,app=env
+    with db.connect() as c,c.cursor() as q:
+        q.execute('DELETE FROM dnf_gm.schema_versions WHERE version=17');c.commit()
+    assert client.get(P+'/health').status_code==503

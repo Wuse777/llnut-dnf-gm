@@ -1,21 +1,11 @@
 // @vitest-environment happy-dom
-import {afterEach,it,expect} from 'vitest'
-import {mount} from '@vue/test-utils'
+import {afterEach,it,expect,vi} from 'vitest'
+import {mount,flushPromises} from '@vue/test-utils'
 import CatalogFilters from './CatalogFilters.vue'
-afterEach(()=>localStorage.clear())
-const facets={equipment_metadata:true,parts:[{code:'[weapon]',name:'武器',count:2}],rarities:[{value:0,label:'PVF 品级 0',count:1}]}
-it('emits explicit zero rarity, applies bounds, and keeps saved conditions PVF scoped',async()=>{
- const w=mount(CatalogFilters,{props:{modelValue:{q:'样本',rarity:'',min_level:'',sort:'id'},pvf:'a'.repeat(64),facets}})
- await w.findAll('select')[1]!.setValue('0');expect(w.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({rarity:'0'})
- await w.setProps({modelValue:{q:'样本',rarity:0,min_level:10,sort:'level_desc'}})
- await w.find('[aria-label="常用筛选名称"]').setValue('普通武器');await w.findAll('button').find(b=>b.text()==='保存筛选')!.trigger('click')
- expect(localStorage.getItem('dnfgm.catalog-filters.v1.'+'a'.repeat(64))).toContain('普通武器')
- await w.find('.saved-filters button').trigger('click');expect(w.emitted('apply')).toHaveLength(1)
- expect(w.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({rarity:0,min_level:10})
- await w.setProps({pvf:'b'.repeat(64)});expect(w.find('.saved-filters').exists()).toBe(false);w.unmount()
-})
-it('handles corrupt storage and missing optional metadata without losing basic queries',()=>{
- localStorage.setItem('dnfgm.catalog-filters.v1.'+'a'.repeat(64),'{')
- const w=mount(CatalogFilters,{props:{modelValue:{},pvf:'a'.repeat(64),facets:{equipment_metadata:false}}})
- expect(w.findAll('select')[0]!.attributes('disabled')).toBeDefined();expect(w.text()).toContain('无法读取');expect(w.text()).toContain('暂不可用');w.unmount()
-})
+const sha='a'.repeat(64)
+afterEach(()=>{localStorage.clear();vi.unstubAllGlobals()})
+const facets={equipment_metadata:true,extended_equipment_metadata:true,parts:[{code:'[weapon]',name:'武器',count:2}],rarities:[{value:0,label:'PVF 品级 0',count:1}],jobs:[{code:'[swordman]',name:'鬼剑士',count:1}],weapon_types:[{code:'katana',name:'太刀',count:1}],sets:[{id:10,name:'样本套装',count:1}]}
+function setup(conflict=false){const calls:any[]=[];vi.stubGlobal('fetch',vi.fn(async(url,options:any={})=>{const body=options.body&&JSON.parse(options.body);calls.push({path:String(url),method:options.method||'GET',body});if(options.method==='PUT')return new Response(JSON.stringify(conflict?{detail:'界面偏好已修改'}:{pvf_sha256:sha,name:'普通武器',version:1,payload:body.payload}),{status:conflict?409:200});if(String(url).includes('?kind='))return new Response(JSON.stringify({pvf_sha256:sha,items:[]}));return new Response(JSON.stringify({pvf_sha256:sha,version:0,payload:null}))}));return calls}
+it('preserves zero rarity plus profession/weapon/set with optimistic server version',async()=>{const calls=setup();const w=mount(CatalogFilters,{props:{modelValue:{q:'样本',rarity:0,min_level:10,sort:'level_desc',job:'[swordman]',weapon_type:'katana',set_id:10},pvf:sha,facets}});await flushPromises();await w.findAll('select').find(s=>s.text().includes('全部品级'))!.setValue('0');expect(w.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({rarity:'0'});await w.get('[aria-label="常用筛选名称"]').setValue('普通武器');await w.findAll('button').find(b=>b.text()==='保存筛选')!.trigger('click');await flushPromises();expect(calls.find(call=>call.method==='PUT').body).toMatchObject({pvf_sha256:sha,expected_version:0,payload:{rarity:0,min_level:10,job:'[swordman]',weapon_type:'katana',set_id:10}});await w.get('.saved-filters button').trigger('click');expect(w.emitted('apply')).toHaveLength(1);w.unmount()})
+it('requires explicit refresh after conflict without automatically retrying save',async()=>{const calls=setup(true);const w=mount(CatalogFilters,{props:{modelValue:{},pvf:sha,facets}});await flushPromises();await w.get('[aria-label="常用筛选名称"]').setValue('冲突');await w.findAll('button').find(b=>b.text()==='保存筛选')!.trigger('click');await flushPromises();expect(w.text()).toContain('没有覆盖远端');expect(w.findAll('button').find(b=>b.text()==='保存筛选')!.attributes('disabled')).toBeDefined();expect(calls.filter(call=>call.method==='PUT')).toHaveLength(1);w.unmount()})
+it('disables unverified optional facets and explicitly imports old browser filters',async()=>{setup();localStorage.setItem('dnfgm.catalog-filters.v1.'+sha,JSON.stringify([{id:'x',name:'旧武器',filters:{q:'武器',rarity:0}}]));const w=mount(CatalogFilters,{props:{modelValue:{},pvf:sha,facets:{equipment_metadata:false}}});await flushPromises();expect(w.findAll('select')[0].attributes('disabled')).toBeDefined();expect(w.text()).toContain('暂不可用');await w.findAll('button').find(b=>b.text()==='旧武器')!.trigger('click');expect(w.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({q:'武器',rarity:0});w.unmount()})

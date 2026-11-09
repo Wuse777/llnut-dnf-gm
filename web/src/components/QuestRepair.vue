@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import {ref,computed,onMounted,onBeforeUnmount,watch,nextTick} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
+import {useGmConfirmation} from '../stores/gm/confirmation'
+const confirmationLease=useGmConfirmation()
 import {inventoryStates as states} from '../nativeStatus'
 const props=defineProps<{characNo:number,selection?:number}>()
 const emit=defineEmits(['busy','pending','reauth','expired','changed'])
@@ -18,7 +20,7 @@ watch(()=>props.selection,v=>{if(!operation.value&&v)slot.value=v},{immediate:tr
 watch(busy,v=>emit('busy',v));watch(unfinished,v=>emit('pending',v))
 function failure(e:unknown){error.value=uncertainMessage(e);if(e instanceof ApiError&&e.status===401)emit('expired');if(e instanceof ApiError&&e.status===403&&e.message.includes('重新认证'))emit('reauth')}
 function remember(id:string){try{sessionStorage.setItem(storage,id)}catch{/* history lookup remains available */}}
-async function run(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';try{await fn()}catch(e){if(alive)failure(e)}finally{if(alive)busy.value=false}}
+async function run(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';try{await fn()}catch(e){if(alive)failure(e)}finally{if(alive)busy.value=false;if(operation.value?.status!=='preview')confirmationLease.release('character-questrepair')}}
 async function refresh(){await run(async()=>{const r=await api(`${base}/characters/${props.characNo}`);if(alive){current.value=r}})}
 async function history(){await run(async()=>{const r=await api(`${base}/operations?charac_no=${props.characNo}&page=${page.value}`);if(alive){records.value=r.items;more.value=r.has_more}})}
 function received(r:any){if(!alive)return;operation.value=r;remember(r.operation_id);if(r.status==='committed')emit('changed')}
@@ -28,13 +30,15 @@ async function preview(){
  slotError.value=candidates.value.some((s:any)=>s.slot===slot.value)?'':'请选择一个非空任务槽或残留进度槽'
  reasonError.value=reason.value.trim()?'':'请填写操作原因'
  if(reasonError.value||slotError.value){await nextTick();root.value?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();return}
+ if(!confirmationLease.acquire('character-questrepair')){error.value='请先完成或关闭当前确认面板。';return}
  await run(async()=>{const r=await api(base+'/preview','POST',{action:'quest-clear',slot:slot.value,uid:current.value.target.uid,charac_no:props.characNo,reference:current.value.reference,reason:reason.value.trim()});key.value=crypto.randomUUID().replaceAll('-','');attempted.value=false;received(r);await nextTick();root.value?.querySelector<HTMLElement>('.quest-preview')?.scrollIntoView?.({block:'nearest'})})
 }
-async function confirm(){if(!operation.value||attempted.value||!key.value)return;attempted.value=true;await run(async()=>received(await api(`${base}/operations/${operation.value.operation_id}/confirm`,'POST',{idempotency_key:key.value})))}
+async function confirm(){if(!operation.value||attempted.value||!key.value)return;if(!confirmationLease.acquire('character-questrepair')){error.value='请先完成或关闭当前确认面板。';return};attempted.value=true;await run(async()=>received(await api(`${base}/operations/${operation.value.operation_id}/confirm`,'POST',{idempotency_key:key.value})))}
 async function cancel(){await run(async()=>received(await api(`${base}/operations/${operation.value.operation_id}/cancel-preview`,'POST',{})))}
 async function finish(){operation.value=null;attempted.value=false;key.value='';try{sessionStorage.removeItem(storage)}catch{}await refresh();await history()}
 onMounted(async()=>{await refresh();if(!alive)return;await history();if(!alive)return;let id='';try{id=sessionStorage.getItem(storage)||''}catch{}if(id)await inspect(id);timer=setInterval(()=>{if(alive&&pending.value&&!document.hidden&&!busy.value)void inspect()},10000)})
-onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer);emit('busy',false);emit('pending',false)})
+watch(()=>operation.value?.status,status=>{if(status==='preview')confirmationLease.acquire('character-questrepair');else confirmationLease.release('character-questrepair')})
+onBeforeUnmount(()=>{confirmationLease.release('character-questrepair');alive=false;if(timer)clearInterval(timer);emit('busy',false);emit('pending',false)})
 </script>
 <template><section ref="root" class="quest-maintenance">
  <h3>单任务槽清理</h3>

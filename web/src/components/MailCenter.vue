@@ -4,7 +4,7 @@ import {api,uncertainMessage} from '../api'
 import Modal from './Modal.vue'
 const props=withDefaults(defineProps<{uid?:number,characNo?:number,lockedTarget?:boolean,operationId?:string}>(),{uid:0,characNo:0,lockedTarget:false,operationId:''})
 const emit=defineEmits<{draft:[request:any]}>()
-const uid=ref(''),role=ref(''),op=ref(''),rows=ref<any[]>([]),page=ref(1),more=ref(false)
+const filterUid=ref(''),role=ref(''),op=ref(''),rows=ref<any[]>([]),page=ref(1),more=ref(false)
 const error=ref(''),loading=ref(false),detailError=ref(''),detailLoading=ref(false),selected=ref(''),detail=ref<any>(null),after=ref(0),previous=ref<number[]>([])
 let listEpoch=0,detailEpoch=0
 const labels:Record<string,string>={unclaimed_marker:'数据库未领取',claimed_marker:'数据库已领取标记',deleted_marker:'数据库删除标记',record_missing:'记录缺失 · 领取未知'}
@@ -12,11 +12,11 @@ function time(v:string){return v?new Date(v.replace(' ','T')+'Z').toLocaleString
 function validNumber(v:string){return !v||/^\d+$/.test(v)&&Number(v)>0&&Number(v)<=2147483647}
 async function load(reset=false){
  const epoch=++listEpoch;error.value='';loading.value=false
- if(!validNumber(uid.value)||!validNumber(role.value)){error.value='账号 UID 和角色编号应为正整数。';return}
+ if(!validNumber(filterUid.value)||!validNumber(role.value)){error.value='账号 UID 和角色编号应为正整数。';return}
  if(op.value&&!/^[a-f0-9]{32}$/.test(op.value)){error.value='操作编号应为32位小写十六进制字符。';return}
  if(reset)page.value=1
  loading.value=true;rows.value=[];more.value=false
- try{const data=await api('/mail-center?'+new URLSearchParams({uid:uid.value||'0',charac_no:role.value||'0',operation_id:op.value,page:String(page.value)}));if(epoch!==listEpoch)return;rows.value=data.items;more.value=data.has_more}
+ try{const data=await api('/mail-center?'+new URLSearchParams({uid:filterUid.value||'0',charac_no:role.value||'0',operation_id:op.value,page:String(page.value)}));if(epoch!==listEpoch)return;rows.value=data.items;more.value=data.has_more}
  catch(e){if(epoch===listEpoch)error.value=uncertainMessage(e)}finally{if(epoch===listEpoch)loading.value=false}
 }
 async function inspect(id:string,cursor=0){
@@ -29,7 +29,7 @@ function close(){detailEpoch++;selected.value='';detail.value=null;detailError.v
 async function next(){if(detail.value?.next_after==null)return;const cursor=detail.value.next_after;previous.value.push(after.value);await inspect(selected.value,cursor)}
 async function back(){const cursor=previous.value.pop();if(cursor!==undefined)await inspect(selected.value,cursor)}
 function draft(){if(!detail.value)return;const request=JSON.parse(JSON.stringify(detail.value.batch.request));emit('draft',request);close()}
-watch(()=>[props.uid,props.characNo,props.operationId],()=>{uid.value=props.uid?String(props.uid):'';role.value=props.characNo?String(props.characNo):'';op.value=props.operationId;close();void load(true);if(props.operationId)open(props.operationId)},{immediate:true})
+watch(()=>[props.uid,props.characNo,props.operationId],()=>{filterUid.value=props.uid?String(props.uid):'';role.value=props.characNo?String(props.characNo):'';op.value=props.operationId;close();void load(true);if(props.operationId)open(props.operationId)},{immediate:true})
 onBeforeUnmount(()=>{listEpoch++;detailEpoch++})
 </script>
 <template>
@@ -37,7 +37,7 @@ onBeforeUnmount(()=>{listEpoch++;detailEpoch++})
   <div class="section-title"><h2>邮件投递记录</h2><span class="pill">完整附件分页 · 只读追踪</span></div>
   <p v-if="lockedTarget" class="field-hint">收件范围固定为当前角色；如需搜索其他玩家，请使用独立邮件中心。</p>
   <form class="toolbar" @submit.prevent="load(true)">
-   <label>账号 UID<input v-model="uid" :disabled="lockedTarget" inputmode="numeric" aria-label="邮件账号UID" placeholder="全部账号"></label>
+   <label>账号 UID<input v-model="filterUid" :disabled="lockedTarget" inputmode="numeric" aria-label="邮件账号UID" placeholder="全部账号"></label>
    <label>角色编号<input v-model="role" :disabled="lockedTarget" inputmode="numeric" aria-label="邮件角色编号" placeholder="全部角色"></label>
    <label>操作编号<input v-model="op" aria-label="邮件操作编号" placeholder="精确操作编号"></label>
    <button :disabled="loading">查询邮件</button>

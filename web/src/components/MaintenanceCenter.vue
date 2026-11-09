@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import {ref,computed,onMounted,onBeforeUnmount} from 'vue'
+import {ref,computed,onMounted,onBeforeUnmount,watch} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
 import Modal from './Modal.vue'
+import {useGmConfirmation} from '../stores/gm/confirmation'
+const confirmationLease=useGmConfirmation()
 import FieldError from './FieldError.vue'
 const emit=defineEmits<{expired:[],reauth:[],navigate:[tab:string]}>()
 const state=ref<any>(null),detail=ref<any>(null),history=ref<any[]>([]),cursor=ref<string|null>('')
@@ -48,14 +50,14 @@ async function prepare(){if(busy.value||active.value)return;reasonError.value=''
  try{const result=await api('/maintenance/requests','POST',{request_id:next,reason:reason.value.trim()});if(alive){detail.value=result;fresh.value=true;attempted.value=false;key.value=crypto.randomUUID().replaceAll('-','')}}
  catch(e){if(alive){fail(e);error.value+='；编号已保留，请只查询原申请，不要重复新建。'}}
  finally{if(alive){busy.value=false;void loadHistory(true)}}}
-function openConfirm(){if(!canConfirm.value)return;ack.value=false;ackError.value='';dialog.value=true}
+function openConfirm(){if(!canConfirm.value)return;if(!confirmationLease.acquire('maintenance')){error.value='请先完成或关闭当前确认面板。';return};ack.value=false;ackError.value='';dialog.value=true}
 async function confirm(){if(!canConfirm.value)return;if(!ack.value){ackError.value='请先确认会断开当前游戏玩家。';return}
  if(!save(id.value)){ackError.value=error.value;return}
  const fingerprint=detail.value.result.fingerprint;attempted.value=true;dialog.value=false;busy.value=true;error.value='';fresh.value=false
  try{const result=await api('/maintenance/requests/'+id.value+'/confirm','POST',{idempotency_key:key.value,fingerprint,acknowledge_disconnect:true});if(alive){detail.value=result;fresh.value=true}}
  catch(e){if(alive){fail(e);error.value+='；确认结果可能未知，只查询原编号，不自动重发。'}}
  finally{if(alive){busy.value=false;void loadHistory(true)}}}
-function openClose(){if(!canClose.value)return;closeAck.value=false;closeError.value='';closeDialog.value=true}
+function openClose(){if(!canClose.value)return;if(!confirmationLease.acquire('maintenance')){error.value='请先完成或关闭当前确认面板。';return};closeAck.value=false;closeError.value='';closeDialog.value=true}
 async function closeMaintenance(){if(!canClose.value)return
  if(!closeAck.value){closeError.value='请先确认关闭装备维护窗口并恢复原游戏组件。';return}
  if(!closeKey.value)closeKey.value=crypto.randomUUID().replaceAll('-','')
@@ -66,7 +68,7 @@ async function closeMaintenance(){if(!canClose.value)return
  catch(e){if(alive){fail(e);error.value+='；结束维护结果待核对，编号已保留，请只查询原申请，不自动重发。'}}
  finally{if(alive){busy.value=false;void loadHistory(true)}}
 }
-function openRecovery(){if(!canRecover.value)return;recoveryAck.value=false;recoveryError.value='';recoveryDialog.value=true}
+function openRecovery(){if(!canRecover.value)return;if(!confirmationLease.acquire('maintenance')){error.value='请先完成或关闭当前确认面板。';return};recoveryAck.value=false;recoveryError.value='';recoveryDialog.value=true}
 async function recoverMaintenance(){if(!canRecover.value)return
  if(!recoveryAck.value){recoveryError.value='请先确认按原计划核对并继续恢复。';return}
  recoveryKey.value=crypto.randomUUID().replaceAll('-','')
@@ -92,7 +94,8 @@ onMounted(async()=>{void loadState();void loadHistory(true)
  try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(/^[a-f0-9]{32}$/.test(saved?.id)){id.value=saved.id;closeKey.value=/^[a-f0-9]{32}$/.test(saved.closeKey)?saved.closeKey:'';closeAttempted.value=!!closeKey.value;attempted.value=true;restored.value=true;await inspect(saved.id)}}catch{}
  timer=setInterval(()=>{if(!document.hidden&&!busy.value){if(active.value)void inspect();void loadState()}},10000)
 })
-onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
+watch([dialog,closeDialog,recoveryDialog],value=>{if(!value.some(Boolean))confirmationLease.release('maintenance')})
+onBeforeUnmount(()=>{confirmationLease.release('maintenance');alive=false;if(timer)clearInterval(timer)})
 </script>
 <template>
 <section class="panel maintenance-center" aria-label="维护中心">

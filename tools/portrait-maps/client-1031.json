@@ -1,0 +1,299 @@
+{
+  "format": "dnfgm-client-portrait-evidence-v1",
+  "method": "official_labelled_artwork_visual_comparison",
+  "verified_on": "2026-11-09",
+  "pvf_sha256": "be41c931524eff5befce39311f66ce9bbc3c4778d5a3cbc6a52e75730f9083e7",
+  "archive": "sprite_interface2_classchange_classchange_cha.NPK",
+  "archive_sha256": "403a14bec11b7261ba892d8eea92e9838381e8be598172e6e94e658107909087",
+  "member": "sprite/interface2/classchange/classchange_cha/classchange_cha.img",
+  "entries": [
+    {
+      "job": 0,
+      "grow_type": 1,
+      "frame": 0,
+      "pvf_name": "剑魂",
+      "official_label": "Blade Master",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Slayer(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/9c24cc39fc/18/0/0/slayer_m_01_1.jpg"
+    },
+    {
+      "job": 0,
+      "grow_type": 2,
+      "frame": 1,
+      "pvf_name": "鬼泣",
+      "official_label": "Soul Bender",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Slayer(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/fccbf2fa05/19/0/0/slayer_m_02_1.jpg"
+    },
+    {
+      "job": 0,
+      "grow_type": 3,
+      "frame": 2,
+      "pvf_name": "狂战士",
+      "official_label": "Berserker",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Slayer(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/c249aee66d/20/0/0/slayer_m_03_1.jpg"
+    },
+    {
+      "job": 0,
+      "grow_type": 4,
+      "frame": 3,
+      "pvf_name": "阿修罗",
+      "official_label": "Asura",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Slayer(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/dac326e12d/21/0/0/slayer_m_04_1.jpg"
+    },
+    {
+      "job": 1,
+      "grow_type": 1,
+      "frame": 4,
+      "pvf_name": "气功师",
+      "official_label": "Nen Master",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Fighter(F)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/b33cbdfb53/22/0/0/fighter_f_01_1.jpg"
+    },
+    {
+      "job": 1,
+      "grow_type": 2,
+      "frame": 5,
+      "pvf_name": "散打",
+      "official_label": "Striker",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Fighter(F)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/c4022a46ce/23/0/0/fighter_f_02_1.jpg"
+    },
+    {
+      "job": 1,
+      "grow_type": 3,
+      "frame": 6,
+      "pvf_name": "街霸",
+      "official_label": "Brawler",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Fighter(F)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/6aeff2d108/24/0/0/fighter_f_03_1.jpg"
+    },
+    {
+      "job": 1,
+      "grow_type": 4,
+      "frame": 7,
+      "pvf_name": "柔道家",
+      "official_label": "Grappler",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Fighter(F)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/d925525b2c/25/0/0/fighter_f_04_1.jpg"
+    },
+    {
+      "job": 2,
+      "grow_type": 1,
+      "frame": 8,
+      "pvf_name": "漫游枪手",
+      "official_label": "Ranger",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Gunner(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/ba242ee123/26/0/0/gunner_m_01_1.jpg"
+    },
+    {
+      "job": 2,
+      "grow_type": 2,
+      "frame": 9,
+      "pvf_name": "枪炮师",
+      "official_label": "Launcher",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Gunner(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/1c86ae92a8/27/0/0/gunner_m_02_1.jpg"
+    },
+    {
+      "job": 2,
+      "grow_type": 3,
+      "frame": 10,
+      "pvf_name": "机械师",
+      "official_label": "Mechanic",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Gunner(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/46dd5c86bf/28/0/0/gunner_m_03_1.jpg"
+    },
+    {
+      "job": 2,
+      "grow_type": 4,
+      "frame": 11,
+      "pvf_name": "弹药专家",
+      "official_label": "Spitfire",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Gunner(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/1e234f2b51/29/0/0/gunner_m_04_1.jpg"
+    },
+    {
+      "job": 3,
+      "grow_type": 1,
+      "frame": 12,
+      "pvf_name": "元素师",
+      "official_label": "Elementalist",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Mage(F)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/5dc2622386/30/0/0/mage_f_01_1.jpg"
+    },
+    {
+      "job": 3,
+      "grow_type": 2,
+      "frame": 13,
+      "pvf_name": "召唤师",
+      "official_label": "Summoner",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Mage(F)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/26f64c6e7e/31/0/0/mage_f_02_1.jpg"
+    },
+    {
+      "job": 3,
+      "grow_type": 3,
+      "frame": 14,
+      "pvf_name": "战斗法师",
+      "official_label": "Battle Mage",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Mage(F)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/32c2ee1aec/0/1/0/mage_f_03_1.jpg"
+    },
+    {
+      "job": 3,
+      "grow_type": 4,
+      "frame": 15,
+      "pvf_name": "魔道学者",
+      "official_label": "Witch",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Mage(F)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/5f03576db2/1/1/0/mage_f_04_1.jpg"
+    },
+    {
+      "job": 4,
+      "grow_type": 1,
+      "frame": 16,
+      "pvf_name": "圣骑士",
+      "official_label": "Crusader",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Priest(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/00b2d47983/2/1/0/priest_m_01_1.jpg"
+    },
+    {
+      "job": 4,
+      "grow_type": 2,
+      "frame": 17,
+      "pvf_name": "蓝拳圣使",
+      "official_label": "Monk",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Priest(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/c29210295a/3/1/0/priest_m_02_1.jpg"
+    },
+    {
+      "job": 4,
+      "grow_type": 3,
+      "frame": 18,
+      "pvf_name": "驱魔师",
+      "official_label": "Exorcist",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Priest(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/e30816f8ab/4/1/0/priest_m_03_1.jpg"
+    },
+    {
+      "job": 4,
+      "grow_type": 4,
+      "frame": 19,
+      "pvf_name": "复仇者",
+      "official_label": "Avenger",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Priest(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/0584945ba7/5/1/0/priest_m_04_1.jpg"
+    },
+    {
+      "job": 5,
+      "grow_type": 1,
+      "frame": 20,
+      "pvf_name": "漫游枪手",
+      "official_label": "Ranger",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Gunner(F)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/7ba444496b/6/1/0/gunner_f_01_1.jpg"
+    },
+    {
+      "job": 5,
+      "grow_type": 2,
+      "frame": 21,
+      "pvf_name": "枪炮师",
+      "official_label": "Launcher",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Gunner(F)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/036dda1b61/7/1/0/gunner_f_02_1.jpg"
+    },
+    {
+      "job": 5,
+      "grow_type": 3,
+      "frame": 22,
+      "pvf_name": "机械师",
+      "official_label": "Mechanic",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Gunner(F)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/7406a3490a/8/1/0/gunner_f_04_1.jpg"
+    },
+    {
+      "job": 5,
+      "grow_type": 4,
+      "frame": 23,
+      "pvf_name": "弹药专家",
+      "official_label": "Spitfire",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Gunner(F)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/f55a07508f/9/1/0/gunner_f_03_1.jpg"
+    },
+    {
+      "job": 6,
+      "grow_type": 1,
+      "frame": 24,
+      "pvf_name": "刺客",
+      "official_label": "Rogue",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Thief",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/367b3b87a0/10/1/0/thief_01_1.jpg"
+    },
+    {
+      "job": 6,
+      "grow_type": 2,
+      "frame": 25,
+      "pvf_name": "死灵术士",
+      "official_label": "Necromancer",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Thief",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/2c4da25e4c/11/1/0/thief_02_1.jpg"
+    },
+    {
+      "job": 7,
+      "grow_type": 1,
+      "frame": 26,
+      "pvf_name": "气功师",
+      "official_label": "Nen Master",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Fighter(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/118e51b3cf/14/1/0/fighter_m_02_1.jpg"
+    },
+    {
+      "job": 7,
+      "grow_type": 2,
+      "frame": 27,
+      "pvf_name": "散打",
+      "official_label": "Striker",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Fighter(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/a5db1eb46e/15/1/0/fighter_m_01_1.jpg"
+    },
+    {
+      "job": 7,
+      "grow_type": 3,
+      "frame": 28,
+      "pvf_name": "街霸",
+      "official_label": "Brawler",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Fighter(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/520dba0fde/16/1/0/fighter_m_03_1.jpg"
+    },
+    {
+      "job": 7,
+      "grow_type": 4,
+      "frame": 29,
+      "pvf_name": "柔道家",
+      "official_label": "Grappler",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Fighter(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/0ce57ce44d/17/1/0/fighter_m_04_1.jpg"
+    },
+    {
+      "job": 8,
+      "grow_type": 1,
+      "frame": 30,
+      "pvf_name": "元素爆破师",
+      "official_label": "Elemental Bomber",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Mage(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/143a170b7a/18/1/0/mage_m_01_1.jpg"
+    },
+    {
+      "job": 8,
+      "grow_type": 2,
+      "frame": 31,
+      "pvf_name": "冰结师",
+      "official_label": "Glacial Master",
+      "official_page": "https://www.dfoneople.com/gameinfo/character/Mage(M)",
+      "official_art": "https://static.dfoneople.com/publish/bbs_data_st1_neople/images/charac_info/fc8380525d/19/1/0/mage_m_02_1.jpg"
+    }
+  ]
+}

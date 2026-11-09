@@ -11,7 +11,7 @@ from urllib.parse import unquote
 ROOT=Path(__file__).resolve().parents[1]
 DOCS=('README.md','CHANGELOG.md','docs/README.md','docs/DEPLOYMENT.md',
       'docs/DEVELOPMENT.md','docs/SCREENSHOTS.md','docs/DOCUMENTATION.md',
-      'docs/RELEASING.md','docs/images/README.md',
+      'docs/RELEASING.md','docs/UI-PREFERENCES.md','docs/images/README.md',
       'docs/history/DEPLOYMENT-BATCHES-202610-20261106.md',
       'docs/reports/PUBLIC-DOCS-20261107.md')
 
@@ -32,13 +32,20 @@ def check():
             if not dest.is_relative_to(ROOT) or not dest.exists():
                 errors.append(f'{path.relative_to(ROOT)}: missing or external local path {target}')
     package=json.loads((ROOT/'web/package.json').read_text(encoding='utf-8'))
-    lock=json.loads((ROOT/'web/package-lock.json').read_text(encoding='utf-8'))
+    lock=(ROOT/'web/pnpm-lock.yaml').read_text(encoding='utf-8')
+    if not re.fullmatch(r'pnpm@\d+\.\d+\.\d+(?:\+sha\d+\.[A-Za-z0-9]+)?',package.get('packageManager','')):
+        errors.append('Web packageManager must pin an exact pnpm version')
+    if not re.search(r"(?m)^lockfileVersion: ['\"]?9\.0['\"]?$",lock):
+        errors.append('Expected a committed pnpm lockfile; install with --frozen-lockfile')
+    if (ROOT/'web/package-lock.json').exists():
+        errors.append('Remove the obsolete npm lockfile; web uses pnpm workspace')
     tree=ast.parse((ROOT/'src/dnfgm/__init__.py').read_text(encoding='utf-8'))
     namespace={target.id:ast.literal_eval(node.value) for node in tree.body
                if isinstance(node,ast.Assign) for target in node.targets
                if isinstance(target,ast.Name) and target.id=='__version__'}
-    for label,value in [('python',namespace['__version__']),('web',package['version']),
-                        ('lock',lock['version']),('lock-root',lock['packages']['']['version'])]:
+    # pnpm importers do not contain the workspace root package version. The
+    # frontend CI separately checks dependency agreement via frozen installation.
+    for label,value in [('python',namespace['__version__']),('web',package['version'])]:
         if value!=version:errors.append(f'{label} version mismatch: {value} vs {version}')
     app=(ROOT/'src/dnfgm/app.py').read_text(encoding='utf-8')
     if "return {'ok':True,'version':__version__}" not in app:

@@ -1,32 +1,38 @@
 <script setup lang="ts">
 import {computed,ref,watch} from 'vue'
+import {useGmPreferences} from '../stores/gm/preferences'
 const props=defineProps<{modelValue:Record<string,any>,facets?:any,pvf?:string,disabled?:boolean}>()
 const emit=defineEmits<{'update:modelValue':[value:Record<string,any>],apply:[]}>()
-const name=ref(''),saved=ref<{id:string,name:string,filters:Record<string,any>}[]>([]),warning=ref('')
-const key=computed(()=>'dnfgm.catalog-filters.v1.'+(props.pvf||'unbound'))
-const keys=['q','category','allowed_only','state','part','rarity','min_level','max_level','sort']
-function clean(value:any){const result:Record<string,any>={};for(const k of keys){const v=value?.[k];if((typeof v==='string'&&v.length<=100)||(typeof v==='number'&&Number.isFinite(v))||typeof v==='boolean')result[k]=v}return result}
-watch(key,()=>{try{const rows=JSON.parse(localStorage.getItem(key.value)||'[]');saved.value=Array.isArray(rows)?rows.filter(r=>typeof r?.id==='string'&&typeof r?.name==='string'&&r.name.length<=40).slice(0,12).map(r=>({...r,filters:clean(r.filters)})):[]}catch{saved.value=[];warning.value='浏览器保存的筛选无法读取，可以重新保存。'}},{immediate:true})
+const name=ref(''),warning=ref('')
+const preferences=useGmPreferences('catalog-filter',()=>props.pvf)
+const {items:saved,loading,saving,error:preferenceError,conflict}=preferences
+const keys=['q','category','allowed_only','state','part','rarity','min_level','max_level','sort','job','weapon_type','set_id']
+const legacy=ref<{id:string,name:string,filters:Record<string,any>}[]>([])
+function clean(value:any,forServer=false){const result:Record<string,any>={};for(const key of keys){let v=value?.[key];if(v===''||v===undefined||v===null)continue;if(['rarity','min_level','max_level','set_id'].includes(key)){v=Number(v);if(!Number.isFinite(v))continue}if((typeof v==='string'&&v.length<=100)||(typeof v==='number'&&Number.isFinite(v))||typeof v==='boolean')result[key]=v}if(forServer){result.q??='';result.category??='';result.allowed_only??=false;result.sort??='id'}return result}
+watch(()=>props.pvf,()=>{if(props.pvf)void preferences.load();try{const rows=JSON.parse(localStorage.getItem('dnfgm.catalog-filters.v1.'+(props.pvf||'unbound'))||'[]');legacy.value=Array.isArray(rows)?rows.filter(row=>typeof row?.name==='string'&&row.name.length<=40).slice(0,12):[]}catch{legacy.value=[]}},{immediate:true})
 function update(k:string,v:any){emit('update:modelValue',{...props.modelValue,[k]:v})}
-function persist(){try{localStorage.setItem(key.value,JSON.stringify(saved.value));warning.value=''}catch{warning.value='浏览器无法保存筛选，当前查询仍可使用。'}}
-function save(){if(!props.pvf||!name.value.trim())return;if(saved.value.length>=12){warning.value='最多保存12组筛选，请先删除不再使用的筛选。';return}saved.value.push({id:crypto.randomUUID(),name:name.value.trim(),filters:clean(props.modelValue)});name.value='';persist()}
-function apply(value:Record<string,any>){emit('update:modelValue',clean(value));emit('apply')}
+async function save(){const value=name.value.trim();if(!props.pvf||!value)return;warning.value='';if(await preferences.save(value,clean(props.modelValue,true))){name.value='';warning.value='筛选已保存，可在同一后台的其他浏览器使用。'}}
+function apply(value:Record<string,any>){emit('update:modelValue',{q:'',category:'',allowed_only:false,part:'',rarity:'',min_level:'',max_level:'',sort:'id',job:'',weapon_type:'',set_id:'',...clean(value)});emit('apply')}
+const existing=computed(()=>saved.value.some(row=>row.name===name.value.trim()))
 </script>
 <template>
  <details class="catalog-refine">
   <summary>组合筛选与常用条件 <small v-if="modelValue.part||modelValue.rarity!==''&&modelValue.rarity!=null||modelValue.min_level!==''&&modelValue.min_level!=null||modelValue.max_level!==''&&modelValue.max_level!=null">· 已设置</small></summary>
   <div class="refine-fields">
    <label>装备部位<select :value="modelValue.part||''" :disabled="disabled||!facets?.equipment_metadata" @change="update('part',($event.target as HTMLSelectElement).value)"><option value="">全部部位</option><option v-for="p in facets?.parts||[]" :key="p.code" :value="p.code">{{p.name}} · {{p.count}}</option></select></label>
+   <label>适用职业<select :value="modelValue.job||''" :disabled="disabled||!facets?.extended_equipment_metadata" @change="update('job',($event.target as HTMLSelectElement).value)"><option value="">全部职业</option><option v-for="job in facets?.jobs||[]" :key="job.code" :value="job.code">{{job.name}} · {{job.count}}</option></select></label>
+   <label>武器类型<select :value="modelValue.weapon_type||''" :disabled="disabled||!facets?.extended_equipment_metadata" @change="update('weapon_type',($event.target as HTMLSelectElement).value)"><option value="">全部武器</option><option v-for="weapon in facets?.weapon_types||[]" :key="weapon.code" :value="weapon.code">{{weapon.name}} · {{weapon.count}}</option></select></label>
+   <label>所属套装<select :value="modelValue.set_id??''" :disabled="disabled||!facets?.extended_equipment_metadata" @change="update('set_id',($event.target as HTMLSelectElement).value)"><option value="">全部套装</option><option v-for="set in facets?.sets||[]" :key="set.id" :value="set.id">{{set.name}} · {{set.count}}</option></select></label>
    <label>PVF 品级<select :value="modelValue.rarity??''" :disabled="disabled||!facets?.equipment_metadata" @change="update('rarity',($event.target as HTMLSelectElement).value)"><option value="">全部品级</option><option v-for="r in facets?.rarities||[]" :key="r.value" :value="r.value">{{r.label}} · {{r.count}}</option></select></label>
    <label>最低等级<input :value="modelValue.min_level??''" aria-label="最低等级" type="number" min="0" max="1000" :disabled="disabled" @input="update('min_level',($event.target as HTMLInputElement).value)"></label>
    <label>最高等级<input :value="modelValue.max_level??''" aria-label="最高等级" type="number" min="0" max="1000" :disabled="disabled" @input="update('max_level',($event.target as HTMLInputElement).value)"></label>
    <label>排序<select :value="modelValue.sort||'id'" :disabled="disabled" @change="update('sort',($event.target as HTMLSelectElement).value)"><option value="id">编号顺序</option><option value="level_asc">等级从低到高</option><option value="level_desc">等级从高到低</option><option value="name">名称顺序</option></select></label>
   </div>
-  <div class="button-row"><button type="button" class="primary" :disabled="disabled" @click="emit('apply')">应用组合筛选</button><button type="button" :disabled="disabled" @click="apply({...modelValue,part:'',rarity:'',min_level:'',max_level:'',sort:'id'})">清除组合条件</button></div>
+  <div class="button-row"><button type="button" class="primary" :disabled="disabled" @click="emit('apply')">应用组合筛选</button><button type="button" :disabled="disabled" @click="apply({...modelValue,part:'',rarity:'',min_level:'',max_level:'',sort:'id',job:'',weapon_type:'',set_id:''})">清除组合条件</button></div>
   <p v-if="facets&&!facets.equipment_metadata" class="field-hint">当前索引未提供装备元数据，部位与品级筛选暂不可用。</p>
-  <div class="saved-filter-input"><label>保存当前筛选<input v-model="name" aria-label="常用筛选名称" maxlength="40" placeholder="例如：70级武器" :disabled="disabled||!pvf" @keydown.enter.prevent="save"></label><button type="button" :disabled="disabled||!pvf||!name.trim()" @click="save">保存筛选</button></div>
-  <ul v-if="saved.length" class="saved-filters"><li v-for="row in saved" :key="row.id"><button type="button" :disabled="disabled" @click="apply(row.filters)">{{row.name}}</button><button type="button" class="ghost" :aria-label="'删除筛选 '+row.name" :disabled="disabled" @click="saved=saved.filter(r=>r.id!==row.id);persist()">×</button></li></ul>
-  <p class="field-hint">常用条件仅保存在此浏览器，按 PVF 版本区分。品级显示来源原始值；筛选和对比均不会发放物品。</p><p v-if="warning" role="status" class="field-hint">{{warning}}</p>
+  <div class="saved-filter-input"><label>保存当前筛选<input v-model="name" aria-label="常用筛选名称" maxlength="48" placeholder="例如：70级武器" :disabled="disabled||!pvf" @keydown.enter.prevent="save"></label><button type="button" :disabled="disabled||!pvf||!name.trim()||saving||conflict" @click="save">{{saving?'保存中…':existing?'更新同名筛选':'保存筛选'}}</button></div>
+  <ul v-if="saved.length" class="saved-filters"><li v-for="row in saved" :key="row.name"><button type="button" :disabled="disabled" @click="apply(row.payload||{})">{{row.name}}</button><button type="button" class="ghost" :aria-label="'删除筛选 '+row.name" :disabled="disabled" @click="preferences.remove(row)">×</button></li></ul>
+  <div class="button-row"><button type="button" :disabled="disabled||loading||saving||!pvf" @click="preferences.load">{{loading?'读取中…':'刷新方案'}}</button><span class="field-hint">筛选按 PVF 保存到后台；版本冲突时须刷新核对。</span></div><p v-if="preferenceError" role="alert" class="submit-error">{{preferenceError}}</p><details v-if="legacy.length"><summary>导入原浏览器筛选（{{legacy.length}} 项）</summary><button v-for="row in legacy" :key="row.id" type="button" :disabled="disabled" @click="apply(row.filters);name=row.name">{{row.name}}</button><p class="field-hint">应用后点击保存筛选，即可存入后台。</p></details><p class="field-hint">品级为 PVF 原始值，筛选和对比均不会发放物品。<span v-if="facets?.sets_truncated">套装较多，列表只展示当前索引的一部分。</span></p><p v-if="warning" role="status" class="field-hint">{{warning}}</p>
  </details>
 </template>
 <style scoped>

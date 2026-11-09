@@ -6,13 +6,14 @@
 
 ## 依赖与构建
 
-Python 3.12（含 pip／venv），Node.js 24.15+ 的 24.x，npm：
+Python 3.12（含 pip／venv），Node.js 24.15+ 的 24.x，pnpm **12.10.1**：
 
 ```bash
 python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock
-npm --prefix web ci
-npm --prefix web run build
+pnpm --dir web install --frozen-lockfile
+pnpm --dir web typecheck
+pnpm --dir web build
 ```
 
 前端 `web/dist/` 由后端 `static_dir` 配置提供，浏览器基路径 `/dnf-gm/`，API `/dnf-gm/api/v1`。
@@ -27,20 +28,24 @@ DNFGM_CONFIG=/absolute/private/lab-config.json PYTHONPATH=src \
   --host 127.0.0.1 --port 8765
 ```
 
-Vite 开发服务只绑定回环：`npm --prefix web run dev`，已有 `/dnf-gm/api` 代理配置；必须在私有实验配置中加入精确开发 Origin，不允许任意跨域。浏览器访问 Vite 实际输出的 `/dnf-gm/` 地址。
+Vite+ 开发服务只绑定回环：`pnpm --dir web dev`，已有 `/dnf-gm/api` 代理配置；必须在私有实验配置中加入精确开发 Origin，不允许任意跨域。浏览器访问实际输出的 `/dnf-gm/` 地址。
+
+前端完整迁入固定版本 SoybeanAdmin 的 pnpm workspace、Naive UI、路由、布局、主题和 UnoCSS 构建体系。保留 `pnpm-lock.yaml`，不要再生成 npm 锁文件，也不要在发布时更新 catalog 中的依赖。`pnpm build` 只执行 Vite+ 构建，类型检查须单独执行。请求适配仍使用同源 Cookie 与 CSRF，不使用模板演示 token 刷新后重放原请求的行为。
 
 ## 测试策略
 
 按改动选相关文件，不要求每次全量回归。后端数据库测试必须使用独立 socket-only MySQL **5.7.44**，准备方法见 [TESTING.md](TESTING.md)；不要将测试连接指向生产库。
 
 ```bash
-npm --prefix web test -- src/components/MailWorkbench.test.ts
+pnpm --dir web test -- src/components/CatalogFilters.test.ts
 # 后端示例：仅在已启动的独立实验库环境执行
 DNF_GM_M0_SOCKET=/absolute/lab/mysql.sock PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
   .venv/bin/python -m pytest -q tests/app/test_readiness.py
 ```
 
 CI 全量测试是独立工作流；Release 类型检查与构建不代表重新完成全量测试或客户端验收。截图只用合成对象，见 [截图约定](images/README.md)。
+
+管理库当前迁移到 **017**。版本化筛选、外观和布局偏好只写管理库，按当前 PVF 隔离，使用乐观版本；见 [界面偏好接口](UI-PREFERENCES.md)。添加筛选时同时维护 `CatalogFilters`、`catalog_filters.predicates`、搜索接口和离线索引补全，不能让批量策略预览忽略目录中已选的条件。
 
 ## 贡献重点
 

@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import {ref,onMounted,onBeforeUnmount,computed} from 'vue'
+import {ref,onMounted,onBeforeUnmount,computed,watch} from 'vue'
 import UnlockItem from './UnlockItem.vue'
 import {api,ApiError,uncertainMessage} from '../api'
+import {useGmConfirmation} from '../stores/gm/confirmation'
+const confirmationLease=useGmConfirmation()
 import FieldError from './FieldError.vue'
 const props=defineProps<{characNo:number,selectOnly?:boolean}>()
 const emit=defineEmits<{reauth:[],expired:[],busy:[value:boolean],pending:[value:boolean],select:[value:any]}>()
@@ -22,11 +24,13 @@ async function makePreview(){
  if(!reason.value.trim()){reasonError.value='请填写提前解锁原因。';return}
  if(!selected.value.length){error.value='请先选择待处理申请。';return}
  if(data.value.items.some((i:any)=>selected.value.includes(i.lock_key)&&!eligible(i))){error.value='选中申请已到期，请刷新后重新选择。';return}
+ if(!confirmationLease.acquire('domain-unlockrequests')){error.value='请先完成或关闭当前确认面板。';return}
  busy(true)
- try{preview.value=await api('/operations/preview','POST',{action:'equipment-unlock',uid:data.value.uid,charac_no:props.characNo,lock_keys:[...selected.value],reason:reason.value.trim()});emit('pending',true);key.value=crypto.randomUUID();result.value=null;uncertain.value=false}catch(e){fail(e)}finally{busy(false)}
+ try{preview.value=await api('/operations/preview','POST',{action:'equipment-unlock',uid:data.value.uid,charac_no:props.characNo,lock_keys:[...selected.value],reason:reason.value.trim()});emit('pending',true);key.value=crypto.randomUUID();result.value=null;uncertain.value=false}catch(e){fail(e)}finally{busy(false);if(!preview.value||result.value)confirmationLease.release('domain-unlockrequests')}
 }
 async function confirm(){
  if(loading.value||uncertain.value||result.value)return
+ if(!confirmationLease.acquire('domain-unlockrequests')){error.value='请先完成或关闭当前确认面板。';return}
  busy(true);error.value='';uncertain.value=true
  try{result.value=await api('/operations/'+preview.value.operation_id+'/confirm','POST',{idempotency_key:key.value});uncertain.value=false}catch(e){if(e instanceof ApiError&&[401,403,404,409,422].includes(e.status))uncertain.value=false;fail(e)}finally{busy(false)}
 }
@@ -34,6 +38,8 @@ async function query(){if(loading.value)return;busy(true);error.value='';try{con
 async function reset(){emit('pending',false);preview.value=null;result.value=null;await load()}
 onMounted(()=>{void load();timer=setInterval(()=>{if(!document.hidden)tick.value=Date.now()},1000)})
 onBeforeUnmount(()=>{if(timer)clearInterval(timer)})
+watch(()=>!!preview.value&&!result.value,active=>{if(active)confirmationLease.acquire('domain-unlockrequests');else confirmationLease.release('domain-unlockrequests')})
+onBeforeUnmount(()=>confirmationLease.release('domain-unlockrequests'))
 </script>
 <template>
  <div class="unlock-requests" data-testid="unlock-requests">

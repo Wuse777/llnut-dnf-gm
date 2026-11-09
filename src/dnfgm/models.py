@@ -69,7 +69,7 @@ class Gift(Model):
 
 
 class CatalogFilters(Model):
-    q: str = Field(default='', max_length=100)
+    q: str = Field(default='', max_length=80)
     category: Literal['', 'equipment', 'material', 'consumable', 'special'] = ''
     allowed_only: bool = False
     state: Literal['', 'trial', 'verified', 'blocked'] = ''
@@ -77,6 +77,9 @@ class CatalogFilters(Model):
     rarity: StrictInt | None = Field(default=None,ge=0,le=255)
     min_level: StrictInt | None = Field(default=None,ge=0,le=1000)
     max_level: StrictInt | None = Field(default=None,ge=0,le=1000)
+    job: str = Field(default='',max_length=80)
+    weapon_type: str = Field(default='',max_length=80)
+    set_id: StrictInt | None = Field(default=None,ge=1,le=4294967295)
 
     @model_validator(mode='after')
     def level_range(self):

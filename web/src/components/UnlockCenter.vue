@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import {ref,onMounted,onBeforeUnmount,computed} from 'vue'
+import {ref,onMounted,onBeforeUnmount,computed,watch} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
+import {useGmConfirmation} from '../stores/gm/confirmation'
+const confirmationLease=useGmConfirmation()
 import UnlockRequests from './UnlockRequests.vue'
 import UnlockItem from './UnlockItem.vue'
 const emit=defineEmits<{reauth:[],inspect:[id:string]}>()
@@ -23,12 +25,14 @@ async function makePreview(){
  if(locked.value)return;reasonError.value='';error.value=''
  if(!reason.value.trim()){reasonError.value='请填写本批次提前解锁原因。';return}
  if(!basket.value.length){error.value='请先选择角色申请并加入处理清单。';return}
+ if(!confirmationLease.acquire('domain-unlockcenter')){error.value='请先完成或关闭当前确认面板。';return}
  busy.value=true
  try{const p=await api('/unlock-batches/preview','POST',{reason:reason.value.trim(),targets:basket.value.map(t=>({uid:t.uid,charac_no:t.charac_no,lock_keys:t.lock_keys}))});preview.value=p;operation.value=p.operation_id;key.value=crypto.randomUUID();result.value=null;uncertain.value=false;save()}
- catch(e){fail(e)}finally{busy.value=false}
+ catch(e){fail(e)}finally{busy.value=false;if(!preview.value||result.value)confirmationLease.release('domain-unlockcenter')}
 }
 async function confirm(){
  if(busy.value||uncertain.value||result.value||!preview.value?.write_enabled)return
+ if(!confirmationLease.acquire('domain-unlockcenter')){error.value='请先完成或关闭当前确认面板。';return}
  busy.value=true;error.value='';uncertain.value=true
  try{save()}catch{uncertain.value=false;busy.value=false;error.value='无法保存待确认操作编号，本次未发送，请检查浏览器会话存储。';return}
  try{result.value=await api('/operations/'+operation.value+'/confirm','POST',{idempotency_key:key.value});uncertain.value=false;sessionStorage.removeItem(storage)}
@@ -40,12 +44,14 @@ async function inspect(id=operation.value,knownUnsubmitted=false){
  const localPreview=preview.value,canKeep=operation.value===id&&!!key.value&&!uncertain.value&&!result.value
  busy.value=true;error.value=''
  try{const d=await api('/operations/'+id);if(d.action!=='unlock-batch')throw new Error('该编号不是批量解锁操作。');operation.value=id;preview.value={operation_id:id,preview:d.preview,expires_at:d.expires_at,write_enabled:false};if(d.status==='committed'){result.value=d.result;uncertain.value=false;sessionStorage.removeItem(storage)}else if(canKeep){preview.value=localPreview;uncertain.value=false;error.value='此预览尚未提交，可确认一次或返回重选。'}else if(knownUnsubmitted){uncertain.value=false;error.value='恢复了尚未提交的预览，请放弃此预览并重选。'}else{uncertain.value=true;save();error.value='尚未确认提交成功；只查询原编号，不自动重发。'}}
- catch(e){fail(e)}finally{busy.value=false}
+ catch(e){fail(e)}finally{busy.value=false;if(!preview.value||result.value)confirmationLease.release('domain-unlockcenter')}
 }
 function reset(){if(busy.value||uncertain.value)return;preview.value=null;result.value=null;operation.value='';sessionStorage.removeItem(storage);basket.value=[];active.value=null;void load(true)}
 function move(forward:boolean){if(forward){if(next.value===null)return;previous.value.push(after.value);after.value=next.value}else after.value=previous.value.pop()??0;void load()}
 onMounted(async()=>{try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(saved&&/^[a-f0-9]{32}$/.test(saved.id)){operation.value=saved.id;uncertain.value=true;await inspect(saved.id,saved.uncertain===false)}}catch(e){fail(e)}await load();timer=setInterval(()=>{if(uncertain.value&&!document.hidden&&!busy.value)void inspect()},5000)})
 onBeforeUnmount(()=>{alive=false;generation++;if(timer)clearInterval(timer)})
+watch(()=>!!preview.value&&!result.value,active=>{if(active)confirmationLease.acquire('domain-unlockcenter');else confirmationLease.release('domain-unlockcenter')})
+onBeforeUnmount(()=>confirmationLease.release('domain-unlockcenter'))
 </script>
 <template><section class="unlock-center">
  <section class="panel"><div class="section-title"><h2>装备解锁申请中心</h2><button :disabled="loading" @click="load()">刷新角色申请</button></div>

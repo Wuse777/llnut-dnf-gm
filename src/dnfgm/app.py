@@ -11,6 +11,7 @@ from .config import load_settings
 from .db import Database, Busy
 from .models import Login, Preview, Confirm, Gift, CatalogPolicyPreview, ItemFavorite, ItemSelection, RewardJob, StartRewardJob, RewardJobControl, UnlockBatchPreview, CleanupPreview, CleanupConfirm
 from .item_preferences import ItemPreferences
+from .ui_preferences import UiPreferences,PreferenceKind,PreferenceWrite,PreferenceDelete,AppearancePreview
 from .reward_jobs import RewardJobs, JobWorker
 from .security import COOKIE, Limits, authenticate, new_session, session, digest
 from .service import Service
@@ -169,9 +170,9 @@ def create_app(settings=None, database=None):
     @app.get(API+'/health')
     def health():
         with db.connect() as c, c.cursor() as q:
-            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 16')
+            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 17')
             versions={row['version'] for row in q.fetchall()}
-            if versions != set(range(1,17)):
+            if versions != set(range(1,18)):
                 raise HTTPException(503,'管理库迁移未完成，需要完成016备份计划迁移及此前迁移')
             from .gameplay_transactions import inspect_protocol
             try:inspect_protocol(q)
@@ -909,9 +910,9 @@ def create_app(settings=None, database=None):
         return UnlockCenter(service).preview(key,data.model_dump())
 
     @app.get(API+'/catalog')
-    def catalog(request:Request,q:str=Query('',max_length=80),category:Literal['','equipment','material','consumable','special']='',page:int=Query(1,ge=1,le=10000),allowed_only:bool=False,state:Literal['','trial','verified','blocked']='',part:str=Query('',max_length=80),rarity:int|None=Query(None,ge=0,le=255),min_level:int|None=Query(None,ge=0,le=1000),max_level:int|None=Query(None,ge=0,le=1000),sort:Literal['id','level_asc','level_desc','name']='id'):
+    def catalog(request:Request,q:str=Query('',max_length=80),category:Literal['','equipment','material','consumable','special']='',page:int=Query(1,ge=1,le=10000),allowed_only:bool=False,state:Literal['','trial','verified','blocked']='',part:str=Query('',max_length=80),rarity:int|None=Query(None,ge=0,le=255),min_level:int|None=Query(None,ge=0,le=1000),max_level:int|None=Query(None,ge=0,le=1000),job:str=Query('',max_length=80),weapon_type:str=Query('',max_length=80),set_id:int|None=Query(None,ge=1,le=4294967295),sort:Literal['id','level_asc','level_desc','name']='id'):
         user(request)
-        return service.catalog.search(q,category,page,allowed_only,state,part=part,rarity=rarity,min_level=min_level,max_level=max_level,sort=sort)
+        return service.catalog.search(q,category,page,allowed_only,state,part=part,rarity=rarity,min_level=min_level,max_level=max_level,job=job,weapon_type=weapon_type,set_id=set_id,sort=sort)
 
     @app.get(API+'/catalog/enchantments')
     def enchantments(request:Request,q:str=Query('',max_length=80),page:int=Query(1,ge=1,le=10000)):
@@ -919,6 +920,29 @@ def create_app(settings=None, database=None):
         return service.catalog.enchantments(q,page)
 
     preferences = ItemPreferences(db,service.catalog)
+    ui_preferences = UiPreferences(db,service.catalog)
+
+    @app.get(API+'/ui-preferences')
+    def ui_preference_list(request:Request,kind:PreferenceKind='catalog-filter'):
+        user(request)
+        return ui_preferences.list(kind)
+
+    @app.get(API+'/ui-preferences/{kind}/{name}')
+    def ui_preference_get(request:Request,kind:PreferenceKind,name:str=PathParameter(min_length=1,max_length=48)):
+        user(request)
+        return ui_preferences.get(kind,name)
+
+    @app.put(API+'/ui-preferences/{kind}/{name}')
+    def ui_preference_put(data:PreferenceWrite,request:Request,kind:PreferenceKind,name:str=PathParameter(min_length=1,max_length=48)):
+        key=user(request,True)
+        limits.check('ui-preference:'+key,60)
+        return ui_preferences.write(kind,name,data.model_dump())
+
+    @app.delete(API+'/ui-preferences/{kind}/{name}')
+    def ui_preference_delete(data:PreferenceDelete,request:Request,kind:PreferenceKind,name:str=PathParameter(min_length=1,max_length=48)):
+        key=user(request,True)
+        limits.check('ui-preference:'+key,60)
+        return ui_preferences.write(kind,name,data.model_dump(),delete=True)
 
     @app.get(API+'/catalog/collections')
     def item_collection(request:Request,collection:Literal['favorites','recent']='favorites',page:int=Query(1,ge=1,le=10000)):
@@ -948,10 +972,23 @@ def create_app(settings=None, database=None):
         user(request)
         return service.catalog.assets.status(settings.pvf_sha256)
 
+    @app.post(API+'/appearance/preview')
+    def appearance_preview(data:AppearancePreview,request:Request):
+        key=user(request,True)
+        limits.check('appearance-preview:'+key,30)
+        sha=ui_preferences.scope(data.pvf_sha256)
+        if sha!=settings.pvf_sha256:raise HTTPException(409,'PVF版本不匹配，请重新核对外观方案')
+        return service.catalog.assets.preview_appearance(sha,data.model_dump(exclude={'pvf_sha256'}))
+
     @app.get(API+'/assets/coverage')
     def asset_coverage(request:Request,state:str=Query('all',max_length=24),page:int=Query(1,ge=1,le=10000)):
         key=user(request);limits.check('asset-coverage:'+key,30)
         return service.catalog.assets.coverage(settings.pvf_sha256,state,page)
+
+    @app.get(API+'/assets/{pvf_sha}/{image_hash}.atlas.png')
+    def asset_atlas(request:Request,pvf_sha:str=PathParameter(pattern=r'^[a-f0-9]{64}$'),image_hash:str=PathParameter(pattern=r'^[a-f0-9]{64}$')):
+        user(request)
+        return Response(service.catalog.assets.atlas(pvf_sha,image_hash),media_type='image/png',headers={'Cache-Control':'private, max-age=300'})
 
     @app.get(API+'/assets/{pvf_sha}/{image_hash}.png')
     def asset_image(request:Request,pvf_sha:str=PathParameter(pattern=r'^[a-f0-9]{64}$'),image_hash:str=PathParameter(pattern=r'^[a-f0-9]{64}$')):

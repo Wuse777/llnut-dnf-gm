@@ -16,7 +16,7 @@ from .write_gate import GameplayWriteGate
 from .economy import Economy
 from .character_detail import INFO_COLUMNS, ATTRIBUTES, decode_container, profession
 from .equipment_metadata import enchantment
-from .character_outfit import read_saved_outfit, resolve_saved_outfit
+from .character_outfit import read_saved_outfit, resolve_saved_outfit, read_saved_appearance, resolve_saved_appearance
 
 
 CURRENCIES = {'cera': ('taiwan_billing.cash_cera','cera','account',4294967295),
@@ -184,6 +184,7 @@ class Service:
             # Account ownership comes only from charac_info, never a caller-supplied UID.
             account_storage = one(q, 'SELECT money,capacity,cargo,occ_time FROM taiwan_cain.account_cargo WHERE m_id=%s', (row['uid'],))
             saved_outfit = read_saved_outfit(q, charac_no, row['uid'], deleted=bool(row['delete_flag']))
+            saved_appearance = read_saved_appearance(q,charac_no,row['uid'],deleted=bool(row['delete_flag']))
         equipment = decode_container(inventory['equipslot'] if inventory else None, True)
         backpack = decode_container(inventory['inventory'] if inventory else None)
         warehouse = decode_container(storage['cargo'] if storage else None)
@@ -196,8 +197,11 @@ class Service:
             gold_state='ok' if account_storage else 'missing',
             stored_at=account_storage['occ_time'] if account_storage else None)
         containers = (equipment, backpack, warehouse, account_warehouse)
-        labels = self.catalog.read_labels([n for group in containers for i in group['items'] for n in (i['id'],i.get('orb_id',0))]+[i['id'] for i in saved_outfit['items']])
+        labels = self.catalog.read_labels([n for group in containers for i in group['items'] for n in (i['id'],i.get('orb_id',0))]+[i['id'] for i in saved_outfit['items']]
+            +[n for i in saved_appearance['items'] for n in (i['id'],i['effective_id'])])
         outfit=resolve_saved_outfit(saved_outfit,row['job'],labels)
+        weapon_id=next((i['id'] for i in equipment['items'] if i['slot']==0),0)
+        appearance_saved=resolve_saved_appearance(saved_appearance,row['job'],row['grow_type'],labels,weapon_id)
         for group in containers:
             for item in group['items']:
                 meta = labels['items'].get(item['id'])
@@ -211,7 +215,8 @@ class Service:
         outfit_preview=(self.catalog.assets.outfit_preview(art_sha,row['job'],outfit['recipe_sha256'])
                         if outfit['state']=='ok' else {'state':outfit['state'],'url':None,'note':outfit['note']})
         attrs = [{'key':key,'label':label,'value':row.pop(key)} for key,label in ATTRIBUTES.items()]
-        return {'character':row, 'portrait':portrait, 'job_preview':self.catalog.assets.job_preview(art_sha,row['job']), 'outfit':outfit, 'outfit_preview':outfit_preview, 'assets':self.catalog.assets.status(art_sha), 'account':owner, 'account_online':online, 'play_state':play_state,
+        return {'character':row, 'portrait':portrait, 'job_preview':self.catalog.assets.job_preview(art_sha,row['job']), 'outfit':outfit, 'outfit_preview':outfit_preview,
+                'appearance':self.catalog.assets.appearance(art_sha,appearance_saved), 'assets':self.catalog.assets.status(art_sha), 'account':owner, 'account_online':online, 'play_state':play_state,
                 'profession':profession(row['job'],row['grow_type'],labels['jobs']),
                 'attributes':attrs, 'wealth':{'state':'ok' if inventory else 'missing',
                     'gold':inventory['money'] if inventory else None,

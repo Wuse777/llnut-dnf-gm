@@ -48,3 +48,7 @@
 - [文档维护约定及参考项目](DOCUMENTATION.md)
 
 遇到故障先按[部署排查表](DEPLOYMENT.md#常见问题)查看健康状态；不要通过重复提交奖励、直接改数据库或重启共享 Docker 来试错。
+
+## 新工作台
+
+[工作台与偏好](UI-WORKSPACE.md) · [v0.6.0 发布说明](releases/v0.6.0.md) · [界面偏好接口](UI-PREFERENCES.md)

@@ -34,7 +34,7 @@ it('freezes preview and confirms server fingerprint and count, not changed draft
  expect(JSON.parse(request.body)).toMatchObject({fingerprint:'f'.repeat(64),target_count:2,account_count:1});expect(JSON.parse(request.body)).not.toHaveProperty('reward');expect(w.text()).toContain('执行中')
 })
 it('allows unknown-stack material quantity above PVF values and removing never submits',async()=>{
- const {w,fetcher}=setup();await flushPromises();await fill(w);await click(w,'搜索物品');await click(w,'＋ Material #99');await w.find('[aria-label="物品数量 99"]').setValue(2147483647);await preview(w)
+ const {w,fetcher}=setup();await flushPromises();await fill(w);await click(w,'选择奖励物品');await click(w,'加入清单');await w.find('[aria-label="物品数量 99"]').setValue(2147483647);await preview(w)
  const body=JSON.parse(fetcher.mock.calls.find(([u])=>String(u).endsWith('/preview'))![1].body);expect(body.reward.items).toEqual([{id:99,quantity:2147483647}])
  const before=fetcher.mock.calls.filter(([u])=>String(u).endsWith('/preview')).length;await w.find('[aria-label="移除物品 99 第1条"]').trigger('click');await flushPromises();expect(fetcher.mock.calls.filter(([u])=>String(u).endsWith('/preview'))).toHaveLength(before)
 })

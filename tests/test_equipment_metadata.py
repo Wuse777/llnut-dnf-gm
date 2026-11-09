@@ -1,5 +1,5 @@
 import pytest
-from dnfgm.equipment_metadata import enchant_definition,equipment_definition,attribute_definition,read_metadata
+from dnfgm.equipment_metadata import enchant_definition,equipment_definition,attribute_definition,read_metadata,filter_definition
 
 
 def test_enchant_requires_explicit_section_not_orb_name():
@@ -65,3 +65,29 @@ def test_old_merged_attribute_indexes_are_hidden_until_reenriched(version):
         labels={1:{'id':1}}
         read_metadata(c,labels)
     assert labels[1].get('base_attributes')==(values if version=='2' else None)
+
+
+def test_filter_metadata_uses_explicit_jobs_weapon_directory_and_set_reference():
+    tokens=[(5,'[usable job]'),(7,'[mage]'),(7,'[creator mage]'),
+        (5,'[equipment type]'),(7,'[weapon]'),(2,23),
+        (5,'[set item master]'),(2,12345)]
+    assert filter_definition(tokens,'equipment/character/mage/weapon/staff/fixture.equ',99)=={
+        'job_codes':['[mage]','[creator mage]'],'weapon_type':'staff','set_id':12345,'set_name':''}
+    assert filter_definition(tokens,'equipment/fixture/staff_named_item.equ',99)['weapon_type']==''
+    assert filter_definition([(5,'[set item master]'),(2,-1)],item_id=9)['set_id'] is None
+    assert filter_definition([(5,'[set name]'),(7,'PVF 套装定义')],item_id=9)['set_id']==9
+
+
+def test_filter_metadata_excludes_nested_overrides_and_ambiguous_duplicates():
+    tokens=[(5,'[usable job]'),(7,'[mage]'),(5,'[if]'),
+        (5,'[usable job]'),(7,'[priest]'),(5,'[set item master]'),(2,999),(5,'[/if]')]
+    row=filter_definition(tokens)
+    assert row['job_codes']==['[mage]'] and row['set_id'] is None
+    assert filter_definition(tokens+[(5,'[usable job]'),(7,'[priest]')])['job_codes']==[]
+    assert filter_definition(tokens[:-1])['job_codes']==[]
+
+
+def test_explicitly_closed_job_section_and_unknown_codes_remain_literal():
+    row=filter_definition([(5,'[usable job]'),(7,'[future job]'),(5,'[/usable job]'),
+        (5,'[equipment type]'),(7,'[weapon]')],'equipment/character/future/weapon/future_blade/test.equ')
+    assert row['job_codes']==['[future job]'] and row['weapon_type']=='future_blade'

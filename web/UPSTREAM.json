@@ -1,0 +1,17 @@
+{
+  "project": "SoybeanAdmin",
+  "repository": "https://github.com/soybeanjs/soybean-admin",
+  "tag": "v2.3.0",
+  "commit": "ab40c08992807e303dd8aabb6ec43d7e2334b24f",
+  "license": "MIT",
+  "license_file": "SOYBEAN-LICENSE",
+  "package_manager": "pnpm@12.10.1",
+  "toolchain": "Vite+ 1.1.0; TypeScript Native Bridge 6.0.3-bridge.18.tsgo.7.0.2",
+  "adaptations": [
+    "Replace demonstration authentication and requests with GM cookie session and CSRF; never replay writes",
+    "Retain AdminLayout, PageTab, Pinia, Naive UI, UnoCSS, theme, icons, workspace and build pipeline",
+    "Generate route types through Elegant Router; explicitly register GM target-aware runtime routes",
+    "Replace demo pages with GM domains and light blue-purple theme",
+    "Preserve /dnf-gm/ base and web/dist output"
+  ]
+}

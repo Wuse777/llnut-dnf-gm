@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import {ref,watch,onBeforeUnmount} from 'vue'
 import {api,ApiError,uncertainMessage} from '../api'
-const props=defineProps<{revision:number,busy?:boolean,current?:{uid:number,charac_no:number,label:string}|null}>()
+const props=defineProps<{revision:number,busy?:boolean,defaultExpanded?:boolean,current?:{uid:number,charac_no:number,label:string}|null}>()
 const emit=defineEmits<{choose:[value:{uid:number,charac_no:number}],changed:[],expired:[]}>()
 const collection=ref<'recent'|'favorites'>('recent'),page=ref(1),data=ref<any>(null),loading=ref(false),saving=ref(false),error=ref(''),message=ref('')
-const expanded=ref(false)
+const expanded=ref(!!props.defaultExpanded)
 function chooseTarget(value:{uid:number,charac_no:number}){expanded.value=false;emit('choose',{uid:value.uid,charac_no:value.charac_no})}
 let generation=0,alive=true
 async function load(){

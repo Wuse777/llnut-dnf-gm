@@ -1,4 +1,4 @@
-import {ref,watch,onMounted,onUnmounted,type Ref} from 'vue'
+import {ref,watch,onScopeDispose,type Ref} from 'vue'
 import {api,ApiError} from './api'
 const KEY='dnf-gm.pending-operation'
 export function readPendingOperation(){try{const id=sessionStorage.getItem(KEY)||'';return /^[a-f0-9]{32}$/.test(id)?id:''}catch{return ''}}
@@ -17,7 +17,7 @@ export function usePendingOperation(id:Ref<string>,active:Ref<boolean>,busy:Ref<
   }
   if(!stopped)timer=setTimeout(tick,5000)
  }
- onMounted(()=>{timer=setTimeout(tick,5000)})
- onUnmounted(()=>{stopped=true;clearTimeout(timer)})
+ timer=setTimeout(tick,5000)
+ onScopeDispose(()=>{stopped=true;clearTimeout(timer)})
  return {pendingStatus:status,pendingChecked:lastChecked}
 }
