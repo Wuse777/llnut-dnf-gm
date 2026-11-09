@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!web/.env
 config.json
 monitor.json
 inventory-maintenance.json

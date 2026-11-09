@@ -51,4 +51,4 @@
 
 ## 新工作台
 
-[工作台与偏好](UI-WORKSPACE.md) · [v0.6.0 发布说明](releases/v0.6.0.md) · [界面偏好接口](UI-PREFERENCES.md)
+[工作台与偏好](UI-WORKSPACE.md) · [v0.6.1 发布说明](releases/v0.6.1.md) · [界面偏好接口](UI-PREFERENCES.md)

@@ -18,6 +18,8 @@ pnpm --dir web build
 
 前端 `web/dist/` 由后端 `static_dir` 配置提供，浏览器基路径 `/dnf-gm/`，API `/dnf-gm/api/v1`。
 
+`web/.env` 随源码提供公开的界面和构建默认值，干净检出可直接构建。个人覆盖写入被忽略的 `web/.env.local`；这些 `VITE_` 字段会进入浏览器，不能存放凭据。
+
 ## 独立配置与启动
 
 在 Git 目录外准备权限0600的配置。`deploy/config.example.json` 是占位模板，不能直接登录真实数据库。数据库、管理库、管理员和测试数据须通过隔离环境另行准备。
