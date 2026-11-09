@@ -129,14 +129,14 @@ function getSiderAndCollapsedWidth(isCollapsed: boolean) {
     :is-mobile="appStore.isMobile"
     :full-content="appStore.fullContent"
     :fixed-top="themeStore.fixedHeaderAndTab"
-    :header-height="themeStore.header.height"
-    :tab-visible="themeStore.tab.visible"
+    :header-height="appStore.isMobile ? 48 : themeStore.header.height"
+    :tab-visible="themeStore.tab.visible && !appStore.isMobile"
     :tab-height="themeStore.tab.height"
     :content-class="appStore.contentXScrollable ? 'overflow-x-hidden' : ''"
     :sider-visible="siderVisible"
     :sider-width="siderWidth"
     :sider-collapsed-width="siderCollapsedWidth"
-    :footer-visible="themeStore.footer.visible"
+    :footer-visible="themeStore.footer.visible && !appStore.isMobile"
     :footer-height="themeStore.footer.height"
     :fixed-footer="themeStore.footer.fixed"
     :right-footer="themeStore.footer.right"
@@ -145,7 +145,7 @@ function getSiderAndCollapsedWidth(isCollapsed: boolean) {
       <GlobalHeader v-bind="headerProps" />
     </template>
     <template #tab>
-      <GlobalTab />
+      <GlobalTab v-if="!appStore.isMobile" />
     </template>
     <template #sider>
       <GlobalSider />
@@ -154,7 +154,7 @@ function getSiderAndCollapsedWidth(isCollapsed: boolean) {
     <GlobalContent />
     <ThemeDrawer v-if="themeDrawerRequested" />
     <template #footer>
-      <GlobalFooter />
+      <GlobalFooter v-if="!appStore.isMobile" />
     </template>
   </AdminLayout>
 </template>

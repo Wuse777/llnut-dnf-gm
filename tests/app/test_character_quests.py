@@ -12,10 +12,7 @@ def test_quest_diagnosis_pagination_lookup_and_unknown_flags(env):
     raw[77]=2
     blob=struct.pack('<I',30000|0x80000000)+zlib.compress(raw)
     with db.connect() as c,c.cursor() as q:
-        columns=['charac_no INT PRIMARY KEY','clear_quest BLOB','urgentQuestIndex SMALLINT DEFAULT 0']
-        columns += [f'`{k}` INT UNSIGNED DEFAULT 0' for k in QUEST_COLUMNS[3:]]
-        q.execute('CREATE TABLE taiwan_cain.new_charac_quest('+','.join(columns)+') ENGINE=InnoDB')
-        q.execute('INSERT INTO taiwan_cain.new_charac_quest(charac_no,clear_quest,play_1,play_1_trigger,play_2,play_3,play_4_trigger) VALUES(900001,%s,1,4,1,60000,8)',(blob,));c.commit()
+        q.execute("INSERT INTO taiwan_cain.new_charac_quest(charac_no,clear_quest,quest_notify,play_1,play_1_trigger,play_2,play_3,play_4_trigger) VALUES(900001,%s,'',1,4,1,60000,8)",(blob,));c.commit()
     with sqlite3.connect(s.catalog_file) as c:
         c.execute("INSERT INTO metadata VALUES('quest_index_version','1')")
         c.execute('CREATE TABLE quests(id INTEGER PRIMARY KEY,name TEXT,grade TEXT,kind TEXT,min_level INTEGER,max_level INTEGER,prerequisites TEXT,condition TEXT)')

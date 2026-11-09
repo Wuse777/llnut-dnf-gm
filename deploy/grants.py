@@ -62,6 +62,11 @@ def bootstrap_sql(config,ph):
     sql += backup_schedule_sql(user)
     sql += (Path(__file__).resolve().parents[1]/'migrations/017-ui-preferences.sql').read_text()
     sql += ui_preferences_sql(user)
+    sql += (Path(__file__).resolve().parents[1]/'migrations/018-campaigns.sql').read_text()
+    sql += campaigns_sql(user)
+    sql += (Path(__file__).resolve().parents[1]/'migrations/019-game-backups.sql').read_text()
+    sql += game_backups_sql(user)
+    sql += (Path(__file__).resolve().parents[1]/'migrations/020-workbench-index.sql').read_text()
     sql += gameplay_fence_sql(user)
     sql += reward_jobs_sql(user)
     sql += catalog_policy_sql(user)
@@ -98,6 +103,18 @@ def character_outfit_read_sql(user="'dnf_gm_app'@'127.0.0.1'"):
 def ui_preferences_sql(user="'dnf_gm_app'@'127.0.0.1'"):
     return (f'GRANT SELECT,UPDATE(revision) ON dnf_gm.ui_preference_state TO {user};\n'
             f'GRANT SELECT,INSERT,UPDATE(version,payload_json,deleted,updated_at) ON dnf_gm.ui_preferences TO {user};\n')
+
+
+def campaigns_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    return (f'GRANT SELECT,INSERT,UPDATE ON dnf_gm.campaigns TO {user};\n'
+            + ''.join(f'GRANT SELECT,INSERT ON dnf_gm.{table} TO {user};\n'
+                      for table in ('campaign_claims','campaign_links')))
+
+
+def game_backups_sql(user="'dnf_gm_app'@'127.0.0.1'"):
+    # A locking read needs no UPDATE grant on the fixed control row in MySQL5.7.
+    return (f'GRANT SELECT ON dnf_gm.game_backup_control TO {user};\n'
+            f'GRANT SELECT,INSERT,UPDATE(state,result_json,error_code,started_at,finished_at) ON dnf_gm.game_backup_runs TO {user};\n')
 
 
 def catalog_policy_sql(user="'dnf_gm_app'@'127.0.0.1'"):

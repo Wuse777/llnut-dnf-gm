@@ -27,6 +27,7 @@ from maintenance_readiness import InstalledMonitor, MonitorHandshake
 from maintenance_session import MaintenanceSession, RestoredHealth
 from service_lifecycle import ServiceHost, ServiceLifecycle
 from backup_worker import BackupWorker
+from game_backup_worker import GameBackupWorker
 
 APP=Path('/etc/dnf-gm/config.json')
 OUTBOX=Path('/var/lib/dnf-gm/maintenance-requests')
@@ -56,6 +57,7 @@ def build(*, initialize=False):
     session=MaintenanceSession(coordinator,window,RestoredHealth(host))
     worker=ExecutionWorker(OUTBOX,coordinator,account.pw_uid,session,MonitorHandshake(installed))
     worker.backups=BackupWorker(db,settings)
+    worker.game_backups=GameBackupWorker(worker,settings)
     return worker
 
 
@@ -80,6 +82,12 @@ def main():
     while not stop.is_set():
         try:
             worker.tick();last_error=None
+            # Manual game snapshots reuse this serial worker and its single
+            # connection budget. No management transaction stays open while
+            # the dedicated game-table lock/stream connection exists.
+            try:worker.game_backups.tick()
+            except Exception:
+                print('Game backup observation failed; original requests retained.',flush=True)
             # Same thread and the same reserved connection slot, never concurrent.
             try:worker.backups.tick()
             except Exception:

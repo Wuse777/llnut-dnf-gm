@@ -1,4 +1,5 @@
 from typing import Literal, Annotated
+from datetime import date
 from .limits import MAIL_GOLD_MAX, MAIL_ITEM_QUANTITY_MAX
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
@@ -34,6 +35,7 @@ class RewardOverrides(Model):
 
 
 class Preview(Model):
+    campaign_id: str | None = Field(default=None,pattern=r'^[a-f0-9]{32}$')
     support_case_id: str | None = Field(default=None,pattern=r'^[a-f0-9]{32}$')
     action: Literal['currency', 'mail', 'ban', 'unban', 'equipment-unlock', 'reward']
     uid: StrictInt = Field(ge=1, le=2147483647)
@@ -124,9 +126,25 @@ class RewardTargets(Model):
     min_level: StrictInt = Field(default=0,ge=0,le=255)
     max_level: StrictInt = Field(default=255,ge=0,le=255)
     q: str = Field(default='',max_length=80)
+    tags_all: list[Annotated[str,Field(min_length=1,max_length=24)]] = Field(default_factory=list,max_length=10)
+    created_from: date | None = None
+    created_to: date | None = None
+    inactive_before: date | None = None
+
+    @model_validator(mode='after')
+    def audience_range(self):
+        if self.min_level > self.max_level:
+            raise ValueError('最低等级不能高于最高等级')
+        if self.created_from and self.created_to and self.created_from > self.created_to:
+            raise ValueError('角色创建开始日期不能晚于结束日期')
+        self.tags_all = sorted(set(t.strip() for t in self.tags_all))
+        if any(not t for t in self.tags_all):
+            raise ValueError('玩家标签不能为空')
+        return self
 
 
 class RewardJob(Model):
+    campaign_id: str | None = Field(default=None,pattern=r'^[a-f0-9]{32}$')
     targets: RewardTargets
     reward: RewardDefinition
     account_reward_mode: Literal['once_per_account','per_character'] = 'once_per_account'

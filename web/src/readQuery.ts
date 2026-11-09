@@ -19,17 +19,17 @@ export function createReadQuery(options:{ttlMs?:number,maxEntries?:number,result
  const copy=<T>(value:T):T=>structuredClone(value)
  function stop(entry:Pending){
   entry.cancelled=true
-  for(const reject of [...entry.subscribers])reject(abortError())
+  for(const reject of entry.subscribers)reject(abortError())
   entry.controller.abort()
  }
- function cancel(){for(const entry of [...active])stop(entry);inflight.clear()}
+ function cancel(){for(const entry of active)stop(entry);inflight.clear()}
  function clear(){cacheRevision++;cache.clear();inflight.clear()}
  const unsubscribe=onApiReadInvalidation(event=>{
   clear()
   if(event.reason==='mutation')return
   session++
   // Preserve the originating 401 so its caller can end the authenticated UI session.
-  for(const entry of [...active])if(entry.controller.signal!==event.source)stop(entry)
+  for(const entry of active)if(entry.controller.signal!==event.source)stop(entry)
  })
  function save(key:string,value:unknown){
   if(!ttl)return

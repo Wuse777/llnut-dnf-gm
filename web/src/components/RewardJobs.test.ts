@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
-import {afterEach,it,expect,vi} from 'vitest'
+import {afterEach,beforeEach,it,expect,vi} from 'vitest'
+import {createPinia,setActivePinia} from 'pinia'
 import {mount,flushPromises} from '@vue/test-utils'
 import RewardJobs from './RewardJobs.vue'
 const id='b'.repeat(32)
 function fixture(){return {id,fingerprint:'f'.repeat(64),target_count:2,account_count:1,status:'preview',reason:'batch fixture',worker_enabled:true,write_enabled:true,request:{targets:{mode:'selected'},account_reward_mode:'once_per_account',reward:{currency_rewards:{cera:10}}},preview:{currency_totals:{cera:'10'},gold_total:'0',rewards:{items:[]},note:'database only'},counts:{pending:2}}}
 const wrappers:any[]=[]
+beforeEach(()=>setActivePinia(createPinia()))
 afterEach(()=>{wrappers.forEach(w=>w.unmount());wrappers.length=0;sessionStorage.clear();vi.unstubAllGlobals();vi.useRealTimers();document.body.innerHTML=''})
 async function click(w:any,text:string){await w.findAll('button').find((b:any)=>b.text()===text)!.trigger('click');await flushPromises()}
 function setup(overrides:any={}){

@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import type { VNode } from 'vue';
 import { $t } from '@/locales';
 import { useAuthStore } from '@/store/modules/auth';
+import { useAppStore } from '@/store/modules/app';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { useRouterPush } from '@/hooks/common/router';
 
@@ -11,6 +12,7 @@ defineOptions({
 });
 
 const authStore = useAuthStore();
+const appStore = useAppStore();
 const { routerPushByKey, toLogin } = useRouterPush();
 const { SvgIconVNode } = useSvgIcon();
 
@@ -71,9 +73,9 @@ function handleDropdown(key: DropdownKey) {
   </NButton>
   <NDropdown v-else placement="bottom" trigger="click" :options="options" @select="handleDropdown">
     <div>
-      <ButtonIcon>
+      <ButtonIcon :aria-label="authStore.userInfo.userName + ' 账号菜单'">
         <SvgIcon icon="ph:user-circle" class="text-icon-large" />
-        <span class="text-16px font-medium">{{ authStore.userInfo.userName }}</span>
+        <span v-if="!appStore.isMobile" class="text-16px font-medium">{{ authStore.userInfo.userName }}</span>
       </ButtonIcon>
     </div>
   </NDropdown>

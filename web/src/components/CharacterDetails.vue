@@ -7,6 +7,9 @@ const AppearanceWorkspace=asyncPanel(()=>import('./AppearanceWorkspace.vue'))
 import {asyncPanel} from '../asyncPanel'
 import GameImage from './GameImage.vue'
 import InventoryGrid from './InventoryGrid.vue'
+import CharacterOverview from './CharacterOverview.vue'
+import {useRouter} from 'vue-router'
+const router=useRouter()
 const InventoryEditor=asyncPanel(()=>import('./InventoryEditor.vue'))
 const CharacterMaintenance=asyncPanel(()=>import('./CharacterMaintenance.vue'))
 const CharacterSkills=asyncPanel(()=>import('./CharacterSkills.vue'))
@@ -47,6 +50,8 @@ watch(identity,node=>{
 },{flush:'post'})
 onUnmounted(()=>releaseIdentity())
 const data=ref<any>(null),loading=ref(false),error=ref(''),section=ref('basic'),search=ref(''),kind=ref(''),page=ref(1)
+const detailLoading=ref(false),detailError=ref(''),fullDetailLoaded=ref(false)
+const detailedSections=['facts','attributes','appearance','equipment','backpack','warehouse','account_warehouse']
 const portraitAttribution=computed(()=>{
  const image=data.value?.portrait;if(image?.state!=='ready')return ''
  const source=image.source_label||({client:'客户端职业图',official_promotional:'官方职业插画',custom:'维护者示意图'} as Record<string,string>)[image.source_kind]||'职业插画'
@@ -78,7 +83,7 @@ watch(()=>[props.characNo,data.value?.outfit_preview?.url,data.value?.job_previe
 function failBasicPreview(){if(basicPreview.value)failedBasicImages.value=[...failedBasicImages.value,basicPreview.value.image.url]}
 let generation=0
 const tabGroups=[
- {label:'角色资料',tabs:[['basic','基本信息'],['attributes','属性存档'],['appearance','角色外观']]},
+ {label:'角色资料',tabs:[['basic','角色工作台'],['facts','详细资料'],['attributes','属性存档'],['appearance','角色外观']]},
  {label:'装备与仓储',tabs:[['equipment','穿戴装备'],['backpack','背包道具'],['warehouse','角色仓库'],['account_warehouse','账号仓库'],['unlock','装备解锁']]},
  {label:'维护与排查',tabs:[['manage','装备维护'],['fatigue','疲劳调整'],['skills','技能与SP／TP'],['profession','转职与觉醒'],['rename','角色改名'],['rescue','位置救援'],['quests','任务检索与修复'],['progression','等级与经验']]},
  {label:'邮件与记录',tabs:[['mail','角色邮件'],['activity','管理记录']]}
@@ -94,9 +99,17 @@ function mailDraft(value:any){if(!navigationLocked.value)emit('draft',value)}
 function inspect(id:string){if(!navigationLocked.value)emit('inspect',id)}
 function number(n:unknown){return n===null||n===undefined?'未知':Number(n).toLocaleString('zh-CN')}
 function date(s:unknown){if(typeof s!=='string'||s.startsWith('0000-'))return '未记录';const d=new Date(s.replace(' ','T')+'Z');return Number.isNaN(d.getTime())?'未记录':d.toLocaleString('zh-CN',{hour12:false})}
+function openSupport(value:{uid:number,case_id?:string}){if(!navigationLocked.value)void router?.push({path:'/players/support',query:{uid:String(value.uid),case_id:value.case_id}})}
+async function ensureDetail(){
+ if(!data.value||fullDetailLoaded.value||detailLoading.value)return
+ const current=generation;detailLoading.value=true;detailError.value=''
+ try{const result=await api('/characters/'+props.characNo);if(current===generation){data.value={...data.value,...result};fullDetailLoaded.value=true;emit('loaded',data.value)}}
+ catch(e){if(current===generation)detailError.value=uncertainMessage(e)}
+ finally{if(current===generation)detailLoading.value=false}
+}
 async function load(){
- const current=++generation;loading.value=true;error.value='';data.value=null
- try{const result=await api('/characters/'+props.characNo);if(current===generation){data.value=result;emit('loaded',result);if(result.account&&!result.character.delete_flag)emit('visited',{uid:result.character.uid,charac_no:props.characNo});page.value=1;inventoryStale.value=false}}
+ const current=++generation;loading.value=true;error.value='';data.value=null;fullDetailLoaded.value=false;detailLoading.value=false;detailError.value=''
+ try{const result=await api('/characters/'+props.characNo+'/overview');if(current===generation){data.value=result;fullDetailLoaded.value=!!result.backpack;emit('loaded',result);if(result.account&&!result.character.delete_flag)emit('visited',{uid:result.character.uid,charac_no:props.characNo});page.value=1;inventoryStale.value=false;if(detailedSections.includes(section.value))await ensureDetail()}}
  catch(e){if(current===generation)error.value=uncertainMessage(e)}
  finally{if(current===generation)loading.value=false}
 }
@@ -116,7 +129,7 @@ const pages=computed(()=>Math.max(1,Math.ceil(filtered.value.length/30)))
 const visible=computed(()=>filtered.value.slice((page.value-1)*30,page.value*30))
 const kinds=computed(()=>Array.from(new Map(items.value.map((i:any)=>[String(i.type),i.type_name])).entries()) as [string,string][])
 watch([section,search,kind],()=>{page.value=1})
-watch(section,async()=>{recentGroupSections.value[activeGroup.value]=section.value;if(section.value==='unlock')unlockVisited.value=true;if(section.value==='manage')inventoryVisited.value=true;if(section.value==='fatigue')fatigueVisited.value=true;if(section.value==='skills')skillsVisited.value=true;if(section.value==='progression')levelsVisited.value=true;if(section.value==='profession')professionVisited.value=true;if(section.value==='rename')renameVisited.value=true;if(section.value==='quests')questVisited.value=true;if(section.value==='rescue')rescueVisited.value=true;await nextTick();root.value?.closest('.modal-body')?.scrollTo?.({top:0})},{immediate:true})
+watch(section,async()=>{recentGroupSections.value[activeGroup.value]=section.value;if(detailedSections.includes(section.value))void ensureDetail();if(section.value==='unlock')unlockVisited.value=true;if(section.value==='manage')inventoryVisited.value=true;if(section.value==='fatigue')fatigueVisited.value=true;if(section.value==='skills')skillsVisited.value=true;if(section.value==='progression')levelsVisited.value=true;if(section.value==='profession')professionVisited.value=true;if(section.value==='rename')renameVisited.value=true;if(section.value==='quests')questVisited.value=true;if(section.value==='rescue')rescueVisited.value=true;await nextTick();root.value?.closest('.modal-body')?.scrollTo?.({top:0})},{immediate:true})
 function tabKey(e:KeyboardEvent){if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const n=tabs.findIndex(t=>t[0]===section.value),index=e.key==='Home'?0:e.key==='End'?tabs.length-1:(n+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;tab(tabs[index][0]);void nextTick(()=>root.value?.querySelector<HTMLButtonElement>('#character-tab-'+section.value)?.focus())}
 function tab(id:string){if(actionBusy.value)return;section.value=id;search.value='';kind.value=''}
 onBeforeRouteLeave(()=>!props.embedded||!navigationLocked.value)
@@ -127,7 +140,7 @@ onBeforeRouteUpdate(()=>!props.embedded||!navigationLocked.value)
   <div ref="root" class="character-detail" data-testid="character-detail">
    <div class="section-title character-toolbar"><span class="pill">角色详情 · #{{characNo}}</span><button :disabled="loading||navigationLocked||['unlock','manage','fatigue','skills','rename','rescue','quests','profession','progression'].includes(section)" @click="load">{{loading?'正在读取…':'刷新角色存档'}}</button></div>
    <p v-if="inventoryStale" class="notice" role="status">存档操作已提交；下方角色资料仍是旧快照。结束操作后切换到物品页，点击“刷新角色存档”。</p>
-   <p v-if="loading" role="status" class="empty"><span class="spinner"/> 正在读取角色资料、装备、背包与仓库…</p>
+   <p v-if="loading" role="status" class="empty"><span class="spinner"/> 正在读取角色工作台…</p>
    <div v-else-if="error" class="submit-error" role="alert"><b>无法读取角色详情</b><p>{{error}}</p><button @click="load">重试查询</button></div>
    <template v-else-if="data">
     <div ref="identity" class="character-identity sticky-character-identity"><GameImage :image="data.portrait" :label="data.profession.name" portrait/><div class="character-identity-main"><h3>{{data.character.charac_name}}</h3><p>{{data.profession.name}} · Lv.{{data.character.lev}} · {{data.account?.accountname??'归属账号缺失'}} / UID {{data.character.uid}}</p><small v-if="portraitAttribution" class="portrait-attribution">{{portraitAttribution}} <a v-if="data.portrait.source_page" :href="data.portrait.source_page" target="_blank" rel="noopener noreferrer">素材出处 ↗</a></small></div><div class="character-status" role="group" aria-label="角色状态"><span class="status-badge">登录表：{{data.account_online?.login_status===1?'在线':data.account_online?.login_status===0?'离线':'未知'}}</span><span class="status-badge" :class="data.character.delete_flag?'neutral':'success'">{{data.character.delete_flag?'已删除（仅查看存档）':'未删除'}}</span></div></div>
@@ -143,14 +156,16 @@ onBeforeRouteUpdate(()=>!props.embedded||!navigationLocked.value)
     <label class="character-mobile-section">查看内容<select :value="section" :disabled="actionBusy" aria-label="切换角色详情内容" @change="tab(($event.target as HTMLSelectElement).value)"><optgroup v-for="group in tabGroups" :key="group.label" :label="group.label"><option v-for="[id,label] in group.tabs" :key="id" :value="id">{{label}}</option></optgroup></select></label>
     <div class="detail-navigation">
      <div class="detail-categories" role="group" aria-label="角色详情分组"><button v-for="group in tabGroups" :key="group.label" :disabled="actionBusy" :aria-pressed="activeGroup===group.label" :class="{'selected-group':activeGroup===group.label}" @click="groupTab(group.label)">{{group.label}}<small>{{group.tabs.length}} 项</small></button></div>
-     <div class="detail-tabs" role="tablist" aria-label="角色详情分类" @keydown="tabKey"><div v-for="group in tabGroups" v-show="activeGroup===group.label" :key="group.label" class="detail-tab-group" role="presentation"><button v-for="[id,label] in group.tabs" :id="'character-tab-'+id" :key="id" role="tab" :disabled="actionBusy" :aria-selected="section===id" :tabindex="section===id?0:-1" :aria-controls="'character-section-'+id" :class="{active:section===id}" @click="tab(id)">{{label}}<span v-if="id==='equipment'||id==='backpack'"> · {{data[id].state==='ok'?data[id].items.length:'未知'}}</span></button></div></div>
+     <div class="detail-tabs" role="tablist" aria-label="角色详情分类" @keydown="tabKey"><div v-for="group in tabGroups" v-show="activeGroup===group.label" :key="group.label" class="detail-tab-group" role="presentation"><button v-for="[id,label] in group.tabs" :id="'character-tab-'+id" :key="id" role="tab" :disabled="actionBusy" :aria-selected="section===id" :tabindex="section===id?0:-1" :aria-controls="'character-section-'+id" :class="{active:section===id}" @click="tab(id)">{{label}}<span v-if="id==='equipment'||id==='backpack'"> · {{id==='backpack'&&data.backpack_summary?data.backpack_summary.occupied_slots:data[id]?.state==='ok'?data[id].items.length:'未知'}}</span></button></div></div>
     </div>
-    <section v-show="!separatePanels.includes(section)" :id="separatePanels.includes(section)?undefined:'character-section-'+section" role="tabpanel" :aria-labelledby="'character-tab-'+section" tabindex="0">
+    <p v-if="detailLoading&&detailedSections.includes(section)" role="status" class="field-hint">正在按需读取此页的完整存档…</p><p v-if="detailError&&detailedSections.includes(section)" role="alert" class="submit-error">{{detailError}} <button type="button" @click="ensureDetail">重试读取详情</button></p>
+    <section v-show="!separatePanels.includes(section)&&!(detailedSections.includes(section)&&(detailLoading||detailError))" :id="separatePanels.includes(section)?undefined:'character-section-'+section" role="tabpanel" :aria-labelledby="'character-tab-'+section" tabindex="0">
      <UnlockRequests v-if="unlockVisited" v-show="section==='unlock'" :charac-no="characNo" @busy="unlockBusy=$event" @pending="unlockPending=$event" @reauth="emit('reauth')" @expired="emit('expired')"/>
      <MailCenter v-if="section==='mail'" :uid="data.character.uid" :charac-no="characNo" locked-target @draft="mailDraft"/>
      <CharacterActivity v-if="section==='activity'" :charac-no="characNo" :busy="navigationLocked" @inspect="inspect" @expired="emit('expired')"/>
      <AppearanceWorkspace v-if="section==='appearance'" :detail="data"/>
-     <template v-if="section==='basic'">
+     <CharacterOverview v-if="section==='basic'" :detail="data" :locked="navigationLocked" @section="tab" @support="openSupport"/>
+     <template v-if="section==='facts'">
       <div class="character-basic-layout">
        <details class="character-basic-visual" :open="basicPreviewExpanded" @toggle="basicPreviewExpanded=($event.target as HTMLDetailsElement).open">
         <summary><span>人物预览</span><small>{{basicPreview?.label||'素材暂不可用'}}</small></summary>
@@ -175,7 +190,7 @@ onBeforeRouteUpdate(()=>!props.embedded||!navigationLocked.value)
       <p class="field-hint">下列是数据库字段原始存档值，不是游戏内最终面板。速度未擅自换算为百分比；力量、智力、体力、精神及元素抗性等未确认字段映射，暂不猜测显示。</p>
       <dl class="character-facts attribute-grid"><div v-for="a in data.attributes" :key="a.key"><dt>{{a.label}}<small>{{a.key}}</small></dt><dd>{{number(a.value)}}</dd></div></dl>
      </template>
-     <template v-else-if="['unlock',...separatePanels,'mail','activity','appearance'].includes(section)"></template>
+     <template v-else-if="['basic','unlock',...separatePanels,'mail','activity','appearance'].includes(section)"></template>
      <template v-else>
       <div v-if="section==='warehouse'||section==='account_warehouse'" class="warehouse-summary">
        <p class="field-hint">{{storageNotes[section]}}所属 UID：{{container.owner_uid??data.character.uid}}<span v-if="section==='warehouse'"> · 角色 #{{data.character.charac_no}}</span></p>

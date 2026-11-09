@@ -27,6 +27,7 @@ class Settings:
     gameplay_gate_dir: str = ''  # Legacy installs only; full maintenance requires an installed gate.
     capability_evidence_file: str = ''
     backup_health_file: str = '/var/lib/dnf-gm/backup-evidence/health.json'
+    game_backup_status_file: str = '/var/lib/dnf-gm/maintenance-requests/game-backup-status.json'
     task_probe_token: str = ''
     health_alerts_enabled: bool = True
     backup_alerts_enabled: bool = False
@@ -123,7 +124,7 @@ class Settings:
             raise ValueError('Observer switches must be boolean')
         if type(self.cleanup_enabled) is not bool:
             raise ValueError('Cleanup enable flag must be boolean')
-        for path in (self.cleanup_manifest, self.cleanup_dir, self.maintenance_dir):
+        for path in (self.cleanup_manifest, self.cleanup_dir, self.maintenance_dir, self.game_backup_status_file):
             if not isinstance(path, str) or not Path(path).is_absolute():
                 raise ValueError('Absolute maintenance cleanup paths required')
         if not isinstance(self.gameplay_gate_dir,str) or (self.gameplay_gate_dir and (not Path(self.gameplay_gate_dir).is_absolute() or '..' in Path(self.gameplay_gate_dir).parts)):

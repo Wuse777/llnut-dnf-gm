@@ -7,6 +7,7 @@ import { localStg } from '@/utils/storage';
 import { overrideThemeSettings, themeSettings } from '@/theme/settings';
 import { themeVars } from '@/theme/vars';
 import { applyStyleNonce } from '@/utils/style-nonce';
+import { migrateLegacyGmPalette } from '@/theme/migrate';
 
 /** Init theme settings */
 export function initThemeSettings() {
@@ -20,7 +21,7 @@ export function initThemeSettings() {
 
   const localSettings = localStg.get('themeSettings');
 
-  let settings = defu(localSettings, themeSettings);
+  let settings = migrateLegacyGmPalette(defu(localSettings, themeSettings));
 
   const isOverride = localStg.get('overrideThemeFlag') === BUILD_TIME;
 
@@ -130,6 +131,22 @@ function getCssVarByTokens(tokens: App.Theme.BaseToken) {
       styles.push(`${cssVarsKey}: ${cssValue}`);
     }
   }
+
+  // Full CSS colors for legacy GM forms; keep Soybean's RGB-channel variables separate.
+  styles.push(
+    `--gm-accent-color: ${tokens.colors.primary}`,
+    `--gm-accent-hover: ${tokens.colors['primary-600']}`,
+    `--gm-accent-active: ${tokens.colors['primary-700']}`,
+    `--gm-accent-soft: ${addColorAlpha(tokens.colors.primary, 0.09)}`,
+    `--gm-accent-border: ${addColorAlpha(tokens.colors.primary, 0.28)}`,
+    `--gm-inverted-accent: ${tokens.colors['primary-300']}`,
+    `--gm-container-color: ${tokens.colors.container}`,
+    `--gm-layout-color: ${tokens.colors.layout}`,
+    `--gm-base-text-color: ${tokens.colors['base-text']}`,
+    `--gm-success-color: ${tokens.colors.success}`,
+    `--gm-warning-color: ${tokens.colors.warning}`,
+    `--gm-error-color: ${tokens.colors.error}`
+  );
 
   const styleStr = styles.join(';');
 
@@ -245,20 +262,70 @@ function getNaiveThemeColors(colors: App.Theme.ThemeColor, recommended = false) 
 export function getNaiveTheme(
   colors: App.Theme.ThemeColor,
   settings: App.Theme.ThemeSetting,
-  overrides?: GlobalThemeOverrides
+  overrides?: GlobalThemeOverrides,
+  darkMode = false
 ) {
   const { primary: colorLoading } = colors;
+  const surfaces = darkMode ? { ...settings.tokens.light.colors, ...settings.tokens.dark?.colors } : settings.tokens.light.colors;
+  const border = darkMode ? '#43483f' : '#e2e1d8';
+  const muted = darkMode ? '#b3b7aa' : '#6b7167';
+  const invertedAccent = settings.themeColor === '#92651f' ? '#d4ad66' : getPaletteColorByNumber(colors.primary, 300);
 
   const theme: GlobalThemeOverrides = {
     common: {
       ...getNaiveThemeColors(colors, settings.recommendColor),
-      borderRadius: `${settings.themeRadius}px`
+      borderRadius: `${settings.themeRadius}px`,
+      borderRadiusSmall: '5px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif',
+      fontSize: '14px',
+      fontSizeSmall: '12px',
+      heightMedium: '34px',
+      heightSmall: '30px',
+      textColorBase: surfaces['base-text'],
+      textColor1: surfaces['base-text'],
+      textColor2: surfaces['base-text'],
+      textColor3: muted,
+      placeholderColor: darkMode ? '#858d7e' : '#8b9085',
+      borderColor: border,
+      dividerColor: border,
+      bodyColor: surfaces.layout,
+      cardColor: surfaces.container,
+      modalColor: surfaces.container,
+      popoverColor: surfaces.container,
+      inputColor: surfaces.container,
+      tableColor: surfaces.container,
+      invertedColor: settings.tokens.light.colors.inverted,
+      buttonColor2: darkMode ? '#32382f' : '#f1f0e9',
+      buttonColor2Hover: darkMode ? '#3c4338' : '#e9e8de',
+      tableHeaderColor: darkMode ? '#2d332b' : '#f3f2ec',
+      hoverColor: darkMode ? '#343a30' : '#f0efe7',
+      tableColorHover: darkMode ? '#343a30' : '#f4f3ec',
+      actionColor: darkMode ? '#2d332b' : '#f8f7f1'
     },
     LoadingBar: {
       colorLoading
     },
     Tag: {
-      borderRadius: `${settings.themeRadius}px`
+      borderRadius: '5px'
+    },
+    Card: {
+      borderRadius: '10px',
+      paddingMedium: '20px',
+      titleFontSizeMedium: '15px',
+      titleFontWeight: '600'
+    },
+    Menu: {
+      colorInverted: settings.tokens.light.colors.inverted,
+      itemTextColorInverted: '#c9cec1',
+      itemTextColorHoverInverted: '#f0f0e7',
+      itemTextColorActiveInverted: invertedAccent,
+      itemTextColorActiveHoverInverted: invertedAccent,
+      itemIconColorActiveInverted: invertedAccent,
+      itemIconColorActiveHoverInverted: invertedAccent,
+      itemColorActiveInverted: addColorAlpha(invertedAccent, 0.12),
+      itemColorActiveHoverInverted: addColorAlpha(invertedAccent, 0.17),
+      itemColorHoverInverted: '#ffffff0c',
+      borderRadius: '6px'
     }
   };
 

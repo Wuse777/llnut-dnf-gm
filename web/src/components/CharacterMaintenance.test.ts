@@ -23,7 +23,7 @@ it('validates next to fields, submits the fixed target, and never repeats uncert
  await w.get('form').trigger('submit');await flushPromises()
  expect(w.get('#fatigue-reason-error').text()).toContain('请填写操作原因')
  expect(vi.mocked(api).mock.calls.filter(c=>c[1]==='POST')).toHaveLength(0)
- await click('恢复两项疲劳（设为0）');await w.get('input[placeholder="例如：角色疲劳恢复"]').setValue('疲劳恢复')
+ await click('恢复全部疲劳');await w.get('input[placeholder="例如：角色疲劳恢复"]').setValue('疲劳恢复')
  await w.get('form').trigger('submit');await flushPromises()
  expect(api).toHaveBeenCalledWith('/character-maintenance/preview','POST',expect.objectContaining({uid:900001,charac_no:900001,changes:{fatigue:0,premium_fatigue:0}}))
  await click('确认修改疲劳');expect(w.text()).toContain('不会自动重复提交')

@@ -1,4 +1,5 @@
 from contextlib import ExitStack
+import copy
 from .mail_content import mail_text
 import hashlib
 import json
@@ -56,11 +57,13 @@ class Service:
     def __init__(self, db, settings):
         self.db, self.settings = db, settings
         self.catalog = Catalog(settings, db)
-        self.mail_center = MailCenter(db)
+        self.mail_center = MailCenter(db, self.catalog)
         self.economy = Economy(db)
         self.write_gate = GameplayWriteGate(settings)
         from .support import SupportDesk
         self.support = SupportDesk(db)
+        from .campaigns import Campaigns
+        self.campaigns = Campaigns(self)
 
     def account(self, q, uid):
         a = one(q, 'SELECT UID AS uid,accountname FROM d_taiwan.accounts WHERE UID=%s', (uid,))
@@ -229,6 +232,8 @@ class Service:
 
     def preview(self, session_hash, data):
         action = data['action']
+        if data.get('campaign_id') and action!='reward':
+            raise HTTPException(422,'活动奖励必须使用组合奖励入口')
         if not data['reason'].strip():
             raise HTTPException(422, '必须填写原因')
         gold = data.get('gold', 0)
@@ -257,6 +262,8 @@ class Service:
             if resolved and resolved['has_mail'] and not data.get('charac_no'):
                 raise HTTPException(422,'邮件奖励必须明确指定目标角色')
             a = self.target(q, data)
+            if data.get('campaign_id'):
+                self.campaigns.eligible(q, self.campaigns.active(q,data), data['uid'], data.get('charac_no'))
             preview = {'target': a, 'action': action, 'reason': data['reason'], 'client_verified': False}
             if action == 'equipment-unlock':
                 preview.update(unlock_center.prepare(self,q,data))
@@ -340,6 +347,8 @@ class Service:
                     raise HTTPException(409, '维护申请请使用专用确认入口')
                 if row['action'] == 'cleanup-release':
                     raise HTTPException(409, '旧产物清理请使用专用确认入口')
+                if row['action'] == 'campaign':
+                    raise HTTPException(409, '活动定义请使用活动专用确认入口')
                 old = one(q, 'SELECT operation_id,fingerprint,session_hash,result_json FROM dnf_gm.operations WHERE idempotency_key=%s', (key,))
                 if old:
                     if old['fingerprint'] != row['fingerprint'] or old['session_hash'] != session_hash or old['operation_id'] != op:
@@ -405,8 +414,9 @@ class Service:
                         if q.rowcount != 1:
                             raise HTTPException(409, '解封条件未命中')
                     result.update(blocked=action=='ban',state='database_updated_login_test_pending',does_not_kick_online_player=True)
-                self.support.attach_reward(q,data,op,preview)
-                if support is not None:result['support_case_id']=support['case_id']
+                if not result.get('campaign',{}).get('skipped'):
+                    self.support.attach_reward(q,data,op,preview)
+                    if support is not None:result['support_case_id']=support['case_id']
                 q.execute('INSERT INTO dnf_gm.audit(operation_id,actor,action,target_uid,reason,request_json,result_json) VALUES(%s,\'owner\',%s,%s,%s,%s,%s)',
                           (op,action,data['uid'],data['reason'],dump(data),dump(result)))
                 if action in ('currency','mail','reward'):self.economy.record(q,op)
@@ -624,6 +634,7 @@ class Service:
 
     def reward_snapshot(self,q,data):
         """Resolve a versioned reward once, retaining its source template identity."""
+        campaign = self.campaigns.bind_reward(q,data)
         amounts=self.currency_rewards(data)
         attachments=data.get('items',[])
         gold=data.get('gold',0)
@@ -669,16 +680,34 @@ class Service:
         if data['action']=='reward':data['currency_rewards']=amounts
         # Legacy schedules bind this exact shape. Their saved requests lack the
         # new field: do not add display metadata that invalidates that binding.
-        return {'gold':gold,'rewards':rewards,'has_mail':has_mail,
+        resolved = {'gold':gold,'rewards':rewards,'has_mail':has_mail,
                 **({'mail_title':data['mail_title'],'mail_text':mail_text(data)} if has_mail and data.get('mail_title') else {}),
                 **({'template_source':{'id':data['template_id'],'version':data['template_version'],
                                       'adjusted':overrides is not None}} if data.get('template_id') and 'template_overrides' in data else {})}
+        if campaign:
+            row = self.campaigns.active(q,data)
+            if resolved != json.loads(row['binding_json'])['snapshot']:
+                raise HTTPException(409,'活动冻结礼包的索引、PVF或发放策略已变化；请建立新活动')
+            resolved['campaign'] = campaign
+        return resolved
 
     def apply_reward(self,q,op,data,preview,account,exact_balances=False):
         # Validate the frozen catalogue/template even for currency-only rewards.
-        rewards=self.catalog.items([{'id':i['id'],'quantity':i['quantity']} for i in preview['rewards']['items']],q=q,allow_empty=True)
-        if rewards!=preview['rewards']:
-            raise HTTPException(409,'索引或物品版本变化')
+        if data.get('campaign_id'):
+            checked=copy.deepcopy(data)
+            resolved=self.reward_snapshot(q,checked)
+            if (any(preview.get(k)!=value for k,value in resolved.items())
+                    or self.currency_rewards(checked)!=self.currency_rewards(data)
+                    or any(data.get(k,default)!=checked.get(k,default) for k,default in
+                           (('items',[]),('gold',0),('mail_title',''),('message','GM rewards')))):
+                raise HTTPException(409,'活动冻结奖励与原预览不一致，请查询原活动')
+        else:
+            rewards=self.catalog.items([{'id':i['id'],'quantity':i['quantity']} for i in preview['rewards']['items']],q=q,allow_empty=True)
+            if rewards!=preview['rewards']:
+                raise HTTPException(409,'索引或物品版本变化')
+        campaign = self.campaigns.claim(q,data,op,preview)
+        if campaign and campaign['skipped']:
+            return {'currency_rewards':{},'campaign':campaign,'state':'campaign_duplicate_skipped','client_verified':False}
         if data.get('template_id'):
             t=one(q,'SELECT current_version,enabled FROM dnf_gm.gift_templates WHERE id=%s FOR UPDATE',(data['template_id'],))
             if not t or not t['enabled'] or t['current_version']!=data['template_version']:
@@ -688,6 +717,7 @@ class Service:
             expected=preview['balances'][currency]['before'] if exact_balances else None
             balances[currency]=self.apply_currency(q,{'uid':data['uid'],'currency':currency,'delta':delta},expected)
         result={'currency_rewards':balances,'state':'database_reward_committed','client_verified':False}
+        if campaign:result['campaign']=campaign
         if preview.get('template_source'):result['template_source']=preview['template_source']
         if preview['has_mail']:
             result.update(self.apply_mail(q,op,data,preview,account))

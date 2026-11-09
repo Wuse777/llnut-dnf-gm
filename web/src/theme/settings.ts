@@ -4,13 +4,13 @@ export const themeSettings: App.Theme.ThemeSetting = {
   grayscale: false,
   colourWeakness: false,
   recommendColor: false,
-  themeColor: '#6265e8',
-  themeRadius: 10,
+  themeColor: '#92651f',
+  themeRadius: 8,
   otherColor: {
-    info: '#2080f0',
-    success: '#52c41a',
-    warning: '#faad14',
-    error: '#f5222d'
+    info: '#47778a',
+    success: '#288363',
+    warning: '#a07124',
+    error: '#bc5151'
   },
   isInfoFollowPrimary: true,
   layout: {
@@ -22,7 +22,7 @@ export const themeSettings: App.Theme.ThemeSetting = {
     animateMode: 'fade'
   },
   header: {
-    height: 56,
+    height: 52,
     breadcrumb: {
       visible: true,
       showIcon: true
@@ -37,14 +37,14 @@ export const themeSettings: App.Theme.ThemeSetting = {
   tab: {
     visible: true,
     cache: true,
-    height: 44,
-    mode: 'chrome',
+    height: 36,
+    mode: 'button',
     closeTabByMiddleClick: false
   },
   fixedHeaderAndTab: true,
   sider: {
-    inverted: false,
-    width: 236,
+    inverted: true,
+    width: 220,
     collapsedWidth: 64,
     mixWidth: 90,
     mixCollapsedWidth: 64,
@@ -52,9 +52,9 @@ export const themeSettings: App.Theme.ThemeSetting = {
     autoSelectFirstMenu: false
   },
   footer: {
-    visible: true,
+    visible: false,
     fixed: false,
-    height: 48,
+    height: 36,
     right: true
   },
   watermark: {
@@ -67,22 +67,22 @@ export const themeSettings: App.Theme.ThemeSetting = {
   tokens: {
     light: {
       colors: {
-        container: 'rgb(255, 255, 255)',
-        layout: 'rgb(247, 250, 252)',
-        inverted: 'rgb(0, 20, 40)',
-        'base-text': 'rgb(31, 31, 31)'
+        container: 'rgb(255, 254, 251)',
+        layout: 'rgb(245, 244, 240)',
+        inverted: 'rgb(35, 39, 36)',
+        'base-text': 'rgb(41, 44, 40)'
       },
       boxShadow: {
-        header: '0 1px 2px rgb(0, 21, 41, 0.08)',
-        sider: '2px 0 8px 0 rgb(29, 35, 41, 0.05)',
-        tab: '0 1px 2px rgb(0, 21, 41, 0.08)'
+        header: '0 1px 0 rgb(40, 42, 35, 0.08)',
+        sider: '1px 0 0 rgb(40, 42, 35, 0.08)',
+        tab: '0 1px 0 rgb(40, 42, 35, 0.08)'
       }
     },
     dark: {
       colors: {
-        container: 'rgb(28, 28, 28)',
-        layout: 'rgb(18, 18, 18)',
-        'base-text': 'rgb(224, 224, 224)'
+        container: 'rgb(38, 42, 38)',
+        layout: 'rgb(29, 33, 29)',
+        'base-text': 'rgb(231, 231, 220)'
       }
     }
   }

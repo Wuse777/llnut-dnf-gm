@@ -5,7 +5,7 @@ import {useGmConfirmation} from '../stores/gm/confirmation'
 const confirmationLease=useGmConfirmation()
 import RewardJobs from './RewardJobs.vue'
 import {shanghaiInput,shanghaiTimestamp,scheduleTime,scheduleStates} from '../scheduleTime'
-const props=defineProps<{initialSchedule?:string}>()
+const props=defineProps<{initialSchedule?:string,initialDraft?:any}>()
 const emit=defineEmits<{reauth:[],expired:[],child:[kind:string,id:string],opened:[]}>()
 const title=ref(''),kind=ref('reward'),first=ref(shanghaiInput(Math.floor(Date.now()/1000)+3600)),recurrence=ref('once'),end=ref(''),message=ref(''),reason=ref('')
 const showDraft=ref(true),seed=ref<any>(null),draftKey=ref(0),fields=ref<Record<string,string>>({}),error=ref(''),busy=ref(false),items=ref<any[]>([]),runs=ref<any[]>([]),selected=ref<any>(null),page=ref(1),runPage=ref(1)
@@ -77,6 +77,8 @@ onMounted(async()=>{
  timer=setInterval(()=>{if(document.hidden||busy.value||!selected.value)return;void inspect(selected.value.id)},30000)
 })
 onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
+watch(()=>props.initialDraft,value=>{if(!value)return;if(uncertain.value||selected.value?.status==='preview'){error.value='请先核对原计划，再创建活动计划。';return}seed.value=JSON.parse(JSON.stringify(value));kind.value='reward';title.value=value.reason||'活动奖励计划';showDraft.value=true;draftKey.value++},{immediate:true})
+watch(()=>props.initialSchedule,id=>{if(!id||selected.value?.id===id)return;if(uncertain.value||selected.value?.status==='preview'){error.value='请先核对原计划 '+selected.value?.id;return}void inspect(id);emit('opened')})
 watch(()=>selected.value?.status==='preview',active=>{if(active)confirmationLease.acquire('domain-schedules');else confirmationLease.release('domain-schedules')})
 onBeforeUnmount(()=>confirmationLease.release('domain-schedules'))
 </script>

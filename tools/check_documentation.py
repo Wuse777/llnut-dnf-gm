@@ -13,7 +13,9 @@ DOCS=('README.md','CHANGELOG.md','docs/README.md','docs/DEPLOYMENT.md',
       'docs/DEVELOPMENT.md','docs/SCREENSHOTS.md','docs/DOCUMENTATION.md',
       'docs/RELEASING.md','docs/UI-PREFERENCES.md','docs/images/README.md',
       'docs/history/DEPLOYMENT-BATCHES-202610-20261106.md',
-      'docs/reports/PUBLIC-DOCS-20261107.md')
+      'docs/reports/PUBLIC-DOCS-20261107.md','docs/UI-WORKSPACE.md',
+      'docs/BACKUP-HEALTH.md','docs/GAME-BACKUP-DESIGN.md',
+      'docs/reports/WORKSPACE-REDESIGN-20261109.md')
 
 
 def check():

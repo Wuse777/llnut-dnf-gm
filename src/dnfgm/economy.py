@@ -36,6 +36,11 @@ def normalize(audit):
     role=req.get('charac_no');role=integer(role,1,2147483647) if role is not None else None
     action=audit['action']
     if action not in ACTIONS or result.get('action',action)!=action:raise ValueError('action_mismatch')
+    if result.get('state')=='campaign_duplicate_skipped':
+        campaign=result.get('campaign') or {}
+        if not campaign.get('skipped') or campaign.get('id')!=req.get('campaign_id') or result.get('currency_rewards')!={} or 'letter_id' in result:
+            raise ValueError('invalid_campaign_skip')
+        return req,role,{}
     values={}
     def coin(name,entry):
         if name not in COINS or not isinstance(entry,dict) or entry.get('currency')!=name:raise ValueError('invalid_currency')
@@ -81,6 +86,9 @@ class Economy:
             req={};role=None;values={};complete=False;issue='历史结果字段缺失或不一致，未推算金额或物品'
         source='schedule' if req.get('schedule_id') else 'batch' if req.get('job_id') else 'manual'
         template_id=req.get('template_id');template_version=req.get('template_version')
+        campaign_result=json.loads(audit['result_json']).get('campaign') or {}
+        if campaign_result and req.get('campaign_id')==campaign_result.get('id'):
+            template_id=campaign_result.get('template_id');template_version=campaign_result.get('template_version')
         if template_id is not None and (type(template_id) is not int or template_id<1):template_id=None
         if template_version is not None and (type(template_version) is not int or template_version<1):template_version=None
         try:

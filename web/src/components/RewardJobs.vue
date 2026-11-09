@@ -7,7 +7,7 @@ import ItemQueue from './ItemQueue.vue'
 import GmItemPicker from './GmItemPicker.vue'
 import CharacterPicker from './CharacterPicker.vue'
 import {mailTextErrors} from '../validation'
-const props=defineProps<{scheduleDraft?:boolean,initialDraft?:any,initialJob?:string}>()
+const props=defineProps<{scheduleDraft?:boolean,initialDraft?:any,initialJob?:string,initialStatus?:string}>()
 const emit=defineEmits<{reauth:[],inspect:[id:string],schedule:[draft:any],opened:[]}>()
 const accountKind=ref('uid'),accountList=ref(''),importNotice=ref('')
 const mode=ref('selected'),ids=ref(''),uid=ref(''),jobFilter=ref(''),minimum=ref(0),maximum=ref(255),name=ref('')
@@ -23,6 +23,8 @@ const selected=ref<any>(null),targets=ref<any[]>([]),next=ref<number|null>(null)
 const jobs=ref<any[]>([]),page=ref(1),more=ref(false),busy=ref(false),error=ref(''),lookupError=ref(''),searchError=ref(''),notice=ref('')
 const fieldErrors=ref<Record<string,string>>({}),confirmation=ref(''),repeat=ref(false),uncertain=ref(false),pendingId=ref(''),key=ref('')
 const checked=ref(''),queryId=ref(''),draftVisible=ref(true)
+const campaignId=computed(()=>props.initialDraft?.campaign_id||''),campaign=ref<any>(null)
+const targetStatus=ref(props.initialStatus||''),targetError=ref(''),targetErrors=ref<any[]>([])
 const labels:Record<string,string>={preview:'待确认预览',pending:'等待执行',running:'执行中',executing:'单角色提交中',committed:'数据库已提交',uncertain:'提交待核对',paused:'已暂停',cancelled:'已取消剩余目标',failed:'未提交／需处理',finished:'全部数据库提交',needs_attention:'需要处理'}
 let timer:ReturnType<typeof setInterval>|undefined,alive=true
 const storage='dnfgm.pending-reward-job'
@@ -45,6 +47,11 @@ function parseAccounts():number[]|string[]{
 async function importAccounts(event:Event){const input=event.target as HTMLInputElement;const file=input.files?.[0];if(!file)return;importNotice.value='';try{if(file.size>262144)throw new Error('名单文件不能超过256 KiB。');accountList.value=await file.text();parseAccounts();fieldErrors.value={};importNotice.value='账号名单已读入草稿；预览时核对账号，没有发放奖励。'}catch(e){fieldErrors.value={accounts:uncertainMessage(e)}}finally{input.value=''}}
 async function importIds(event:Event){const input=event.target as HTMLInputElement;const file=input.files?.[0];if(!file)return;importNotice.value='';try{if(file.size>262144)throw new Error('名单文件不能超过256 KiB。');ids.value=await file.text();parseIds();fieldErrors.value={};importNotice.value='名单已读入本地草稿，没有上传文件或发放奖励。'}catch(e){fieldErrors.value={ids:uncertainMessage(e)}}finally{input.value=''}}
 function payload(){
+ if(campaignId.value){
+  if(!reason.value.trim())throw new Error('请填写发放原因。')
+  const d=props.initialDraft
+  return {campaign_id:campaignId.value,targets:JSON.parse(JSON.stringify(d.targets)),reward:JSON.parse(JSON.stringify(d.reward)),account_reward_mode:d.account_reward_mode,reason:reason.value.trim()}
+ }
  const errors:Record<string,string>={};let list:number[]=[],accounts:number[]|string[]=[]
  if(!reason.value.trim())errors.reason='请填写发放原因。'
  if(mode.value==='selected'){try{list=parseIds()}catch(e){errors.ids=uncertainMessage(e)}}
@@ -70,7 +77,8 @@ function payload(){
  return {targets:filters,reward,account_reward_mode:rewardMode.value,reason:reason.value.trim()}
 }
 async function list(){try{const r=await api('/reward-jobs?page='+page.value);if(!alive)return;jobs.value=r.items;more.value=r.has_more}catch(e){if(alive)lookupError.value=uncertainMessage(e)}}
-async function loadTargets(after=0){if(!selected.value)return;const id=selected.value.id;const r=await api('/reward-jobs/'+id+'/targets?after='+after);if(alive&&selected.value?.id===id){targets.value=r.items;next.value=r.next_after;cursor.value=after}}
+async function loadTargets(after=0){if(!selected.value)return;const id=selected.value.id;const params=new URLSearchParams({after:String(after)});if(targetStatus.value)params.set('status',targetStatus.value);if(targetError.value)params.set('error_type',targetError.value);const r=await api('/reward-jobs/'+id+'/targets?'+params);if(alive&&selected.value?.id===id){targets.value=r.items;next.value=r.next_after;cursor.value=after;targetErrors.value=r.errors||[]}}
+async function filterTargets(status=targetStatus.value){if(busy.value)return;targetStatus.value=status;previous.value=[];busy.value=true;lookupError.value='';try{await loadTargets()}catch(e){lookupError.value=uncertainMessage(e)}finally{busy.value=false}}
 async function inspect(id:string,reset=true){
  if(!/^[a-f0-9]{32}$/.test(id)){lookupError.value='任务编号须为32位小写十六进制字符。';return}
  const r=await api('/reward-jobs/'+id);if(!alive)return;selected.value=r;queryId.value=id;checked.value=new Date().toLocaleTimeString('zh-CN');lookupError.value=''
@@ -111,7 +119,10 @@ watch(()=>props.initialDraft,d=>{
  mode.value=t.mode;ids.value=(t.charac_nos||[]).join(', ');uid.value=t.uid?String(t.uid):'';jobFilter.value=t.job==null?'':String(t.job);minimum.value=t.min_level??0;maximum.value=t.max_level??255;name.value=t.q||''
  rewardMode.value=d.account_reward_mode;reason.value=d.reason;gold.value=r.gold||0;message.value=r.message??'GM rewards';mailTitle.value=r.mail_title??'';amounts.value={cera:0,cera_point:0,mileage:0,...r.currency_rewards}
  items.value=(r.items||[]).map((i:any)=>({...i,name:i.name||'#'+i.id}));template.value=d.reward.template_id?{id:d.reward.template_id,current_version:d.reward.template_version,name:'原计划礼包 #'+d.reward.template_id}:null
+ if(d.campaign_id){void api('/campaigns/'+d.campaign_id).then(value=>{if(alive&&campaignId.value===d.campaign_id)campaign.value=value}).catch(e=>{if(alive)lookupError.value=uncertainMessage(e)})}
 },{immediate:true})
+watch(()=>props.initialStatus,value=>{if(value!==undefined&&value!==targetStatus.value)void filterTargets(value)})
+watch(()=>props.initialJob,async id=>{if(!id||id===selected.value?.id)return;if(uncertain.value){lookupError.value='请先核对原任务 '+pendingId.value;return}await choose(id);draftVisible.value=false;emit('opened')})
 onMounted(async()=>{if(props.scheduleDraft)return;try{const saved=JSON.parse(sessionStorage.getItem(storage)||'null');if(saved&&/^[a-f0-9]{32}$/.test(saved.id)){pendingId.value=saved.id;key.value=saved.key||'';uncertain.value=!!saved.uncertain;queryId.value=saved.id;await inspect(saved.id)}}catch(e){lookupError.value=uncertainMessage(e)}try{if(props.initialJob){if(uncertain.value&&pendingId.value!==props.initialJob){lookupError.value='已优先恢复结果待确认的任务；请先核对，再查看异常中心选择的任务 '+props.initialJob}else{await inspect(props.initialJob);draftVisible.value=false}emit('opened')}}catch(e){lookupError.value=uncertainMessage(e)}await list();if(!alive)return;timer=setInterval(()=>{if(!busy.value&&!document.hidden&&selected.value){busy.value=true;void inspect(selected.value.id,false).catch(e=>{lookupError.value=uncertainMessage(e)}).finally(()=>{busy.value=false})}},30000)})
 onBeforeUnmount(()=>{alive=false;if(timer)clearInterval(timer)})
 watch(()=>!props.scheduleDraft&&selected.value?.status==='preview',active=>{if(active)confirmationLease.acquire('domain-rewardjobs');else confirmationLease.release('domain-rewardjobs')})
@@ -125,6 +136,8 @@ onBeforeUnmount(()=>confirmationLease.release('domain-rewardjobs'))
    <p v-else class="field-hint">先固定名单和奖励，再确认启动。账号货币按执行时余额累加，物品与金币邮件逐角色投递；不会因关闭网页而丢失进度。</p>
    <form v-show="draftVisible" @submit.prevent="preview">
     <fieldset :disabled="busy||uncertain">
+     <div v-if="campaignId" class="notice" aria-label="固定活动内容"><h3>{{campaign?.name||'活动奖励'}} · 固定内容</h3><p>活动 #{{campaignId}} · 礼包 #{{campaign?.definition.template_id??'…'}} / v{{campaign?.definition.template_version??'…'}}</p><p>{{campaign?.definition.dedupe==='character'?'每角色一次':'每账号一次'}}，跨批次和计划共用领取记录；重复目标跳过整份礼包。</p><details><summary>查看固定人群与奖励</summary><pre>{{JSON.stringify({targets:campaign?.definition.targets,reward:campaign?.reward},null,2)}}</pre></details></div>
+     <template v-if="!campaignId">
      <h3>1. 收件范围</h3>
      <label>目标模式<select v-model="mode" aria-label="目标模式"><option value="selected">勾选／导入指定角色</option><option value="accounts">指定／导入账号名单</option><option value="filtered">按条件筛选角色</option><option value="online">在线账号下的角色</option><option value="all">全服未删除角色</option></select></label>
      <template v-if="mode==='selected'"><CharacterPicker v-model="ids"/><label>角色编号名单<textarea v-model="ids" aria-label="角色编号名单" placeholder="例如 900001, 900003；支持换行粘贴" :aria-invalid="!!fieldErrors.ids"/></label><p v-if="fieldErrors.ids" class="submit-error" role="alert">{{fieldErrors.ids}}</p><label class="file-input">导入纯文本名单<input type="file" accept=".txt,.csv" aria-label="导入角色名单" @change="importIds"></label><p class="field-hint">仅在浏览器读取编号文件，不上传文件；重复编号会去重。</p></template>
@@ -147,6 +160,7 @@ onBeforeUnmount(()=>confirmationLease.release('domain-rewardjobs'))
      <p v-if="searchError" class="submit-error" role="alert">{{searchError}}</p><p v-if="fieldErrors.reward" class="submit-error" role="alert">{{fieldErrors.reward}}</p>
      <label>账号货币发放规则<select v-model="rewardMode" aria-label="账号货币规则"><option value="once_per_account">同账号只发一次（推荐）</option><option value="per_character">每个角色都发一次到所属账号</option></select></label>
      <p class="field-hint">该规则仅影响点券、代币券和积分；物品与邮件金币始终逐角色发放。</p>
+     </template>
      <label>发放原因<textarea v-model="reason" maxlength="200" aria-label="批量发放原因" :aria-invalid="!!fieldErrors.reason"/></label><p v-if="fieldErrors.reason" class="submit-error" role="alert">{{fieldErrors.reason}}</p>
      <button class="primary" type="submit">{{scheduleDraft?'预览定时奖励计划':'生成批量预览'}}</button>
     </fieldset>
@@ -155,6 +169,7 @@ onBeforeUnmount(()=>confirmationLease.release('domain-rewardjobs'))
   <section v-if="!scheduleDraft&&selected" class="panel" aria-label="任务预览与进度">
    <div class="section-title"><h2>{{labels[selected.status]||selected.status}}</h2><span class="pill">角色 {{selected.target_count}} ／ 账号 {{selected.account_count}}</span></div>
    <p>任务编号：<code>{{selected.id}}</code></p><p>原因：{{selected.reason}}</p>
+   <p v-if="selected.request.campaign_id" class="notice">活动 #{{selected.request.campaign_id}} · 活动领取记录跨批次与计划去重，重复目标跳过整份礼包。</p>
    <p v-if="selected.pause_reason" class="notice">{{selected.pause_reason}}</p>
    <p v-if="!selected.worker_enabled" class="notice">执行器未启用；不能启动或继续发放。</p>
    <div class="reward-grid"><div v-for="(value,k) in selected.preview.currency_totals" :key="k">{{currencyNames[k]||k}}合计：<strong>{{value}}</strong></div><div>邮件金币合计：<strong>{{selected.preview.gold_total}}</strong></div></div>
@@ -165,7 +180,7 @@ onBeforeUnmount(()=>confirmationLease.release('domain-rewardjobs'))
    <p v-if="selected.preview.mail_title" style="white-space:pre-wrap">邮件正文预览：
 {{selected.preview.mail_text}}</p>
    <p class="field-hint">{{selected.preview.note}}</p>
-   <div class="toolbar"><span v-for="(count,state) in selected.counts" :key="state" class="pill">{{labels[state]||state}} {{count}}</span></div>
+   <div class="toolbar"><button :disabled="busy" :aria-pressed="!targetStatus" @click="filterTargets('')">全部目标</button><button v-for="(count,state) in selected.counts" :key="state" :disabled="busy" :aria-pressed="targetStatus===state" @click="filterTargets(String(state))">{{labels[state]||state}} {{count}}</button></div>
    <template v-if="selected.status==='preview'">
     <p class="notice">这份预览只在生成后5分钟内有效；确认的是上面已固定的名单和奖励，而不是正在修改的草稿。</p>
     <label v-if="selected.request.targets.mode==='all'">输入“全服发放”确认<input v-model="confirmation" aria-label="全服确认" :disabled="busy||uncertain"></label>
@@ -181,7 +196,9 @@ onBeforeUnmount(()=>confirmationLease.release('domain-rewardjobs'))
    <p v-if="uncertain" class="submit-error" role="alert">启动结果待确认。只查询原任务，禁止重新创建或重复发放。刷新页面后仍会保留这个任务编号。</p>
    <p v-if="error" class="submit-error" role="alert">{{error}}</p><p v-if="notice" class="notice" role="status">{{notice}}</p>
    <div class="toolbar"><button :disabled="busy" @click="queryOriginal">刷新原任务（只读）</button><span class="field-hint">最近核对 {{checked||'尚未核对'}} · 可见页面每30秒查询</span></div>
-   <div class="table-wrap"><table><thead><tr><th>角色／账号</th><th>执行状态</th><th>操作编号／详情</th></tr></thead><tbody><tr v-for="target in targets" :key="target.ordinal"><td>{{target.target.charac_name}} #{{target.charac_no}}<small class="cell-note">{{target.target.accountname}} #{{target.target_uid}}</small></td><td>{{labels[target.status]||target.status}}<small class="cell-note">尝试 {{target.attempts}} 次</small></td><td><code>{{target.operation_id}}</code><button v-if="target.status==='committed'" :disabled="busy" @click="emit('inspect',target.operation_id)">查看原操作结果</button><small v-if="target.error_message" class="cell-note">{{target.error_message}}</small></td></tr></tbody></table></div>
+   <form class="toolbar" @submit.prevent="filterTargets()"><label>目标执行状态<select v-model="targetStatus" aria-label="目标执行状态"><option value="">全部状态</option><option v-for="state in ['pending','executing','committed','uncertain','failed','cancelled']" :key="state" :value="state">{{labels[state]}}</option></select></label><label>失败原因<select v-model="targetError" aria-label="目标失败原因"><option value="">全部原因</option><option v-for="item in targetErrors" :key="item.error_type" :value="item.error_type">{{item.error_type}}（{{item.n}}）</option></select></label><button :disabled="busy">筛选目标</button></form>
+   <div class="table-wrap"><table><thead><tr><th>角色／账号</th><th>执行状态</th><th>操作编号／详情</th></tr></thead><tbody><tr v-for="target in targets" :key="target.ordinal"><td>{{target.target.charac_name}} #{{target.charac_no}}<small class="cell-note">{{target.target.accountname}} #{{target.target_uid}}</small></td><td>{{labels[target.status]||target.status}}<small class="cell-note">尝试 {{target.attempts}} 次</small></td><td><code>{{target.operation_id}}</code><button v-if="['committed','uncertain','executing','failed'].includes(target.status)&&target.operation_id" :disabled="busy" @click="emit('inspect',target.operation_id)">查看原操作结果</button><small v-if="target.error_message" class="cell-note">{{target.error_type}} · {{target.error_message}}</small></td></tr></tbody></table></div>
+   <p v-if="!targets.length" class="empty">没有符合该状态与原因的目标。</p>
    <div class="pagination"><button :disabled="busy||!previous.length" @click="move(false)">上一页目标</button><span>从第 {{cursor+1}} 条开始</span><button :disabled="busy||next===null" @click="move(true)">下一页目标</button></div>
   </section>
   <p v-else-if="error" class="submit-error" role="alert">{{error}}</p>

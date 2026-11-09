@@ -21,9 +21,6 @@ def quests(inv):
     app.state.quest_operations.fence=MaintenanceFence(root,**app.state.quest_operations.versions(),owner=__import__('os').geteuid())
     clear=struct.pack('<I',30000)+zlib.compress(bytes([0,1,0,1])+bytes(29996))
     with db.connect() as c,c.cursor() as q:
-        columns=['charac_no INT PRIMARY KEY','clear_quest BLOB NOT NULL','quest_notify BLOB NOT NULL','urgentQuestIndex SMALLINT DEFAULT -1']
-        columns += [f'`{k}` '+('SMALLINT UNSIGNED' if not k.endswith('trigger') else 'INT UNSIGNED')+' NOT NULL DEFAULT 0' for k in QUEST_COLUMNS[3:]]
-        q.execute('CREATE TABLE taiwan_cain.new_charac_quest('+','.join(columns)+') ENGINE=InnoDB')
         q.execute("INSERT INTO taiwan_cain.new_charac_quest(charac_no,clear_quest,quest_notify,play_1,play_1_trigger,play_2,play_2_trigger,play_3_trigger) VALUES(900001,%s,%s,2,4294967295,2,7,8)",(clear,b'\x00notify\xff'));c.commit()
     with sqlite3.connect(s.catalog_file) as c:
         c.execute("INSERT INTO metadata VALUES('quest_index_version','1')")

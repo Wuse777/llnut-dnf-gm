@@ -17,3 +17,9 @@ it('does not switch while a request is busy',async()=>{
  const w=mount(MailWorkbench,{props:{modelValue:'draft',count:0,quantity:0,gold:0,hasCurrencies:false,busy:true}})
  await w.findAll('button')[0].trigger('click');expect(w.emitted('update:modelValue')).toBeUndefined();w.unmount()
 })
+
+it('keeps an empty mobile picker header compact while exposing draft count after items are added',async()=>{
+ const w=mount(MailWorkbench,{props:{modelValue:'items',count:0,quantity:0,gold:0,hasCurrencies:false,busy:false}})
+ expect(w.find('[role=status]').exists()).toBe(false)
+ await w.setProps({count:1,quantity:2});expect(w.get('[role=status]').text()).toBe('2 件 · 0 金币');w.unmount()
+})

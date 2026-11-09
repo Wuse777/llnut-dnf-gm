@@ -79,6 +79,7 @@ class Schedules:
     def binding(self, q, data):
         result = {'image_digest': self.settings.image_digest, 'pvf_sha256': self.settings.pvf_sha256}
         if data['kind'] == 'reward':
+            self.jobs.service.campaigns.bind_job(q,data['reward_job'])
             reward = data['reward_job']['reward']
             reward['action'] = 'reward'
             result['reward'] = self.jobs.service.reward_snapshot(q, reward)
@@ -126,6 +127,8 @@ class Schedules:
             q.execute("INSERT INTO dnf_gm.schedules(id,session_hash,fingerprint,title,kind,request_json,preview_json,status,next_due,created_at,expires_at) VALUES(%s,%s,%s,%s,%s,%s,%s,'preview',%s,%s,%s)",
                       (sid, session_hash, self.fingerprint(data, preview), data['title'], data['kind'], dump(data), dump(preview), data['first_due'], now, now + 300))
             self.audit(q, sid, 'preview', {'kind': data['kind'], 'first_due': data['first_due']})
+            if data['kind']=='reward' and data['reward_job'].get('campaign_id'):
+                self.jobs.service.campaigns.link(q,data['reward_job']['campaign_id'],'schedule',sid)
             c.commit()
         return self.detail(sid)
 
@@ -327,7 +330,7 @@ class Schedules:
                             job = self.jobs.create_in_transaction(q, principal, {**data['reward_job'], 'schedule_id': row['id']}, child_id, now)
                             frozen = json.loads(job['preview_json'])
                             authorized = json.loads(row['preview_json'])['binding']['reward']
-                            if {k: frozen[k] for k in ('gold', 'rewards', 'has_mail')} != authorized:
+                            if {k: frozen.get(k) for k in authorized} != authorized:
                                 raise HTTPException(409, '冻结名单期间物品索引发生变化；本期没有创建奖励任务')
                             if json.loads(job['request_json'])['reward'] != data['reward_job']['reward']:
                                 raise HTTPException(409, '冻结名单期间奖励定义发生变化；本期没有创建奖励任务')

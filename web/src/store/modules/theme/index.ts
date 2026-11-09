@@ -47,16 +47,22 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
   /** Theme colors */
   const themeColors = computed(() => {
     const { themeColor, otherColor, isInfoFollowPrimary } = settings.value;
+    const primary = darkMode.value && themeColor.toLowerCase() === '#92651f' ? '#d4ad66' : themeColor;
     const colors: App.Theme.ThemeColor = {
-      primary: themeColor,
+      primary,
       ...otherColor,
-      info: isInfoFollowPrimary ? themeColor : otherColor.info
+      info: isInfoFollowPrimary ? primary : otherColor.info
     };
+    if (darkMode.value) {
+      if (colors.success.toLowerCase() === '#288363') colors.success = '#7fbea0';
+      if (colors.warning.toLowerCase() === '#a07124') colors.warning = '#d4ad66';
+      if (colors.error.toLowerCase() === '#bc5151') colors.error = '#e3978b';
+    }
     return colors;
   });
 
   /** Naive theme */
-  const naiveTheme = computed(() => getNaiveTheme(themeColors.value, settings.value, naiveThemeOverrides.value));
+  const naiveTheme = computed(() => getNaiveTheme(themeColors.value, settings.value, naiveThemeOverrides.value, darkMode.value));
 
   /**
    * Settings json

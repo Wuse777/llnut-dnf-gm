@@ -14,7 +14,7 @@ function setup(){
 }
 async function click(w:any,text:string){await w.findAll('button').find((b:any)=>b.text()===text)!.trigger('click');await flushPromises()}
 it('queries complete receipt pages and emits a draft without posting',async()=>{
- const {w,fetcher}=setup();await flushPromises();await click(w,'查看全部附件');expect(w.text()).toContain('数据库未领取');await click(w,'下一页附件');expect(w.text()).toContain('记录缺失 · 领取未知');expect(fetcher.mock.calls.some(([u])=>String(u).endsWith('after=50'))).toBe(true);await click(w,'复制为新发放草稿');expect(w.emitted('draft')?.[0][0]).toEqual(batch.request);expect(w.find('[role=dialog]').exists()).toBe(false);w.unmount()
+ const {w,fetcher}=setup();await flushPromises();await click(w,'查看全部附件');expect(w.text()).toContain('数据库未领取');await click(w,'下一页附件');expect(w.text()).toContain('记录缺失 · 领取未知');expect(fetcher.mock.calls.some(([u])=>String(u).endsWith('after=50'))).toBe(true);await click(w,'另建奖励草稿（需重新预览确认）');expect(w.emitted('draft')?.[0][0]).toEqual(batch.request);expect(w.find('[role=dialog]').exists()).toBe(false);w.unmount()
 })
 it('validates immediately beside filters and sends no invalid request',async()=>{
  const {w,fetcher}=setup();await flushPromises();await w.find('[aria-label="邮件账号UID"]').setValue('-2');await w.find('form').trigger('submit');await flushPromises();expect(w.find('[role=alert]').text()).toContain('正整数');expect(fetcher).toHaveBeenCalledTimes(1);w.unmount()

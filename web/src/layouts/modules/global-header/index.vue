@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { useFullscreen } from '@vueuse/core';
+import { computed } from 'vue';
+import { useRoute } from 'vue-router';
+import { $t } from '@/locales';
 import { GLOBAL_HEADER_MENU_ID } from '@/constants/app';
 import { useAppStore } from '@/store/modules/app';
 import { useThemeStore } from '@/store/modules/theme';
@@ -26,6 +29,8 @@ defineProps<Props>();
 
 const appStore = useAppStore();
 const themeStore = useThemeStore();
+const route = useRoute();
+const mobileTitle = computed(() => route.meta.i18nKey ? $t(route.meta.i18nKey) : String(route.meta.title || '阿拉德工作台'));
 const { isFullscreen, toggle } = useFullscreen();
 </script>
 
@@ -36,6 +41,7 @@ const { isFullscreen, toggle } = useFullscreen();
     <div v-if="showMenu" :id="GLOBAL_HEADER_MENU_ID" class="h-full flex-y-center flex-1-hidden"></div>
     <div v-else class="h-full flex-y-center flex-1-hidden">
       <GlobalBreadcrumb v-if="!appStore.isMobile" class="ml-12px" />
+      <span v-else class="gm-mobile-route-title">{{ mobileTitle }}</span>
     </div>
     <div class="h-full flex-y-center justify-end">
       <GlobalSearch v-if="themeStore.header.globalSearch.visible" />
@@ -51,10 +57,12 @@ const { isFullscreen, toggle } = useFullscreen();
         :is-dark="themeStore.darkMode"
         @switch="themeStore.toggleThemeScheme"
       />
-      <ThemeButton />
+      <ThemeButton v-if="!appStore.isMobile" />
       <UserAvatar />
     </div>
   </DarkModeContainer>
 </template>
 
-<style scoped></style>
+<style scoped>
+.gm-mobile-route-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:600;margin-left:8px}
+</style>

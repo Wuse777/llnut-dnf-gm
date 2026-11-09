@@ -17,6 +17,7 @@ from fastapi import HTTPException
 from .service import Service, one, dump, character
 from .encoding import mysql_latin1_text
 from .write_gate import WriteGateClosed
+from . import campaign_audience
 
 WORKER_LOCK='dnf_gm_reward_jobs_executor'
 
@@ -52,6 +53,14 @@ class RewardJobs:
                   ('job-'+uuid.uuid4().hex,actor,'batch-'+action,job['reason'],dump({'job_id':job['id']}),dump(result)))
 
     @staticmethod
+    def definition(job):
+        request,preview=json.loads(job['request_json']),json.loads(job['preview_json'])
+        expected=hashlib.sha256(dump({'request':request,'preview':preview}).encode()).hexdigest()
+        if expected!=job['fingerprint']:
+            raise HTTPException(409,'批量任务定义校验失败，禁止执行')
+        return request,preview
+
+    @staticmethod
     def selector(filters):
         mode=filters['mode'];ids=sorted(set(filters['charac_nos']))
         uids=sorted(set(filters.get('account_uids',[])));names=sorted(set(filters.get('account_names',[])))
@@ -59,7 +68,8 @@ class RewardJobs:
             raise HTTPException(422,'未知目标模式')
         if filters['min_level']>filters['max_level']:
             raise HTTPException(422,'等级下限不能高于上限')
-        changed=bool(filters['uid'] or filters['job'] is not None or filters['min_level'] or filters['max_level']!=255 or filters['q'])
+        changed=bool(filters['uid'] or filters['job'] is not None or filters['min_level'] or filters['max_level']!=255 or filters['q']
+                     or filters.get('tags_all') or filters.get('created_from') or filters.get('created_to') or filters.get('inactive_before'))
         if mode=='accounts':
             if ids or changed or bool(uids)==bool(names):
                 raise HTTPException(422,'账号名单只能填写UID或账号名其中一种，不能混合角色或筛选条件')
@@ -88,12 +98,15 @@ class RewardJobs:
             def like(text):return '%'+text.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
             conditions.append('(c.charac_name LIKE %s OR c.charac_name LIKE %s)')
             args.extend([like(filters['q']),like(mysql_latin1_text(filters['q'].encode('utf-8')))])
+        extra, extra_args = campaign_audience.predicates(filters)
+        conditions.extend(extra); args.extend(extra_args)
         return ' AND '.join(conditions),args,ids
 
     def resolve_accounts(self,q,filters):
         # Names identify an exact account now, not a dynamic future recipient.
         # Only SELECT UID/accountname; no passwords or other account attributes.
         self.selector(filters)
+        campaign_audience.verify(q,filters)
         if filters['mode']!='accounts':return filters,[],None
         kind='account_uids' if filters.get('account_uids') else 'account_names'
         raw=filters[kind];wanted=sorted(set(raw))
@@ -108,6 +121,8 @@ class RewardJobs:
         return resolved,uids,{'input_kind':kind,'requested_accounts':len(wanted),'duplicates_removed':len(raw)-len(wanted)}
 
     def create_in_transaction(self,q,session_hash,data,job_id=None,now=None):
+        data=copy.deepcopy(data)
+        self.service.campaigns.bind_job(q,data)
         if not data['reason'].strip():raise HTTPException(422,'必须填写发放原因')
         selected,expected_accounts,account_selection=self.resolve_accounts(q,data['targets'])
         clause,args,ids=self.selector(selected)
@@ -141,18 +156,22 @@ class RewardJobs:
         if ids and len(ids)!=ordinal:raise HTTPException(422,'名单包含不存在、已删除或无所属账号的角色；没有创建任务')
         accounts=one(q,'SELECT COUNT(DISTINCT target_uid) n FROM dnf_gm.reward_targets WHERE job_id=%s',(job_id,))['n']
         multiplier=accounts if data['account_reward_mode']=='once_per_account' else ordinal
+        campaign=resolved.get('campaign')
+        if campaign and campaign['dedupe']=='account':multiplier=accounts
         summary={**resolved,'target_count':ordinal,'account_count':accounts,
                  'duplicates_removed':account_selection['duplicates_removed'] if account_selection else len(data['targets']['charac_nos'])-len(ids),
                  'account_selection':account_selection,
                  'account_reward_mode':data['account_reward_mode'],
                  'currency_totals':{key:str(value*multiplier) for key,value in reward['currency_rewards'].items()},
-                 'gold_total':str(reward.get('gold',0)*ordinal),
+                 'gold_total':str(reward.get('gold',0)*(multiplier if campaign else ordinal)),
                  'target_digest':digest.hexdigest(),
-                 'note':'名单已固定；在线模式选择在线账号下所有符合条件的角色，不代表这些角色同时在线。账号奖励按执行时锁定余额增加；物品/金币逐角色发放。'}
+                 'note':('活动奖励按活动去重口径发放整份礼包；已领取或并发先提交的目标跳过整份奖励，金额为未扣除既有领取的预估上界。' if campaign else '')+
+                        '名单已固定；在线模式选择在线账号下所有符合条件的角色，不代表这些角色同时在线。账号奖励按执行时锁定余额增加；物品/金币逐角色发放。'}
         fingerprint=hashlib.sha256(dump({'request':request,'preview':summary}).encode()).hexdigest()
         q.execute("INSERT INTO dnf_gm.reward_jobs(id,session_hash,fingerprint,request_json,preview_json,status,reason,target_count,account_count,created_at,expires_at) VALUES(%s,%s,%s,%s,%s,'preview',%s,%s,%s,%s,%s)",
                   (job_id,session_hash,fingerprint,dump(request),dump(summary),data['reason'],ordinal,accounts,now,now+300))
         self.audit(q,{'id':job_id,'reason':data['reason']},'preview',{'target_count':ordinal,'account_count':accounts,'fingerprint':fingerprint},actor='scheduler' if data.get('schedule_id') else 'owner')
+        if campaign:self.service.campaigns.link(q,campaign['id'],'job',job_id)
         return one(q,'SELECT * FROM dnf_gm.reward_jobs WHERE id=%s',(job_id,))
 
     def preview(self,session_hash,data):
@@ -181,18 +200,29 @@ class RewardJobs:
                 row['counts']={r['status']:r['n'] for r in q.fetchall()}
             return {'items':rows[:20],'has_more':len(rows)>20,'page':page,'worker_enabled':self.settings.batch_worker_enabled}
 
-    def targets(self,job_id,after=0):
+    def targets(self,job_id,after=0,status='',error_type=''):
+        if status and status not in ('pending','executing','committed','uncertain','failed','cancelled'):
+            raise HTTPException(422,'未知目标状态')
+        if len(error_type)>64:raise HTTPException(422,'失败类型过长')
         with self.db.connect() as c,c.cursor() as q:
             if not one(q,'SELECT id FROM dnf_gm.reward_jobs WHERE id=%s',(job_id,)):raise HTTPException(404,'任务不存在')
-            q.execute('SELECT ordinal,target_uid,charac_no,target_json,operation_id,status,attempts,error_type,error_message,last_attempt FROM dnf_gm.reward_targets WHERE job_id=%s AND ordinal>%s ORDER BY ordinal LIMIT 51',(job_id,after))
+            clauses=['job_id=%s','ordinal>%s'];args=[job_id,after]
+            if status:clauses.append('status=%s');args.append(status)
+            if error_type:clauses.append('error_type=%s');args.append(error_type)
+            q.execute('SELECT ordinal,target_uid,charac_no,target_json,operation_id,status,attempts,error_type,error_message,last_attempt FROM dnf_gm.reward_targets WHERE '+
+                      ' AND '.join(clauses)+' ORDER BY ordinal LIMIT 51',args)
             rows=q.fetchall()
             for row in rows:row['target']=json.loads(row.pop('target_json'))
-            return {'items':rows[:50],'next_after':rows[49]['ordinal'] if len(rows)>50 else None}
+            q.execute('SELECT status,COUNT(*) n FROM dnf_gm.reward_targets WHERE job_id=%s GROUP BY status',(job_id,))
+            counts={r['status']:r['n'] for r in q.fetchall()}
+            q.execute("SELECT error_type,COUNT(*) n FROM dnf_gm.reward_targets WHERE job_id=%s AND error_type<>'' GROUP BY error_type ORDER BY n DESC,error_type LIMIT 50",(job_id,))
+            return {'items':rows[:50],'next_after':rows[49]['ordinal'] if len(rows)>50 else None,
+                    'counts':counts,'errors':q.fetchall(),'filters':{'status':status,'error_type':error_type}}
 
     def check_start(self,q,job):
         if not self.settings.batch_worker_enabled:raise HTTPException(409,'批量执行器未启用，任务保持预览')
         if 'batch-reward' not in self.settings.writes:raise HTTPException(403,'批量奖励写入尚未激活')
-        request=json.loads(job['request_json']);preview=json.loads(job['preview_json'])
+        request,preview=self.definition(job)
         # All test-target restrictions apply to the full frozen set before starting.
         if self.settings.test_uids:
             denied=one(q,'SELECT target_uid FROM dnf_gm.reward_targets WHERE job_id=%s AND target_uid NOT IN ('+','.join(['%s']*len(self.settings.test_uids))+') LIMIT 1',(job['id'],*self.settings.test_uids))
@@ -338,7 +368,7 @@ class RewardJobs:
                 c.commit();return
             locked=one(q,'SELECT status FROM dnf_gm.reward_targets WHERE job_id=%s AND ordinal=%s FOR UPDATE',(job['id'],target['ordinal']))
             if not locked or locked['status']!='executing':return
-            request=json.loads(job['request_json']);preview=json.loads(job['preview_json']);frozen=json.loads(target['target_json'])
+            request,preview=self.definition(job);frozen=json.loads(target['target_json'])
             data={**request['reward'],'uid':target['target_uid'],'charac_no':target['charac_no'],'reason':job['reason'],'job_id':job['id']}
             if request.get('schedule_id'):data['schedule_id']=request['schedule_id']
             if 'batch-reward' not in self.settings.writes:raise HTTPException(403,'批量写入已停用')
@@ -347,7 +377,7 @@ class RewardJobs:
             if account['accountname']!=frozen['accountname'] or account['character']['stored_name']!=frozen['stored_name']:
                 raise HTTPException(409,'目标身份或角色名称已变化，需重新核对')
             skipped=False
-            if request['account_reward_mode']=='once_per_account' and data['currency_rewards']:
+            if not data.get('campaign_id') and request['account_reward_mode']=='once_per_account' and data['currency_rewards']:
                 previous=one(q,'SELECT operation_id FROM dnf_gm.reward_account_credits WHERE job_id=%s AND target_uid=%s FOR UPDATE',(job['id'],data['uid']))
                 skipped=bool(previous)
                 if skipped:data['currency_rewards']={}
@@ -357,7 +387,7 @@ class RewardJobs:
                       (op,token,'batch-'+op,hashlib.sha256(dump(data).encode()).hexdigest(),dump(data),dump(per_preview),int(time.time()),int(time.time())))
             result={'operation_id':op,'uid':data['uid'],'action':'reward','job_id':job['id'],'account_reward_skipped':skipped,
                     **self.service.apply_reward(q,op,data,per_preview,account)}
-            if request['account_reward_mode']=='once_per_account' and data['currency_rewards']:
+            if not data.get('campaign_id') and request['account_reward_mode']=='once_per_account' and data['currency_rewards']:
                 q.execute('INSERT INTO dnf_gm.reward_account_credits(job_id,target_uid,operation_id) VALUES(%s,%s,%s)',(job['id'],data['uid'],op))
             q.execute("INSERT INTO dnf_gm.audit(operation_id,actor,action,target_uid,reason,request_json,result_json) VALUES(%s,%s,'reward',%s,%s,%s,%s)",(op,'scheduler' if request.get('schedule_id') else 'owner',data['uid'],data['reason'],dump(data),dump(result)))
             self.service.economy.record(q,op)

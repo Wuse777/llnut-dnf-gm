@@ -43,6 +43,8 @@ from .audit_export import export_audit
 from .report_stream import ReportStream
 from .upgrade_check import UpgradeCheck
 from .browser_policy import Guard, static_response
+from .campaign_models import CampaignSave
+from .game_backup_requests import GameBackups, GameBackupPreview, GameBackupConfirm, GameBackupFollowup
 
 BASE = '/dnf-gm'
 API = BASE + '/api/v1'
@@ -104,6 +106,11 @@ def create_app(settings=None, database=None):
     app.state.character_profession = profession_ops
     app.state.quest_operations = quest_ops
     app.state.maintenance = maintenance
+    app.state.campaigns = service.campaigns
+    game_backups = GameBackups(db, settings)
+    app.state.game_backups = game_backups
+    from .workbench import Workbench
+    workbench = Workbench(db, maintenance, task_monitor, settings, game_backups)
     app.add_middleware(Guard, settings=settings)
     app.state.db, app.state.settings, app.state.service = db,settings,service
 
@@ -125,10 +132,10 @@ def create_app(settings=None, database=None):
     @app.get(API+'/health')
     def health():
         with db.connect() as c, c.cursor() as q:
-            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 17')
+            q.execute('SELECT version FROM dnf_gm.schema_versions WHERE version BETWEEN 1 AND 20')
             versions={row['version'] for row in q.fetchall()}
-            if versions != set(range(1,18)):
-                raise HTTPException(503,'管理库迁移未完成，需要完成016备份计划迁移及此前迁移')
+            if versions != set(range(1,21)):
+                raise HTTPException(503,'管理库迁移未完成，需要完成020工作台索引迁移及此前迁移')
             from .gameplay_transactions import inspect_protocol
             try:inspect_protocol(q)
             except Exception:raise HTTPException(503,'管理库事务屏障不可核验；不会自动修复或开启维护') from None
@@ -191,6 +198,17 @@ def create_app(settings=None, database=None):
     def overview(request:Request):
         user(request)
         return service.overview()
+
+    @app.get(API+'/workbench')
+    def workbench_inbox(request:Request):
+        key=user(request);limits.check('workbench:'+key,15)
+        return workbench.read()
+
+    @app.get(API+'/characters/{charac_no}/overview')
+    def character_workbench(request:Request,charac_no:int=PathParameter(ge=1,le=2147483647)):
+        key=user(request);limits.check('character-overview:'+key,30)
+        from .character_overview import overview as character_overview
+        return character_overview(service,charac_no)
 
     @app.get(API+'/capabilities')
     def capability_report(request:Request):
@@ -1003,6 +1021,70 @@ def create_app(settings=None, database=None):
         limits.check('schedule-control:'+key,30)
         return schedules.control(sid,data.action,data.acknowledge_attention)
 
+    @app.get(API+'/campaigns/audience-schema')
+    def campaign_audience_schema(request:Request):
+        user(request)
+        return service.campaigns.audience_schema()
+
+    @app.get(API+'/campaigns')
+    def campaign_list(request:Request,page:int=Query(1,ge=1,le=10000),status:str=Query('',max_length=24),q:str=Query('',max_length=100)):
+        key=user(request);limits.check('campaign-list:'+key,30)
+        return service.campaigns.list(page,status,q)
+
+    @app.post(API+'/campaigns/preview')
+    def campaign_preview(request:Request,data:CampaignSave):
+        key=user(request,True,True);limits.check('campaign-preview:'+key,10)
+        return service.campaigns.preview(key,data.model_dump())
+
+    @app.get(API+'/campaigns/operations/{op}')
+    def campaign_operation(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        return service.campaigns.operation(user(request),op)
+
+    @app.post(API+'/campaigns/operations/{op}/confirm')
+    def campaign_confirm(request:Request,data:Confirm,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('campaign-confirm:'+key,10)
+        return service.campaigns.confirm(key,op,data.idempotency_key)
+
+    @app.post(API+'/campaigns/operations/{op}/cancel')
+    def campaign_cancel(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('campaign-cancel:'+key,10)
+        return service.campaigns.cancel(key,op)
+
+    @app.get(API+'/campaigns/{campaign_id}')
+    def campaign_detail(request:Request,campaign_id:str=PathParameter(pattern=r'^[a-f0-9]{32}$'),page:int=Query(1,ge=1,le=10000)):
+        user(request)
+        return service.campaigns.detail(campaign_id,page)
+
+    @app.get(API+'/game-backups')
+    def game_backup_list(request:Request,page:int=Query(1,ge=1,le=10000)):
+        key=user(request);limits.check('game-backup-list:'+key,30)
+        return game_backups.view(page)
+
+    @app.post(API+'/game-backups/preview')
+    def game_backup_preview(request:Request,data:GameBackupPreview):
+        key=user(request,True,True);limits.check('game-backup-preview:'+key,6)
+        return game_backups.preview(data.model_dump())
+
+    @app.get(API+'/game-backups/{run_id}')
+    def game_backup_detail(request:Request,run_id:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        user(request)
+        return game_backups.detail(run_id)
+
+    @app.post(API+'/game-backups/{run_id}/confirm')
+    def game_backup_confirm(request:Request,data:GameBackupConfirm,run_id:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('game-backup-confirm:'+key,6)
+        return game_backups.confirm(run_id,data.model_dump())
+
+    @app.post(API+'/game-backups/{run_id}/copy')
+    def game_backup_copy(request:Request,data:GameBackupFollowup,run_id:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('game-backup-copy:'+key,6)
+        return game_backups.followup(run_id,'copy',data.model_dump())
+
+    @app.post(API+'/game-backups/{run_id}/rehearse')
+    def game_backup_rehearse(request:Request,data:GameBackupFollowup,run_id:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
+        key=user(request,True,True);limits.check('game-backup-rehearse:'+key,6)
+        return game_backups.followup(run_id,'rehearse',data.model_dump())
+
     @app.get(API+'/reward-jobs')
     def reward_jobs(request:Request,page:int=Query(1,ge=1,le=10000)):
         user(request)
@@ -1020,9 +1102,10 @@ def create_app(settings=None, database=None):
         return jobs.detail(job_id)
 
     @app.get(API+'/reward-jobs/{job_id}/targets')
-    def reward_job_targets(request:Request,job_id:str=PathParameter(pattern=r'^[a-f0-9]{32}$'),after:int=Query(0,ge=0,le=4294967295)):
+    def reward_job_targets(request:Request,job_id:str=PathParameter(pattern=r'^[a-f0-9]{32}$'),after:int=Query(0,ge=0,le=4294967295),
+                           status:Literal['','pending','executing','committed','uncertain','failed','cancelled']='',error_type:str=Query('',max_length=200)):
         user(request)
-        return jobs.targets(job_id,after)
+        return jobs.targets(job_id,after,status,error_type)
 
     @app.post(API+'/reward-jobs/{job_id}/start')
     def reward_job_start(data:StartRewardJob,request:Request,job_id:str=PathParameter(pattern=r'^[a-f0-9]{32}$')):
@@ -1066,9 +1149,11 @@ def create_app(settings=None, database=None):
         return result
 
     @app.get(API+'/mail-center')
-    def mail_center(request:Request,uid:int=Query(0,ge=0,le=2147483647),charac_no:int=Query(0,ge=0,le=2147483647),operation_id:str=Query('',pattern=r'^(?:[a-f0-9]{32})?$'),page:int=Query(1,ge=1,le=10000)):
-        user(request)
-        return service.mail_center.list(uid,charac_no,operation_id,page)
+    def mail_center(request:Request,uid:int=Query(0,ge=0,le=2147483647),charac_no:int=Query(0,ge=0,le=2147483647),operation_id:str=Query('',pattern=r'^(?:[a-f0-9]{32})?$'),page:int=Query(1,ge=1,le=10000),
+                    q:str=Query('',max_length=100),item_id:int=Query(0,ge=0,le=4294967295),template_id:int=Query(0,ge=0,le=2147483647),
+                    receipt:Literal['','unclaimed_marker','claimed_marker','deleted_marker','record_missing']='',created_from:date|None=None,created_to:date|None=None):
+        key=user(request);limits.check('mail-center:'+key,30)
+        return service.mail_center.list(uid,charac_no,operation_id,page,text=q,item_id=item_id,template_id=template_id,receipt=receipt,created_from=created_from,created_to=created_to)
 
     @app.get(API+'/mail-center/{op}')
     def mail_details(request:Request,op:str=PathParameter(pattern=r'^[a-f0-9]{32}$'),after:int=Query(0,ge=0,le=9223372036854775807)):

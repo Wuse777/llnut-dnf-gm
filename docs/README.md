@@ -36,7 +36,7 @@
 ## 运维、安全与素材
 
 - [网页功能开关](CAPABILITIES.md)、[插件证据与边界](PLUGIN-DIAGNOSTICS.md)
-- [告警](ALERTS.md)、[管理库备份及恢复证据](BACKUP-HEALTH.md)、[游戏备份设计边界](GAME-BACKUP-DESIGN.md)
+- [告警](ALERTS.md)、[管理库备份及恢复证据](BACKUP-HEALTH.md)、[游戏恢复点、异地副本与隔离演练](GAME-BACKUP-DESIGN.md)（当前开发源码，未生产部署）
 - [任务健康](TASK-HEALTH.md)、[升级检查](UPGRADE-CHECK.md)、[旧发布目录清理](RELEASE-CLEANUP.md)
 - [私有素材提取与图片包](ASSETS.md)：仓库不含游戏图片，缺少素材仍可使用文字／占位视图
 

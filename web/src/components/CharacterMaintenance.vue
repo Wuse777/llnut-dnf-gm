@@ -10,15 +10,17 @@ const base='/character-maintenance',storage='dnfgm-character-maintenance-operati
 const current=ref<any>(null),operation=ref<any>(null),records=ref<any[]>([]),page=ref(1),more=ref(false)
 const busy=ref(false),error=ref(''),reason=ref(''),reasonError=ref(''),valueError=ref(''),lookup=ref('')
 const normal=ref('0'),premium=ref('0'),key=ref(''),attempted=ref(false),root=ref<HTMLElement|null>(null)
+const customOpen=ref(false)
 const unfinished=computed(()=>operation.value?.status==='preview'||operation.value?.status==='executing')
 const pending=computed(()=>operation.value?.status==='executing'||attempted.value&&operation.value?.status==='preview')
-const labels:Record<string,string>={fatigue:'普通已消耗疲劳',premium_fatigue:'额外已消耗疲劳'}
+const labels:Record<string,string>={fatigue:'普通疲劳消耗',premium_fatigue:'额外疲劳消耗'}
+function restore(all=true){normal.value='0';premium.value=all?'0':String(current.value?.archive.premium_fatigue??0);customOpen.value=false}
 let alive=true,timer:ReturnType<typeof setInterval>|undefined
 watch(busy,v=>emit('busy',v));watch(unfinished,v=>emit('pending',v))
 function failure(e:unknown){error.value=uncertainMessage(e);if(e instanceof ApiError&&e.status===401)emit('expired');if(e instanceof ApiError&&e.status===403&&e.message.includes('重新认证'))emit('reauth')}
 function remember(id:string){try{sessionStorage.setItem(storage,id)}catch{/* history lookup remains available */}}
 async function run(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';try{await fn()}catch(e){if(alive)failure(e)}finally{if(alive)busy.value=false;if(operation.value?.status!=='preview')confirmationLease.release('character-charactermaintenance')}}
-async function refresh(){await run(async()=>{const r=await api(`${base}/characters/${props.characNo}`);if(alive){current.value=r;normal.value=String(r.archive.fatigue);premium.value=String(r.archive.premium_fatigue)}})}
+async function refresh(){await run(async()=>{const r=await api(`${base}/characters/${props.characNo}`);if(alive){current.value=r;restore()}})}
 async function history(){await run(async()=>{const r=await api(`${base}/operations?charac_no=${props.characNo}&page=${page.value}`);if(alive){records.value=r.items;more.value=r.has_more}})}
 function received(r:any){if(!alive)return;operation.value=r;remember(r.operation_id);if(r.status==='committed')emit('changed')}
 async function inspect(id=operation.value?.operation_id){if(!id||!/^[a-f0-9]{32}$/.test(id)){error.value='请输入32位操作编号';return}await run(async()=>{received(await api(`${base}/operations/${id}`));attempted.value=true})}
@@ -38,30 +40,31 @@ watch(()=>operation.value?.status,status=>{if(status==='preview')confirmationLea
 onBeforeUnmount(()=>{confirmationLease.release('character-charactermaintenance');alive=false;if(timer)clearInterval(timer);emit('busy',false);emit('pending',false)})
 </script>
 <template><section ref="root" class="fatigue-maintenance">
- <h3>角色疲劳恢复／调整</h3>
- <p class="notice">这是维护存档操作，不是在线热更新。请先在「维护中心」显式开启维护窗口，完成后关闭窗口让游戏重新加载。本页不会自动停止游戏。</p>
+ <h3>恢复角色疲劳</h3>
+ <p class="notice">先在「维护中心」开启维护窗口，再核对下方恢复预览。结束维护、重新进入游戏后查看疲劳；本页不会自动停止游戏。</p>
  <p v-if="error" class="submit-error" role="alert">{{error}}</p>
  <template v-if="current">
   <p><b>{{current.target.accountname}}</b> / UID {{current.target.uid}} · {{current.target.character.charac_name}} / #{{current.target.character.charac_no}}</p>
-  <dl class="character-facts"><div><dt>普通消耗 / 上限</dt><dd>{{current.archive.fatigue}} / {{current.archive.max_fatigue}}</dd></div><div><dt>额外消耗 / 上限</dt><dd>{{current.archive.premium_fatigue}} / {{current.archive.max_premium_fatigue}}</dd></div><div><dt>历史 used_fatigue</dt><dd>{{current.archive.used_fatigue}}（保持不变）</dd></div></dl>
-  <p class="field-hint">{{current.note}}</p>
+  <dl class="character-facts"><div><dt>普通疲劳</dt><dd>已消耗 {{current.archive.fatigue}} <small>存档上限 {{current.archive.max_fatigue}}</small></dd></div><div><dt>额外疲劳</dt><dd>已消耗 {{current.archive.premium_fatigue}} <small>存档上限 {{current.archive.max_premium_fatigue}}</small></dd></div></dl>
+  <details><summary>存档字段说明</summary><p class="field-hint">{{current.note}}</p><p class="field-hint">恢复将对应的已消耗值设为 0。历史 used_fatigue 为 {{current.archive.used_fatigue}}，保持不变；不将存档直接当作客户端实时剩余疲劳。</p></details>
   <p v-if="!current.enabled" class="warning">请在「功能与权限」开启「角色疲劳恢复／调整」。</p>
   <p v-if="!current.maintenance.available" class="warning">{{current.maintenance.note}}</p>
   <button :disabled="busy||unfinished" @click="refresh">刷新存档及维护状态</button>
   <form v-if="!operation" @submit.prevent="preview" novalidate>
-   <div class="fatigue-fields"><label>普通已消耗疲劳<input v-model="normal" inputmode="numeric" :disabled="busy" :aria-invalid="!!valueError" aria-describedby="fatigue-value-error"></label><label>额外已消耗疲劳<input v-model="premium" inputmode="numeric" :disabled="busy" :aria-invalid="!!valueError" aria-describedby="fatigue-value-error"></label></div>
+   <div class="fatigue-presets"><button type="button" :class="{selected:normal==='0'&&premium===String(current.archive.premium_fatigue)&&!customOpen}" :disabled="busy" @click="restore(false)">恢复普通疲劳</button><button type="button" :class="{selected:normal==='0'&&premium==='0'&&!customOpen}" :disabled="busy" @click="restore()">恢复全部疲劳</button><button type="button" :aria-expanded="customOpen" :disabled="busy" @click="customOpen=!customOpen">自定义消耗值</button></div>
+   <p v-if="!customOpen" class="fatigue-choice">本次计划：{{normal==='0'&&premium==='0'?'清除普通与额外疲劳消耗':'清除普通疲劳消耗，保留额外疲劳'}}。下一步先核对影响，不会立即修改。</p>
+   <div v-show="customOpen" class="fatigue-fields"><label>普通疲劳已消耗值<input v-model="normal" inputmode="numeric" :disabled="busy" :aria-invalid="!!valueError" aria-describedby="fatigue-value-error"></label><label>额外疲劳已消耗值<input v-model="premium" inputmode="numeric" :disabled="busy" :aria-invalid="!!valueError" aria-describedby="fatigue-value-error"></label></div>
    <p v-if="valueError" id="fatigue-value-error" class="submit-error" role="alert">{{valueError}}</p>
-   <button type="button" :disabled="busy" @click="normal='0';premium='0'">恢复两项疲劳（设为0）</button>
    <label>操作原因<input v-model="reason" :disabled="busy" maxlength="200" :aria-invalid="!!reasonError" aria-describedby="fatigue-reason-error" @input="reasonError=''" placeholder="例如：角色疲劳恢复"></label>
    <p v-if="reasonError" id="fatigue-reason-error" class="submit-error" role="alert">{{reasonError}}</p>
-   <button class="primary" :disabled="busy||!current.enabled||!current.maintenance.available" type="submit">生成疲劳调整预览</button>
+   <button class="primary" :disabled="busy||!current.enabled||!current.maintenance.available" type="submit">核对疲劳恢复预览 →</button>
   </form>
  </template>
  <section v-if="operation" class="fatigue-preview">
   <h4>{{states[operation.status]||operation.status}}</h4>
   <p>目标：{{operation.preview.target.accountname}} / UID {{operation.preview.target.uid}} · {{operation.preview.target.character.charac_name}} / #{{operation.preview.target.character.charac_no}}</p>
   <p>操作编号：{{operation.operation_id}}</p><p>原因：{{operation.preview.reason}}</p>
-  <dl class="character-facts"><div v-for="(v,k) in operation.preview.changes" :key="k"><dt>{{labels[String(k)]}}</dt><dd>{{(v as any).before}} → {{(v as any).after}}</dd></div></dl>
+  <dl class="character-facts"><div v-for="(v,k) in operation.preview.changes" :key="k"><dt>{{labels[String(k)]}}</dt><dd>{{(v as any).before}} → {{(v as any).after}}<small v-if="(v as any).after===0">恢复该项疲劳（清除已消耗值）</small></dd></div></dl>
   <p v-if="pending" class="notice">结果待核对，正在定时查询原编号。不会自动重复提交。</p>
   <p v-if="operation.status==='committed'" class="notice">存档、快照与成功审计已提交；游戏内效果未由此证明。请结束维护后查看。</p>
   <div class="button-row"><button v-if="operation.status==='preview'&&!attempted&&key" class="danger" :disabled="busy" @click="confirm">确认修改疲劳</button><button :disabled="busy" @click="inspect()">查询原操作结果</button><button v-if="operation.status==='preview'&&!pending" :disabled="busy" @click="cancel">取消预览</button><button v-if="['committed','cancelled','aborted'].includes(operation.status)" :disabled="busy" @click="finish">结束查看</button></div>
@@ -75,3 +78,4 @@ onBeforeUnmount(()=>{confirmationLease.release('character-charactermaintenance')
 <style scoped>
 .fatigue-maintenance{display:grid;gap:12px}.fatigue-maintenance form{display:grid;gap:12px}.fatigue-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}label{display:grid;gap:6px}.fatigue-preview{padding:16px;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-secondary)}.button-row{display:flex;align-items:center;flex-wrap:wrap;gap:10px}article{display:flex;justify-content:space-between;align-items:center;gap:10px}p{overflow-wrap:anywhere}@media(max-width:600px){.fatigue-fields{grid-template-columns:1fr}}
 </style>
+<style scoped>.fatigue-presets{display:flex;gap:8px;flex-wrap:wrap}.fatigue-presets>button{font-size:12px;padding:9px 12px}.fatigue-presets>button.selected{border-color:var(--primary-color);color:var(--primary-color);background:var(--primary-10)}.fatigue-choice{padding:12px 14px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;font-size:12px;line-height:1.8}.fatigue-preview .character-facts small{display:block;margin-top:5px;color:var(--text-secondary);font-size:11px}</style>

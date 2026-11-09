@@ -134,5 +134,5 @@ def test_atlas_route_cannot_be_intercepted_by_icon_route_and_requires_session(en
     path=P+'/assets/'+SHA+'/'+'b'*64+'.atlas.png'
     result=c.get(path);assert result.status_code==200,result.text
     assert seen==[('atlas',SHA,'b'*64)] and result.headers['content-type']=='image/png'
-    assert result.headers['cache-control'].startswith('private')
+    assert result.headers['cache-control']=='no-store'
     c.cookies.clear();assert c.get(path).status_code==401

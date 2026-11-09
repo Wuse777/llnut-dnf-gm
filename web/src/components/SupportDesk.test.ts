@@ -27,6 +27,9 @@ afterEach(()=>{for(const w of wrappers)w.unmount();wrappers=[];sessionStorage.cl
 it('loads scoped cases and account profile without any writes',async()=>{
  const w=mountDesk();await flushPromises();expect(w.text()).toContain('测试账号');expect(api).toHaveBeenCalledWith(expect.stringContaining('uid=900001'));expect(vi.mocked(api).mock.calls.every(c=>!c[1])).toBe(true)
 })
+it('opens the exact linked case even when it is not in the first filtered page',async()=>{
+ cases=[];const w=mount(SupportDesk,{props:{uid:900001,initialCase:cid}});wrappers.push(w);await flushPromises();expect(api).toHaveBeenCalledWith(`/support/cases/${cid}?event_page=1&link_page=1`);expect(w.get('[aria-label="问题详情"]').text()).toContain('邮件未到账');expect(vi.mocked(api).mock.calls.every(call=>!call[1])).toBe(true)
+})
 it('saves profile with expected revision and trims tags',async()=>{
  const w=mountDesk();await flushPromises();await w.get('[aria-label="账号备注"]').setValue('待核对');await w.get('[aria-label="玩家标签"]').setValue(' 活动，测试 ');await click(w,'保存账号备注与标签')
  expect(api).toHaveBeenCalledWith('/support/profiles/900001','PUT',expect.objectContaining({expected_revision:0,notes:'待核对',tags:['活动','测试'],idempotency_key:expect.any(String)}));expect(sessionStorage.getItem(storage)).toBeNull()
@@ -86,4 +89,59 @@ it('does not navigate or create a compensation draft while unsaved notes would b
 })
 it('HTTP timeout is uncertain and retains the original receipt key',async()=>{
  const original=vi.mocked(api).getMockImplementation()!;vi.mocked(api).mockImplementation((p,m,...args)=>m==='PUT'?Promise.reject(new ApiError('网关超时',408)):original(p,m,...args));const w=mountDesk();await flushPromises();await click(w,'保存账号备注与标签');expect(w.text()).toContain('保存结果待确认');expect(sessionStorage.getItem(storage)).toBeTruthy()
+})
+
+function nextTarget(uid:number,caseId:string){return {...structuredClone(record),uid,charac_no:uid,case_id:caseId,title:'问题目标 '+uid,target:{accountname:'账号 '+uid,character:{charac_no:uid,charac_name:'角色 '+uid}}}}
+function targetProfile(uid:number){return {...structuredClone(profile),uid,target:{uid,accountname:'账号 '+uid}}}
+it('queues the latest linked target while an earlier account list is still reading',async()=>{
+ let release!:(value:any)=>void
+ const delayed=new Promise(resolve=>{release=resolve}),latest=nextTarget(900003,'d'.repeat(32))
+ vi.mocked(api).mockImplementation(async path=>{
+  if(path.startsWith('/support/cases?uid=900001&'))return delayed
+  if(path.startsWith('/support/cases?uid=900003&'))return {items:[],has_more:false}
+  if(path==='/support/profiles/900003')return targetProfile(900003)
+  if(path.startsWith('/support/cases/'+latest.case_id))return {case:latest,events:[],links:[]}
+  throw new Error('Unexpected stale request '+path)
+ })
+ const w=mount(SupportDesk,{props:{uid:900001,initialCase:cid}});wrappers.push(w);await flushPromises()
+ await w.setProps({uid:900002,initialCase:'c'.repeat(32)});await w.setProps({uid:900003,initialCase:latest.case_id})
+ release({items:[structuredClone(record)],has_more:false});await flushPromises()
+ expect(w.get('[aria-label="问题详情"]').text()).toContain('问题目标 900003')
+ expect(w.text()).not.toContain('邮件未到账');expect(api).not.toHaveBeenCalledWith('/support/profiles/900001')
+ expect(vi.mocked(api).mock.calls.some(([path])=>path.includes('uid=900002'))).toBe(false)
+ expect(vi.mocked(api).mock.calls.every(call=>!call[1])).toBe(true)
+})
+it('discards an old case response before opening the newly linked player case',async()=>{
+ let release!:(value:any)=>void
+ const delayed=new Promise(resolve=>{release=resolve}),latest=nextTarget(900002,'c'.repeat(32))
+ vi.mocked(api).mockImplementation(async path=>{
+  if(path.startsWith('/support/cases?'))return {items:[],has_more:false}
+  if(path.startsWith('/support/profiles/'))return targetProfile(Number(path.split('/').at(-1)))
+  if(path.startsWith('/support/cases/'+cid))return delayed
+  if(path.startsWith('/support/cases/'+latest.case_id))return {case:latest,events:[],links:[]}
+  throw new Error('Unexpected request '+path)
+ })
+ const w=mount(SupportDesk,{props:{uid:900001,initialCase:cid}});wrappers.push(w);await flushPromises()
+ await w.setProps({uid:900002,initialCase:latest.case_id});expect(w.find('[aria-label="问题详情"]').exists()).toBe(false)
+ release({case:structuredClone(record),events:[],links:[]});await flushPromises()
+ expect(w.get('[aria-label="问题详情"]').text()).toContain('问题目标 900002');expect(w.text()).not.toContain('邮件未到账')
+ await click(w,'查看账号余额');expect(w.emitted('action')?.[0]?.[0]).toMatchObject({uid:900002,charac_no:900002})
+})
+it('settles the original pending receipt without restoring its old case over a queued target',async()=>{
+ let release!:(value:any)=>void
+ const receiptId='z'.repeat(32),delayed=new Promise(resolve=>{release=resolve}),latest=nextTarget(900002,'c'.repeat(32))
+ sessionStorage.setItem(storage,receiptId)
+ vi.mocked(api).mockImplementation(async path=>{
+  if(path.startsWith('/support/cases?'))return {items:[],has_more:false}
+  if(path.startsWith('/support/profiles/'))return targetProfile(Number(path.split('/').at(-1)))
+  if(path==='/support/requests/'+receiptId)return delayed
+  if(path.startsWith('/support/cases/'+latest.case_id))return {case:latest,events:[],links:[]}
+  throw new Error('Unexpected old case refresh '+path)
+ })
+ const w=mount(SupportDesk,{props:{uid:900001,initialCase:cid}});wrappers.push(w);await flushPromises()
+ await w.setProps({uid:900002,initialCase:latest.case_id});expect(sessionStorage.getItem(storage)).toBe(receiptId)
+ release(structuredClone(result));await flushPromises()
+ expect(sessionStorage.getItem(storage)).toBeNull();expect(w.get('[aria-label="问题详情"]').text()).toContain('问题目标 900002')
+ expect(api).not.toHaveBeenCalledWith('/support/cases/'+cid);expect(vi.mocked(api).mock.calls.filter(([path])=>path.startsWith('/support/requests/'))).toHaveLength(1)
+ expect(vi.mocked(api).mock.calls.every(call=>!call[1])).toBe(true)
 })

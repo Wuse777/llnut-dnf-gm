@@ -16,11 +16,13 @@ export const gmRoutes: RouteRecordRaw[] = [
     ['players/unlocks', 'unlock-center', '装备解锁队列', 'ph:lock-key-open'],
     ['rewards/deliveries', 'mail-center', '投递记录', 'ph:envelope-open'],
     ['rewards/batches', 'reward-jobs', '批量奖励', 'ph:stack'],
+    ['rewards/campaigns', 'campaigns', '活动运营', 'ph:flag'],
     ['rewards/schedules', 'schedules', '定时运营', 'ph:calendar-check'],
     ['rewards/control', 'native-controls', '公告与游戏内控制', 'ph:megaphone'],
     ['rewards/statistics', 'economy', '发放统计', 'ph:chart-bar'],
     ['system/diagnostics', 'operations-dashboard', '运维诊断', 'ph:heartbeat'],
     ['system/maintenance', 'maintenance', '维护与备份', 'ph:wrench'],
+    ['system/game-backups', 'game-backups', '游戏存档恢复点', 'ph:database'],
     ['system/capabilities', 'capabilities', '功能权限', 'ph:shield-check'],
     ['system/upgrades', 'compatibility', '升级检查', 'ph:arrows-clockwise']
   ].map(([path, name, title, icon]) => ({ path, name, component: () => import('@/views/gm/PanelView.vue'), props: { page: name }, meta: { title, icon } })),
@@ -31,8 +33,8 @@ export const gmRoutes: RouteRecordRaw[] = [
 export const navigationGroups = [
   { key: 'home', label: '工作台', icon: 'ph:squares-four', pages: ['home'] },
   { key: 'players-group', label: '玩家中心', icon: 'ph:users', pages: ['players', 'online', 'support', 'unlock-center'] },
-  { key: 'rewards-group', label: '奖励运营', icon: 'ph:gift', pages: ['reward', 'mail-center', 'templates', 'reward-jobs', 'schedules', 'native-controls', 'economy'] },
+  { key: 'rewards-group', label: '奖励运营', icon: 'ph:gift', pages: ['reward', 'campaigns', 'mail-center', 'templates', 'reward-jobs', 'schedules', 'native-controls', 'economy'] },
   { key: 'items-group', label: '道具与外观', icon: 'ph:diamonds-four', pages: ['catalog', 'appearance'] },
-  { key: 'system-group', label: '系统运维', icon: 'ph:gear-six', pages: ['operations-dashboard', 'maintenance', 'capabilities', 'compatibility', 'audit'] }
+  { key: 'system-group', label: '系统运维', icon: 'ph:gear-six', pages: ['operations-dashboard', 'maintenance', 'game-backups', 'capabilities', 'compatibility', 'audit'] }
 ];
 

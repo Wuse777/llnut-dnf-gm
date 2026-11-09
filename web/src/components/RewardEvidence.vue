@@ -1,0 +1,5 @@
+<script setup lang="ts">
+defineProps<{committed?:boolean,summary?:any}>()
+</script>
+<template><ol class="reward-evidence" aria-label="奖励到达核对阶段"><li><small>01 / 后台提交</small><strong>{{committed?'已有数据库投递流水':'先按原操作编号核对'}}</strong><span>提交状态以原操作与流水为准</span></li><li><small>02 / 数据库领取</small><strong v-if="summary">领取标记 {{summary.claimed_marker||0}} · 未领 {{summary.unclaimed_marker||0}}</strong><strong v-else>逐页检查附件标记</strong><span>缺失、删除均不能推断为已领取</span></li><li><small>03 / 客户端反馈</small><strong>等待玩家或管理员核实</strong><span>把游戏内结果写入处理时间线</span></li></ol></template>
+<style scoped>.reward-evidence{list-style:none;padding:0;margin:14px 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.reward-evidence li{display:grid;gap:5px;padding:12px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-quinary)}.reward-evidence small{font-size:10px;color:var(--amber-text)}.reward-evidence strong{font-size:12px;font-weight:550}.reward-evidence span{font-size:11px;color:var(--text-secondary)}@media(max-width:600px){.reward-evidence{grid-template-columns:1fr}.reward-evidence li{padding:10px}}</style>

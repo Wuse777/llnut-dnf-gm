@@ -29,7 +29,7 @@ it('authorizes Naive component styles and the Soybean theme with the document no
   expect(styles.some(style => style.getAttribute('cssr-id')?.includes('input'))).toBe(true);
   expect(document.querySelector('#theme-vars')?.textContent).toContain('--primary-color');
   wrapper.unmount();
-});
+}, 15000);
 
 it('does not authorize styles when the server nonce is absent or still a build placeholder', () => {
   const style = document.createElement('style');

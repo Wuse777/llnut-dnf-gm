@@ -38,6 +38,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install encrypted backup laboratory tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y age
+          command -v age
+          command -v age-keygen
       - name: Validate deployment shell syntax
         run: |
           for script in deploy/*.sh tools/*.sh; do bash -n "$script"; done
@@ -53,7 +59,15 @@ jobs:
           "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" tools/local_mysql.py init --runtime "$RUNNER_TEMP/dnfgm-lab"
           "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" tools/local_mysql.py start --runtime "$RUNNER_TEMP/dnfgm-lab"
       - run: |
+          mkdir -p outputs
           DNF_GM_M0_SOCKET="$RUNNER_TEMP/dnfgm-lab/mysql.sock" PYTHONPATH=src PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-            "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" -m pytest -q
+            "$RUNNER_TEMP/dnfgm-lab/venv/bin/python" -m pytest -q --junitxml=outputs/backend-junit.xml
+      - name: Preserve integration test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-junit
+          path: outputs/backend-junit.xml
+          if-no-files-found: ignore
       - if: always()
         run: '"$RUNNER_TEMP/dnfgm-lab/venv/bin/python" tools/local_mysql.py stop --runtime "$RUNNER_TEMP/dnfgm-lab"'

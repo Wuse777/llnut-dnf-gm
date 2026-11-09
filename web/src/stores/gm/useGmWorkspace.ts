@@ -11,6 +11,8 @@ import {FormValidationError,assertValid,operationErrors,giftErrors,serverFieldEr
 import {defineStore,storeToRefs} from 'pinia'
 import {router} from '@/router'
 export const GM_ROUTE_PATHS:Record<string,string>={overview:'/home',accounts:'/players',online:'/players/online',support:'/players/support',economy:'/rewards/statistics',capabilities:'/system/capabilities',maintenance:'/system/maintenance',compatibility:'/system/upgrades',mail:'/rewards/compose','mail-center':'/rewards/deliveries','reward-jobs':'/rewards/batches',schedules:'/rewards/schedules','unlock-center':'/players/unlocks',catalog:'/items/catalog',gifts:'/rewards/templates',audit:'/system/audit','native-controls':'/rewards/control','operations-dashboard':'/system/diagnostics'}
+GM_ROUTE_PATHS.campaigns='/rewards/campaigns'
+GM_ROUTE_PATHS['game-backups']='/system/game-backups'
 export const useGmWorkspace=defineStore('gm-workspace',()=>{
 const catalogState=useGmCatalogStore(),drafts=useGmDraftsStore(),players=useGmPlayersStore(),confirmation=useGmConfirmation()
 function field<K extends keyof RewardDraft>(key:K){return computed({get:()=>drafts.current[key],set:(value:RewardDraft[K])=>{drafts.current[key]=value}})}
@@ -54,7 +56,7 @@ type ReadContext={signal:AbortSignal,current:()=>boolean}
 const readControllers=new Map<string,AbortController>()
 const readJobs=new Map<string,{key:string,promise:Promise<any>}>()
 function cancelRead(scope:string){readControllers.get(scope)?.abort();readControllers.delete(scope);readJobs.delete(scope);readBusy.value={...readBusy.value,[scope]:false}}
-function cancelReads(){for(const scope of [...readControllers.keys()])cancelRead(scope);reads.cancel()}
+function cancelReads(){for(const scope of readControllers.keys())cancelRead(scope);reads.cancel()}
 function runRead<T>(scope:string,fn:(context:ReadContext)=>Promise<T>,feedback=scope,key?:string):Promise<T|undefined>{
  const existing=readJobs.get(scope)
  if(key&&existing?.key===key)return existing.promise
@@ -264,7 +266,7 @@ async function playerAction(data:{action:string,uid:number,charac_no?:number}){
  if(busy.value||pendingId.value)return
  if(data.action==='support'){supportUid.value=data.uid;await go('support');return}
  if(data.action==='support-mail'){mailCenterOperation.value='';mailCenterUid.value=data.uid;await go('mail-center');return}
- if(data.action==='detail'||data.action==='unlock'){detailSection.value=data.action==='unlock'?'unlock':'basic';openCharacter(data.charac_no||0);return}
+ if(['detail','unlock','rescue','equipment','quests','fatigue'].includes(data.action)){detailSection.value=data.action==='detail'?'basic':data.action;openCharacter(data.charac_no||0);return}
  await router.push({path:data.action==='mail'?GM_ROUTE_PATHS.mail:'/players/'+data.uid,query:{...(data.action==='mail'?{uid:String(data.uid)}:{}),charac_no:data.charac_no?String(data.charac_no):undefined}})
  if(!await setTarget(data.uid,data.charac_no||0))return
  action.value=data.action;await reveal(data.action==='mail'?'#recipient':'[data-testid=account-operations]')

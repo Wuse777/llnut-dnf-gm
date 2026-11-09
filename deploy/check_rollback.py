@@ -54,6 +54,33 @@ def check(q, target, *, gameplay_gate_configured=False):
             if q.fetchone():
                 raise IncompatibleRollback('Target cannot read the web maintenance capability. Use a compatible release; do not discard policy history.')
 
+    if data.get('campaign_rewards') != 1:
+        # Old workers ignore campaign binding and bypass the shared claim. A
+        # finished/cancelled batch or schedule can still seed a copied task, so
+        # its status must not exempt it from this compatibility check. Manual
+        # reward previews also remain confirmable through their original ID.
+        for table, paths in (
+            ('reward_jobs', ('$.campaign_id', '$.reward.campaign_id')),
+            ('schedules', ('$.reward_job.campaign_id', '$.reward_job.reward.campaign_id')),
+            ('operations', ('$.campaign_id',)),
+        ):
+            q.execute("SELECT COUNT(*) n FROM information_schema.TABLES WHERE TABLE_SCHEMA='dnf_gm' AND TABLE_NAME=%s", (table,))
+            if q.fetchone()['n']:
+                condition = ' OR '.join("JSON_UNQUOTE(JSON_EXTRACT(request_json, %s)) NOT IN ('','null')" for _ in paths)
+                q.execute('SELECT 1 AS found FROM dnf_gm.' + table + ' WHERE ' + condition + ' LIMIT 1', paths)
+                if q.fetchone():
+                    raise IncompatibleRollback('Target cannot preserve campaign reward claims. Use a campaign-aware release; preserve bound tasks, original operations and audit history.')
+
+    if data.get('game_backup_requests') != 1:
+        q.execute("SELECT COUNT(*) n FROM information_schema.TABLES WHERE TABLE_SCHEMA='dnf_gm' AND TABLE_NAME='game_backup_runs'")
+        if q.fetchone()['n']:
+            # needs_review and any future/unknown state still require an owner
+            # to reconcile the original request. Only explicit terminal states
+            # are safe to leave as history in an older release.
+            q.execute("SELECT 1 AS found FROM dnf_gm.game_backup_runs WHERE state NOT IN ('succeeded','failed') LIMIT 1")
+            if q.fetchone():
+                raise IncompatibleRollback('Target cannot reconcile unfinished game backup requests. Finish or review the original request and use a compatible release.')
+
 
 def main():
     import os

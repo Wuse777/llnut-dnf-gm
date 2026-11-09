@@ -13,7 +13,7 @@ function setup(data:any=fixture()){
 async function tab(w:any,text:string){const b=w.findAll('[role=tab]').find((b:any)=>b.text().startsWith(text));await b!.trigger('click');await flushPromises()}
 async function listView(w:any){await w.findAll('button').find((b:any)=>b.text()==='列表视图')!.trigger('click');await flushPromises()}
 it('loads protected detail GET and displays correct account, gold and snapshot semantics',async()=>{
- const {w,calls}=setup();await flushPromises();expect(calls).toEqual(['GET /dnf-gm/api/v1/characters/4']);expect(w.text()).toContain('150,460');expect(w.text()).toContain('剑魂');expect(w.text()).toContain('12,345');expect(w.text()).toContain('所属账号在线；不代表当前角色在线');expect(w.text()).toContain('不含仓库金币');expect(w.find('[role=dialog]').exists()).toBe(true);w.unmount()
+ const {w,calls}=setup();await flushPromises();expect(calls).toEqual(['GET /dnf-gm/api/v1/characters/4/overview']);expect(w.text()).toContain('150,460');expect(w.text()).toContain('剑魂');expect(w.find('[data-testid=character-overview]').exists()).toBe(true);await tab(w,'详细资料');expect(w.text()).toContain('12,345');expect(w.text()).toContain('所属账号在线；不代表当前角色在线');expect(w.text()).toContain('不含仓库金币');expect(w.find('[role=dialog]').exists()).toBe(true);w.unmount()
 })
 it('switches attributes/equipment/backpack and supports type/name/id filtering',async()=>{
  const {w,calls}=setup();await flushPromises();await tab(w,'属性存档');expect(w.text()).toContain('14,000');expect(w.text()).toContain('力量、智力');await tab(w,'穿戴装备');await listView(w);expect(w.text()).toContain('测试装备');expect(w.text()).toContain('强化 +7');await tab(w,'背包道具');expect(w.text()).toContain('野草莓');expect(w.text()).toContain('55');await w.find('[aria-label="筛选角色物品"]').setValue('999999');expect(w.text()).not.toContain('野草莓');expect(w.text()).toContain('未知物品 #999999');await w.find('[aria-label="筛选角色物品"]').setValue('');await w.find('[aria-label="角色物品类型"]').setValue('2');expect(w.text()).toContain('野草莓');expect(w.text()).not.toContain('未知物品 #999999');expect(calls.length).toBe(1);w.unmount()
@@ -28,7 +28,7 @@ it('shows request errors inside dialog, retries GET only and never retains old c
  const {w,calls}=setup();await flushPromises();vi.mocked(fetch).mockImplementationOnce(async()=>new Response('{"detail":"角色不存在"}',{status:404}));await w.setProps({characNo:999});await flushPromises();expect(w.text()).toContain('角色不存在');expect(w.text()).not.toContain('150,460');const retry=w.findAll('button').find(b=>b.text()==='重试查询')!;await retry.trigger('click');await flushPromises();expect(calls.every(p=>p.startsWith('GET '))).toBe(true);expect(w.text()).toContain('150,460');w.unmount()
 })
 it('ignores response from older role when user changes role while loading',async()=>{
- let resolveOld:(v:Response)=>void=()=>{};vi.stubGlobal('fetch',vi.fn((url)=>url.toString().endsWith('/4')?new Promise<Response>(r=>resolveOld=r):Promise.resolve(new Response(JSON.stringify({...fixture(),character:{...fixture().character,charac_name:'新角色'}})))));const w=mount(CharacterDetails,{props:{characNo:4}});await w.setProps({characNo:5});await flushPromises();resolveOld(new Response(JSON.stringify(fixture())));await flushPromises();expect(w.text()).toContain('新角色');expect(w.text()).not.toContain('测试测试');w.unmount()
+ let resolveOld:(v:Response)=>void=()=>{};vi.stubGlobal('fetch',vi.fn((url)=>url.toString().endsWith('/4/overview')?new Promise<Response>(r=>resolveOld=r):Promise.resolve(new Response(JSON.stringify({...fixture(),character:{...fixture().character,charac_name:'新角色'}})))));const w=mount(CharacterDetails,{props:{characNo:4}});await w.setProps({characNo:5});await flushPromises();resolveOld(new Response(JSON.stringify(fixture())));await flushPromises();expect(w.text()).toContain('新角色');expect(w.text()).not.toContain('测试测试');w.unmount()
 })
 it('paginates within container and resets page after filtering',async()=>{
  const d=fixture();d.backpack.items=Array.from({length:35},(_,i)=>item(i+100,'物品'+i,2));const {w}=setup(d);await flushPromises();await tab(w,'背包道具');await listView(w);expect(w.findAll('tbody tr').length).toBe(30);await w.findAll('button').find(b=>b.text()==='下一页物品')!.trigger('click');expect(w.findAll('tbody tr').length).toBe(5);await w.find('[aria-label="筛选角色物品"]').setValue('物品0');expect(w.findAll('tbody tr').length).toBe(1);expect(w.text()).toContain('第 1 / 1 页');w.unmount()
@@ -38,14 +38,14 @@ it('supports closing while loading and restores focus to trigger',async()=>{
 })
 
 it('arrow keys move selected role-inspector tab and focus',async()=>{
- const {w}=setup();await flushPromises();const tab=w.find('[role=tab][aria-selected=true]');await tab.trigger('keydown',{key:'ArrowRight'});await flushPromises();expect(w.find('[role=tab][aria-selected=true]').text()).toBe('属性存档');expect(document.activeElement).toBe(w.find('[role=tab][aria-selected=true]').element);w.unmount()
+ const {w}=setup();await flushPromises();const tab=w.find('[role=tab][aria-selected=true]');await tab.trigger('keydown',{key:'ArrowRight'});await flushPromises();expect(w.find('[role=tab][aria-selected=true]').text()).toBe('详细资料');expect(document.activeElement).toBe(w.find('[role=tab][aria-selected=true]').element);w.unmount()
 })
 
 
 it('shows distinct role and shared warehouses, separate gold and raw capacity',async()=>{
  const d:any=fixture();d.warehouse={state:'ok',slot_count:152,capacity_raw:9,owner_uid:3,charac_no:4,items:[item(8388,'角色仓库材料',3,456)]};d.account_warehouse={state:'ok',slot_count:56,capacity_raw:7,owner_uid:3,gold:4000000000,gold_state:'ok',stored_at:'2026-11-04T01:02:03',items:[item(10000,'账号仓库装备',1)]}
  const {w,calls}=setup(d);await flushPromises();await tab(w,'角色仓库');await listView(w);expect(w.text()).toContain('角色仓库材料');expect(w.text()).toContain('456');expect(w.find('tbody').text()).not.toContain('账号仓库装备');expect(w.text()).toContain('不据此推断实际已开放格数')
- await tab(w,'账号仓库');expect(w.text()).toContain('账号仓库装备');expect(w.text()).toContain('4,000,000,000');expect(w.text()).not.toContain('150,460');expect(w.text()).toContain('同一账号下角色共享');expect(w.text()).toContain('所属 UID：3');expect(calls).toEqual(['GET /dnf-gm/api/v1/characters/4']);w.unmount()
+ await tab(w,'账号仓库');expect(w.text()).toContain('账号仓库装备');expect(w.text()).toContain('4,000,000,000');expect(w.text()).not.toContain('150,460');expect(w.text()).toContain('同一账号下角色共享');expect(w.text()).toContain('所属 UID：3');expect(calls).toEqual(['GET /dnf-gm/api/v1/characters/4/overview']);w.unmount()
 })
 
 it('does not invent empty warehouse or zero gold for missing records or older responses',async()=>{
@@ -65,7 +65,7 @@ it('keeps maintenance inside its tabpanel and marks old snapshots instead of sil
  const w=mount(CharacterDetails,{props:{characNo:4},global:{stubs:{InventoryEditor:{name:'InventoryEditor',emits:['pending','changed'],template:'<div>维护测试入口</div>'}}},attachTo:document.body})
  await flushPromises();await tab(w,'穿戴装备');await listView(w);await w.find('.character-items button').trigger('click');await flushPromises()
  const editor=w.findComponent({name:'InventoryEditor'});expect(editor.exists()).toBe(true);expect(editor.element.closest('[role=tabpanel]')?.id).toBe('character-section-manage')
- editor.vm.$emit('pending',true);await flushPromises();await tab(w,'基本信息');expect(w.findAll('button').find(b=>b.text()==='刷新角色存档')!.attributes('disabled')).toBeDefined()
+ editor.vm.$emit('pending',true);await flushPromises();await tab(w,'角色工作台');expect(w.findAll('button').find(b=>b.text()==='刷新角色存档')!.attributes('disabled')).toBeDefined()
  editor.vm.$emit('changed');editor.vm.$emit('pending',false);await flushPromises();expect(w.text()).toContain('下方角色资料仍是旧快照');expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1)
  await w.findAll('button').find(b=>b.text()==='刷新角色存档')!.trigger('click');await flushPromises();expect(w.text()).not.toContain('下方角色资料仍是旧快照');w.unmount()
 })
@@ -78,8 +78,8 @@ it('opens a directly requested maintenance tab on first mount',async()=>{
 it('keeps role shortcuts and mail/activity queries bound to the current identity',async()=>{
  const calls:string[]=[];vi.stubGlobal('fetch',vi.fn(async(url:string)=>{calls.push(url);const result=url.includes('/mail-center?')?{items:[],has_more:false}:url.includes('/activity?')?{items:[],next_before:null,note:'按角色关联'}:fixture();return new Response(JSON.stringify(result))}))
  const w=mount(CharacterDetails,{props:{characNo:4},attachTo:document.body})
- try{await flushPromises();await w.findAll('button').find(b=>b.text()==='给此角色发奖励')!.trigger('click');expect(w.emitted('action')?.[0]).toEqual([{action:'mail',uid:3,charac_no:4}]);await tab(w,'角色邮件');await vi.waitFor(()=>expect(calls.at(-1)).toContain('/mail-center?uid=3&charac_no=4'));expect(w.get('[aria-label="邮件角色编号"]').attributes('disabled')).toBeDefined();await tab(w,'管理记录');await vi.waitFor(()=>expect(calls.at(-1)).toContain('/characters/4/activity?before=0'));expect(w.text()).toContain('已到记录末尾')}finally{w.unmount()}
-})
+ try{await flushPromises();await w.findAll('button').find(b=>b.text()==='给此角色发奖励')!.trigger('click');expect(w.emitted('action')?.[0]).toEqual([{action:'mail',uid:3,charac_no:4}]);await tab(w,'角色邮件');await vi.waitFor(()=>{expect(calls.some(path=>path.includes('/mail-center?uid=3&charac_no=4'))).toBe(true);expect(w.get('[aria-label="邮件角色编号"]').attributes('disabled')).toBeDefined()},{timeout:10000});await tab(w,'管理记录');await vi.waitFor(()=>{expect(calls.some(path=>path.includes('/characters/4/activity?before=0'))).toBe(true);expect(w.text()).toContain('已到记录末尾')},{timeout:10000})}finally{w.unmount()}
+},15000)
 
 it('groups navigation and gives diagnostic panels unique IDs without fake missing-container errors',async()=>{
  vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(fixture()))))

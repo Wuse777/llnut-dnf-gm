@@ -9,5 +9,7 @@
   ],
   "web_capability_policy": 1,
   "maintenance_requests": 1,
-  "gameplay_transaction_fence": 1
+  "gameplay_transaction_fence": 1,
+  "campaign_rewards": 1,
+  "game_backup_requests": 1
 }

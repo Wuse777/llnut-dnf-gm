@@ -56,6 +56,7 @@ PY
 /opt/dnf-gm/venv/bin/python "$BASE/deploy/configure_write_gate.py"
 /opt/dnf-gm/venv/bin/python "$BASE/deploy/configure_maintenance.py"
 /opt/dnf-gm/venv/bin/python "$BASE/deploy/configure_backup.py"
+/opt/dnf-gm/venv/bin/python "$BASE/deploy/configure_game_backup.py"
 if [[ -L /opt/dnf-gm/current && "$(readlink -f /opt/dnf-gm/current)" != "$BASE" ]]; then
  ln -sfn "$(readlink -f /opt/dnf-gm/current)" /opt/dnf-gm/previous
 fi
